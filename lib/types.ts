@@ -1,16 +1,3 @@
-// 角色配置类型定义
-export interface Profile {
-  id: string;
-  name: string;
-  avatar?: string;
-  description: string;
-  systemPrompt: string;
-  exampleDialogs?: Dialog[];
-  createdAt: Date;
-  updatedAt: Date;
-  tags: string[];
-}
-
 // 对话消息类型
 export interface Message {
   id: string;
@@ -20,14 +7,13 @@ export interface Message {
   images?: string[]; // 图片URL或DataURL列表
 }
 
-// 对话记录类型
-export interface Dialog {
-  id: string;
-  profileId: string;
-  title: string;
-  messages: Message[];
-  createdAt: Date;
-  updatedAt: Date;
+// 安全设置阈值类型
+export enum HarmBlockThreshold {
+  BLOCK_NONE = "BLOCK_NONE",
+  BLOCK_ONLY_HIGH = "BLOCK_ONLY_HIGH",
+  BLOCK_MEDIUM_AND_ABOVE = "BLOCK_MEDIUM_AND_ABOVE",
+  BLOCK_LOW_AND_ABOVE = "BLOCK_LOW_AND_ABOVE",
+  BLOCK_UNSPECIFIED = "BLOCK_UNSPECIFIED"
 }
 
 // 用户设置类型
@@ -38,27 +24,16 @@ export interface UserSettings {
   enableStreaming: boolean;
   maxTokens: number;
   temperature: number;
+  topK: number;
+  topP: number;
+  model: string;
+  safetySettings: {
+    hateSpeech: HarmBlockThreshold;
+    harassment: HarmBlockThreshold;
+    sexuallyExplicit: HarmBlockThreshold;
+    dangerousContent: HarmBlockThreshold;
+  };
 }
 
-// Gemini API 参数类型
-export interface GeminiParams {
-  temperature?: number;
-  topK?: number;
-  topP?: number;
-  maxOutputTokens?: number;
-}
-
-// 角色卡导入/导出格式
-export interface CharacterCardExport {
-  version: number;
-  name: string;
-  description: string;
-  personality: string;
-  scenario: string;
-  first_message: string;
-  avatar?: string;
-  example_dialogs?: {
-    user: string;
-    assistant: string;
-  }[];
-} 
+// 从gemini.ts导出GeminiParams类型
+export type { GeminiParams } from './gemini'; 

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { MessageSquare, User, Settings, Menu, X } from "lucide-react";
+import { MessageSquare, Settings, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -18,7 +18,7 @@ export function Header() {
       <div className="container mx-auto flex justify-between items-center py-4 px-4">
         {/* 标志和名称 */}
         <Link href="/" className="flex items-center space-x-2">
-          <span className="font-bold text-xl">AI扮演平台</span>
+          <span className="font-bold text-xl">AI对话平台</span>
         </Link>
 
         {/* 桌面导航 */}
@@ -29,13 +29,6 @@ export function Header() {
           >
             <MessageSquare size={18} />
             <span>聊天</span>
-          </Link>
-          <Link
-            href="/profiles"
-            className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
-          >
-            <User size={18} />
-            <span>角色</span>
           </Link>
           <Link
             href="/settings"
@@ -71,14 +64,6 @@ export function Header() {
           >
             <MessageSquare size={18} />
             <span>聊天</span>
-          </Link>
-          <Link
-            href="/profiles"
-            className="py-2 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
-            onClick={() => setIsMenuOpen(false)}
-          >
-            <User size={18} />
-            <span>角色</span>
           </Link>
           <Link
             href="/settings"

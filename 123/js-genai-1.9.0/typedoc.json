@@ -1,0 +1,14 @@
+{
+  "entryPoints": ["src/**/*.ts"],
+  "exclude": [
+    "src/**/_*.ts",
+    "src/index.ts",
+    "src/web/**",
+    "src/node/**",
+    "src/g3_node/**"
+  ],
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "excludeInternal": true,
+  "visibilityFilters": {}
+}

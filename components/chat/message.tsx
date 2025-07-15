@@ -4,6 +4,7 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Message as MessageType } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { Copy, Check } from "lucide-react";
 
 interface MessageProps {
   message: MessageType;
@@ -11,10 +12,19 @@ interface MessageProps {
 
 export function Message({ message }: MessageProps) {
   const [showRaw, setShowRaw] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // 根据角色确定消息的样式
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
+
+  // 复制消息内容
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(message.content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   // 如果是系统消息，则使用特殊样式
   if (isSystem) {
@@ -40,28 +50,37 @@ export function Message({ message }: MessageProps) {
             ? "bg-primary text-primary-foreground"
             : "bg-muted"
         )}
-        style={{ maxWidth: "80%" }}
+        style={{ maxWidth: "85%" }}
       >
         {/* 渲染图片 */}
         {message.images && message.images.length > 0 && (
           <div className="flex flex-wrap gap-2 my-2">
             {message.images.map((image, index) => (
-              <img
-                key={index}
-                src={image}
-                alt={`图片 ${index + 1}`}
-                className="rounded-md max-h-[200px] max-w-full object-contain"
-              />
+              <div key={index} className="relative group">
+                <img
+                  src={image}
+                  alt={`图片 ${index + 1}`}
+                  className="rounded-md max-h-[300px] max-w-full object-contain"
+                  onClick={() => {
+                    // 点击图片时在新窗口打开
+                    window.open(image, '_blank');
+                  }}
+                />
+                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity cursor-pointer" />
+              </div>
             ))}
           </div>
         )}
 
         {/* 渲染文本内容 */}
-        <div className="prose dark:prose-invert max-w-none">
+        <div className={cn(
+          "prose dark:prose-invert max-w-none",
+          isUser ? "prose-primary" : ""
+        )}>
           {showRaw ? (
             <pre className="whitespace-pre-wrap text-sm">{message.content}</pre>
           ) : (
-            <ReactMarkdown>{message.content}</ReactMarkdown>
+            <ReactMarkdown className="break-words">{message.content}</ReactMarkdown>
           )}
         </div>
 
@@ -70,12 +89,22 @@ export function Message({ message }: MessageProps) {
           <span>
             {new Date(message.timestamp).toLocaleTimeString("zh-CN")}
           </span>
-          <button
-            onClick={() => setShowRaw(!showRaw)}
-            className="underline underline-offset-2"
-          >
-            {showRaw ? "查看渲染" : "查看原文"}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowRaw(!showRaw)}
+              className="underline underline-offset-2"
+            >
+              {showRaw ? "查看渲染" : "查看原文"}
+            </button>
+            <button
+              onClick={copyToClipboard}
+              className="flex items-center gap-1"
+              title="复制内容"
+            >
+              {copied ? <Check size={12} /> : <Copy size={12} />}
+              {copied ? "已复制" : "复制"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

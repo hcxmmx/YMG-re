@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GeminiService } from "@/lib/gemini";
-import type { Message, GeminiParams } from "@/lib/types";
+import { GeminiService, GeminiParams } from "@/lib/gemini";
+import type { Message } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   try {
@@ -41,15 +41,26 @@ export async function POST(req: NextRequest) {
             );
 
             for await (const chunk of streamGenerator) {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk })}\n\n`));
+              // 确保每个chunk都被正确编码和发送
+              if (chunk) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk })}\n\n`));
+              }
             }
             controller.enqueue(encoder.encode("data: [DONE]\n\n"));
             controller.close();
           } catch (error: any) {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ error: error.message })}\n\n`)
-            );
-            controller.close();
+            console.error("流式响应生成错误:", error);
+            const errorMessage = error.message || "生成响应时出错";
+            try {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ error: errorMessage })}\n\n`)
+              );
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            } catch (e) {
+              console.error("发送错误消息失败:", e);
+            } finally {
+              controller.close();
+            }
           }
         },
       });
@@ -57,21 +68,31 @@ export async function POST(req: NextRequest) {
       return new NextResponse(customReadable, {
         headers: {
           "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
+          "Cache-Control": "no-cache, no-transform",
           "Connection": "keep-alive",
+          "X-Accel-Buffering": "no", // 禁用Nginx缓冲
         },
       });
     }
     
     // 非流式响应
-    const response = await geminiService.generateResponse(
-      messages as Message[],
-      systemPrompt || "",
-      params as GeminiParams
-    );
+    try {
+      const response = await geminiService.generateResponse(
+        messages as Message[],
+        systemPrompt || "",
+        params as GeminiParams
+      );
 
-    return NextResponse.json({ text: response });
+      return NextResponse.json({ text: response });
+    } catch (error: any) {
+      console.error("非流式响应生成错误:", error);
+      return NextResponse.json(
+        { error: error.message || "生成响应时出错" },
+        { status: 500 }
+      );
+    }
   } catch (error: any) {
+    console.error("API处理错误:", error);
     return NextResponse.json(
       { error: error.message || "处理请求时出错" },
       { status: 500 }

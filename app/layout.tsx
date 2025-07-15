@@ -7,8 +7,8 @@ import { Header } from '@/components/header'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'AI角色扮演平台',
-  description: '一款基于Gemini的高度可定制AI对话平台',
+  title: 'AI对话平台',
+  description: '一款基于Gemini的智能AI对话平台',
   manifest: "/manifest.json",
 }
 
