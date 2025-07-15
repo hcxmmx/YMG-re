@@ -147,14 +147,42 @@ export class GeminiService {
       let hasYieldedContent = false;
       
       for await (const chunk of responseStream) {
-        if (chunk.text) {
-          hasYieldedContent = true;
-          yield chunk.text;
+        // 添加调试信息
+        console.debug("流式响应chunk:", JSON.stringify({
+          hasText: !!chunk.text,
+          hasCandidates: !!chunk.candidates,
+          candidatesLength: chunk.candidates?.length,
+          hasContent: !!chunk.candidates?.[0]?.content,
+          partsLength: chunk.candidates?.[0]?.content?.parts?.length,
+          firstPartType: chunk.candidates?.[0]?.content?.parts?.[0] ? 
+            Object.keys(chunk.candidates[0].content.parts[0]) : undefined
+        }));
+        
+        // 尝试从chunk中提取文本
+        let extractedText = "";
+        
+        // 方法1: 使用内置的text属性
+        if (chunk.text !== undefined) {
+          extractedText = chunk.text;
+        } 
+        // 方法2: 手动从parts中提取文本
+        else if (chunk.candidates?.[0]?.content?.parts) {
+          const parts = chunk.candidates[0].content.parts;
+          for (const part of parts) {
+            if (typeof part.text === 'string') {
+              extractedText += part.text;
+            }
+          }
         }
+        
+        // 无论是否提取到文本，都返回一个值（可能是空字符串）以保持流的连续性
+        hasYieldedContent = true;
+        yield extractedText || ""; // 确保始终返回字符串，即使是空字符串
       }
       
       // 如果没有生成任何内容，返回一个提示信息
       if (!hasYieldedContent) {
+        console.warn("流式响应未产生任何内容");
         yield "AI没有生成任何内容。可能是由于安全过滤或其他原因。";
       }
     } catch (error: any) {

@@ -34,18 +34,44 @@ export async function POST(req: NextRequest) {
       const customReadable = new ReadableStream({
         async start(controller) {
           try {
+            console.log("开始流式响应生成");
             const streamGenerator = geminiService.generateResponseStream(
               messages as Message[],
               systemPrompt || "",
               params as GeminiParams
             );
 
+            let chunkCount = 0;
+            let hasContent = false;
+            
             for await (const chunk of streamGenerator) {
-              // 确保每个chunk都被正确编码和发送
-              if (chunk) {
+              // 增加调试信息
+              chunkCount++;
+              console.log(`接收到第 ${chunkCount} 个数据块:`, 
+                chunk !== undefined ? 
+                  (typeof chunk === 'string' ? 
+                    (chunk ? `"${chunk.substring(0, 50)}${chunk.length > 50 ? '...' : ''}"` : '空字符串') 
+                    : '非字符串类型') 
+                  : 'undefined');
+              
+              // 确保每个chunk都被正确编码和发送，即使是空字符串也发送
+              if (chunk !== undefined) {
+                hasContent = true;
+                // 立即发送数据，不等待其他操作
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk })}\n\n`));
+                
+                // 添加一个小延迟，确保客户端有时间处理
+                await new Promise(resolve => setTimeout(resolve, 0));
               }
             }
+            
+            console.log(`流式响应完成，共 ${chunkCount} 个数据块，${hasContent ? '有内容' : '无内容'}`);
+            
+            // 如果没有任何内容，发送一个空响应提示
+            if (!hasContent) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: "AI未返回任何内容，可能是由于安全过滤或API限制。" })}\n\n`));
+            }
+            
             controller.enqueue(encoder.encode("data: [DONE]\n\n"));
             controller.close();
           } catch (error: any) {

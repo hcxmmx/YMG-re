@@ -35,5 +35,48 @@ export interface UserSettings {
   };
 }
 
+// 对话类型
+export interface Conversation {
+  id: string;
+  title: string;
+  messages: Message[];
+  systemPrompt?: string;
+  lastUpdated: number;
+}
+
+// 角色预设类型
+export interface Preset {
+  id: string;
+  name: string;
+  description?: string;
+  systemPrompt: string;
+  firstMessage?: string;
+  avatar?: string;
+  tags?: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+// 玩家类型
+export interface Player {
+  id: string;
+  name: string;
+  description?: string;
+  avatar?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// 世界书类型
+export interface WorldBook {
+  id: string;
+  name: string;
+  description?: string;
+  content: string;
+  tags?: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 // 从gemini.ts导出GeminiParams类型
 export type { GeminiParams } from './gemini'; 

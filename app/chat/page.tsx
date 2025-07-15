@@ -3,47 +3,39 @@
 import { useState, useEffect, useRef } from "react";
 import { Message } from "@/components/chat/message";
 import { ChatInput } from "@/components/chat/chat-input";
-import { useSettingsStore } from "@/lib/store";
+import { useSettingsStore, useChatStore } from "@/lib/store";
 import { Message as MessageType } from "@/lib/types";
 import { generateId } from "@/lib/utils";
 
 export default function ChatPage() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [messages, setMessages] = useState<MessageType[]>([]);
   const { settings } = useSettingsStore();
+  const { 
+    currentMessages, 
+    isLoading, 
+    systemPrompt,
+    addMessage,
+    updateMessage,
+    setIsLoading,
+    startNewConversation
+  } = useChatStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 当消息更新时滚动到底部
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [currentMessages]);
 
-  // 添加欢迎消息
-  useEffect(() => {
-    if (messages.length === 0) {
-      setMessages([
-        {
-          id: generateId(),
-          role: "assistant",
-          content: "你好！我是基于Gemini的AI助手。有什么我可以帮助你的吗？",
-          timestamp: new Date(),
-        },
-      ]);
-    }
-  }, [messages.length]);
+  // 移除欢迎消息的useEffect
 
   // 发送消息
   const handleSendMessage = async (content: string, images?: string[]) => {
     if (!settings.apiKey) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: generateId(),
-          role: "system",
-          content: "请先在设置中配置API密钥。",
-          timestamp: new Date(),
-        },
-      ]);
+      addMessage({
+        id: generateId(),
+        role: "system",
+        content: "请先在设置中配置API密钥。",
+        timestamp: new Date(),
+      });
       return;
     }
 
@@ -56,17 +48,17 @@ export default function ChatPage() {
       timestamp: new Date(),
     };
     
-    setMessages((prev) => [...prev, userMessage]);
+    await addMessage(userMessage);
     setIsLoading(true);
 
     try {
       // 构建请求消息历史
-      const requestMessages = [...messages, userMessage];
+      const requestMessages = [...currentMessages, userMessage];
 
       // API调用参数
       const params = {
         messages: requestMessages,
-        systemPrompt: "你是一个友好、乐于助人的AI助手。",
+        systemPrompt: systemPrompt,
         apiKey: settings.apiKey,
         stream: settings.enableStreaming,
         temperature: settings.temperature,
@@ -84,18 +76,6 @@ export default function ChatPage() {
 
       // 调用API获取回复
       if (settings.enableStreaming) {
-        // 创建初始空消息
-        const assistantMessageId = generateId();
-        const initialAssistantMessage: MessageType = {
-          id: assistantMessageId,
-          role: "assistant",
-          content: "",
-          timestamp: new Date(),
-        };
-        
-        // 添加初始空消息
-        setMessages((prev) => [...prev, initialAssistantMessage]);
-
         // 流式响应处理
         const response = await fetch("/api/chat", {
           method: "POST",
@@ -108,6 +88,7 @@ export default function ChatPage() {
           throw new Error(errorData.error || "API请求失败");
         }
 
+        console.log("流式响应开始接收");
         const reader = response.body?.getReader();
         if (!reader) throw new Error("流式响应读取失败");
 
@@ -115,14 +96,33 @@ export default function ChatPage() {
         let accumulatedContent = "";
         let decoder = new TextDecoder();
         let buffer = ""; // 用于存储不完整的数据块
+        let chunkCount = 0;
+        let dataChunkCount = 0;
+
+        // 创建初始空消息
+        const assistantMessageId = generateId();
+        const initialAssistantMessage: MessageType = {
+          id: assistantMessageId,
+          role: "assistant",
+          content: "",
+          timestamp: new Date(),
+        };
+        
+        // 添加初始空消息
+        await addMessage(initialAssistantMessage);
 
         // 处理流式数据
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            console.log("流式响应接收完成");
+            break;
+          }
 
           // 解码为文本
           const text = decoder.decode(value, { stream: true });
+          chunkCount++;
+          console.log(`接收到第 ${chunkCount} 个原始数据块，长度: ${text.length}`);
           buffer += text; // 将新数据添加到缓冲区
           
           // 尝试按SSE格式分割数据
@@ -131,45 +131,55 @@ export default function ChatPage() {
           buffer = lines.pop() || "";
           
           for (const line of lines) {
-            if (!line.trim() || !line.startsWith("data: ")) continue;
+            if (!line.trim()) continue;
+            
+            if (!line.startsWith("data: ")) {
+              console.warn("非预期格式的数据行:", line);
+              continue;
+            }
             
             const data = line.replace("data: ", "");
             if (data === "[DONE]") {
-              // 流结束标记，但继续处理其他可能的数据
+              console.log("收到流结束标记");
               continue;
             }
             
             try {
+              dataChunkCount++;
               const parsed = JSON.parse(data);
+              console.log(`解析第 ${dataChunkCount} 个数据块:`, 
+                parsed.text ? `文本(${parsed.text.length}字符)` : 
+                parsed.error ? `错误(${parsed.error})` : "无内容");
               
               if (parsed.error) {
                 console.error("流式响应错误:", parsed.error);
                 // 不抛出异常，而是显示错误消息
-                setMessages((prev) => 
-                  prev.map((msg) => 
-                    msg.id === assistantMessageId
-                      ? { 
-                          ...msg, 
-                          content: accumulatedContent + 
-                            (accumulatedContent ? "\n\n" : "") + 
-                            `[错误: ${parsed.error}]` 
-                        }
-                      : msg
-                  )
-                );
+                const updatedContent = accumulatedContent + 
+                  (accumulatedContent ? "\n\n" : "") + 
+                  `[错误: ${parsed.error}]`;
+                
+                // 使用updateMessage更新消息内容
+                // 移除await，不阻塞后续处理
+                updateMessage({
+                  id: assistantMessageId,
+                  role: "assistant",
+                  content: updatedContent,
+                  timestamp: new Date(),
+                });
                 continue;
               }
               
-              if (parsed.text) {
+              if (parsed.text !== undefined) {
                 accumulatedContent += parsed.text;
-                // 更新助手消息内容
-                setMessages((prev) => 
-                  prev.map((msg) => 
-                    msg.id === assistantMessageId
-                      ? { ...msg, content: accumulatedContent }
-                      : msg
-                  )
-                );
+                // 使用updateMessage更新消息内容，并添加时间戳用于调试
+                console.log(`更新消息内容，时间: ${new Date().toISOString()}, 新增内容: "${parsed.text}"`);
+                // 移除await，不阻塞后续处理
+                updateMessage({
+                  id: assistantMessageId,
+                  role: "assistant",
+                  content: accumulatedContent,
+                  timestamp: new Date(),
+                });
               }
             } catch (e) {
               // 解析失败，记录错误但不中断流程
@@ -181,6 +191,7 @@ export default function ChatPage() {
         
         // 处理缓冲区中可能剩余的数据
         if (buffer.trim()) {
+          console.log("处理剩余缓冲区数据");
           const lines = buffer.split("\n\n");
           for (const line of lines) {
             if (!line.trim() || !line.startsWith("data: ")) continue;
@@ -190,20 +201,33 @@ export default function ChatPage() {
             
             try {
               const parsed = JSON.parse(data);
-              if (parsed.text) {
+              if (parsed.text !== undefined) {
                 accumulatedContent += parsed.text;
-                setMessages((prev) => 
-                  prev.map((msg) => 
-                    msg.id === assistantMessageId
-                      ? { ...msg, content: accumulatedContent }
-                      : msg
-                  )
-                );
+                // 使用updateMessage更新消息内容
+                // 移除await，不阻塞后续处理
+                updateMessage({
+                  id: assistantMessageId,
+                  role: "assistant",
+                  content: accumulatedContent,
+                  timestamp: new Date(),
+                });
               }
             } catch (e) {
               console.error("解析剩余流式数据失败:", e);
             }
           }
+        }
+        
+        // 如果最终没有收到任何内容，显示提示信息
+        if (!accumulatedContent) {
+          console.warn("流式响应未产生任何内容");
+          // 移除await，不阻塞后续处理
+          updateMessage({
+            id: assistantMessageId,
+            role: "assistant",
+            content: "AI未能生成回复。可能是由于安全过滤或其他原因。",
+            timestamp: new Date(),
+          });
         }
       } else {
         // 非流式响应
@@ -221,54 +245,38 @@ export default function ChatPage() {
         const data = await response.json();
 
         // 添加助手回复
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: generateId(),
-            role: "assistant",
-            content: data.text,
-            timestamp: new Date(),
-          },
-        ]);
+        await addMessage({
+          id: generateId(),
+          role: "assistant",
+          content: data.text,
+          timestamp: new Date(),
+        });
       }
     } catch (error: any) {
       console.error("API调用失败:", error);
       // 添加错误消息
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: generateId(),
-          role: "system",
-          content: `消息发送失败: ${error.message || "未知错误"}。请检查网络连接和API密钥设置。`,
-          timestamp: new Date(),
-        },
-      ]);
+      await addMessage({
+        id: generateId(),
+        role: "system",
+        content: `消息发送失败: ${error.message || "未知错误"}。请检查网络连接和API密钥设置。`,
+        timestamp: new Date(),
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col h-screen">
-      {/* 聊天头部 */}
-      <header className="border-b p-4">
-        <h1 className="font-bold text-lg">Gemini {settings.model.split('-').slice(1).join('-')}</h1>
-        <p className="text-sm text-muted-foreground">
-          与Google的AI助手直接对话
-        </p>
-      </header>
-
-      {/* 消息列表 */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {messages.map((msg) => <Message key={msg.id} message={msg} />)}
-        {isLoading && !settings.enableStreaming && (
-          <div className="text-center py-2">AI正在思考...</div>
-        )}
+    <div className="flex flex-col h-[calc(100vh-65px)]">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {currentMessages.map((message) => (
+          <Message key={message.id} message={message} />
+        ))}
         <div ref={messagesEndRef} />
       </div>
-
-      {/* 输入区域 */}
-      <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading} />
+      <div className="sticky bottom-0 bg-background border-t">
+        <ChatInput onSendMessage={handleSendMessage} disabled={isLoading} isLoading={isLoading} />
+      </div>
     </div>
   );
 } 

@@ -1,78 +1,68 @@
 "use client";
 
 import Link from "next/link";
-import { MessageSquare, Settings, Menu, X } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { MoonIcon, SunIcon, MessageSquare, Users, User, BookOpen, Puzzle, Settings } from "lucide-react";
+import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 
 export function Header() {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-
-  const toggleMenu = () => {
-    setIsMenuOpen(!isMenuOpen);
-  };
+  const pathname = usePathname();
+  const { theme, setTheme } = useTheme();
+  
+  // 导航链接
+  const navLinks = [
+    { href: "/chat", label: "聊天", icon: MessageSquare },
+    { href: "/characters", label: "角色", icon: Users },
+    { href: "/players", label: "玩家", icon: User },
+    { href: "/worldbooks", label: "世界书", icon: BookOpen },
+    { href: "/extensions", label: "拓展", icon: Puzzle },
+    { href: "/settings", label: "设置", icon: Settings },
+  ];
 
   return (
-    <header className="border-b">
-      <div className="container mx-auto flex justify-between items-center py-4 px-4">
-        {/* 标志和名称 */}
-        <Link href="/" className="flex items-center space-x-2">
-          <span className="font-bold text-xl">AI对话平台</span>
+    <header className="border-b sticky top-0 bg-background z-10">
+      <div className="container mx-auto flex items-center justify-between p-2 md:p-4">
+        {/* 标志和标题 */}
+        <Link href="/" className="font-bold text-lg md:text-xl">
+          AI角色扮演
         </Link>
 
-        {/* 桌面导航 */}
-        <nav className="hidden md:flex items-center space-x-6">
-          <Link
-            href="/chat"
-            className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
+        {/* 导航链接 */}
+        <nav className="flex items-center gap-1 md:gap-2">
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={cn(
+                "p-2 rounded-md transition-colors flex items-center justify-center",
+                pathname === link.href
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              )}
+              title={link.label}
+            >
+              <link.icon className="h-4 w-4 md:h-5 md:w-5" />
+              <span className="sr-only md:not-sr-only md:ml-2 md:text-sm">{link.label}</span>
+            </Link>
+          ))}
+          
+          {/* 主题切换 */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            className="ml-1"
+            title={theme === "dark" ? "切换到亮色模式" : "切换到暗色模式"}
           >
-            <MessageSquare size={18} />
-            <span>聊天</span>
-          </Link>
-          <Link
-            href="/settings"
-            className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
-          >
-            <Settings size={18} />
-            <span>设置</span>
-          </Link>
-        </nav>
-
-        {/* 移动端菜单按钮 */}
-        <button
-          onClick={toggleMenu}
-          className="md:hidden p-2 text-muted-foreground hover:text-foreground"
-          aria-label="菜单"
-        >
-          {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
-      </div>
-
-      {/* 移动端下拉菜单 */}
-      <div
-        className={cn(
-          "md:hidden absolute w-full bg-background border-b z-50 transition-all duration-300",
-          isMenuOpen ? "max-h-60" : "max-h-0 overflow-hidden border-b-0"
-        )}
-      >
-        <nav className="container mx-auto py-4 px-6 flex flex-col space-y-4">
-          <Link
-            href="/chat"
-            className="py-2 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
-            onClick={() => setIsMenuOpen(false)}
-          >
-            <MessageSquare size={18} />
-            <span>聊天</span>
-          </Link>
-          <Link
-            href="/settings"
-            className="py-2 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
-            onClick={() => setIsMenuOpen(false)}
-          >
-            <Settings size={18} />
-            <span>设置</span>
-          </Link>
+            {theme === "dark" ? (
+              <SunIcon className="h-4 w-4 md:h-5 md:w-5" />
+            ) : (
+              <MoonIcon className="h-4 w-4 md:h-5 md:w-5" />
+            )}
+            <span className="sr-only">切换主题</span>
+          </Button>
         </nav>
       </div>
     </header>
