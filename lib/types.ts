@@ -5,6 +5,9 @@ export interface Message {
   content: string;
   timestamp: Date;
   images?: string[]; // 图片URL或DataURL列表
+  messageNumber?: number; // 消息楼层号
+  charCount?: number; // 字符数统计
+  responseTime?: number; // 响应时间（毫秒）
 }
 
 // 安全设置阈值类型

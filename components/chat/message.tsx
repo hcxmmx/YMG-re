@@ -4,7 +4,7 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Message as MessageType } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, Clock, Hash, BarChart2 } from "lucide-react";
 
 interface MessageProps {
   message: MessageType;
@@ -39,10 +39,20 @@ export function Message({ message }: MessageProps) {
   return (
     <div
       className={cn(
-        "flex gap-3 mb-4",
+        "flex gap-3 mb-4 group",
         isUser ? "justify-end" : "justify-start"
       )}
     >
+      {/* 楼层号 - 非用户消息时显示在左侧 */}
+      {!isUser && message.messageNumber && (
+        <div className="flex items-start mt-1">
+          <span className="text-xs text-muted-foreground flex items-center">
+            <Hash size={12} className="mr-1" />
+            {message.messageNumber}
+          </span>
+        </div>
+      )}
+
       <div
         className={cn(
           "px-4 py-3 rounded-lg",
@@ -86,9 +96,37 @@ export function Message({ message }: MessageProps) {
 
         {/* 消息元数据和操作 */}
         <div className="flex justify-between items-center mt-2 text-xs opacity-70">
-          <span>
-            {new Date(message.timestamp).toLocaleTimeString("zh-CN")}
-          </span>
+          <div className="flex items-center gap-2">
+            {/* 时间戳 */}
+            <span className="flex items-center">
+              <Clock size={12} className="mr-1" />
+              {new Date(message.timestamp).toLocaleTimeString("zh-CN")}
+            </span>
+            
+            {/* 字符统计 */}
+            {message.charCount !== undefined && (
+              <span className="flex items-center" title="字符数">
+                <BarChart2 size={12} className="mr-1" />
+                {message.charCount}
+              </span>
+            )}
+            
+            {/* 响应时间 */}
+            {message.responseTime !== undefined && !isUser && (
+              <span className="flex items-center" title="响应时间">
+                {(message.responseTime / 1000).toFixed(1)}s
+              </span>
+            )}
+            
+            {/* 楼层号 - 用户消息时显示在这里 */}
+            {isUser && message.messageNumber && (
+              <span className="flex items-center">
+                <Hash size={12} className="mr-1" />
+                {message.messageNumber}
+              </span>
+            )}
+          </div>
+          
           <div className="flex gap-2">
             <button
               onClick={() => setShowRaw(!showRaw)}

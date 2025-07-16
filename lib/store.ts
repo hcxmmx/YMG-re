@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { UserSettings, Message } from './types';
+import type { UserSettings, Message, Conversation } from './types';
 import { HarmBlockThreshold } from './types';
 import { conversationStorage } from './storage';
 import { generateId } from './utils';
@@ -48,6 +48,8 @@ interface ChatState {
   currentTitle: string;
   isLoading: boolean;
   systemPrompt: string;
+  conversations: Conversation[];
+  messageCounter: number;
   
   // 操作方法
   setCurrentConversation: (id: string | null) => Promise<void>;
@@ -56,6 +58,7 @@ interface ChatState {
   startNewConversation: () => void;
   setSystemPrompt: (prompt: string) => void;
   setIsLoading: (loading: boolean) => void;
+  loadConversations: () => Promise<void>;
 }
 
 export const useChatStore = create<ChatState>()((set, get) => ({
@@ -64,6 +67,24 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   currentTitle: '新对话',
   isLoading: false,
   systemPrompt: '你是一个友好、乐于助人的AI助手。',
+  conversations: [],
+  messageCounter: 0,
+  
+  loadConversations: async () => {
+    try {
+      const conversations = await conversationStorage.listConversations();
+      set({ conversations: conversations.reverse() }); // 最新的对话排在前面
+      
+      // 如果有对话历史但没有当前对话，自动加载最近的对话
+      const { currentConversationId } = get();
+      if (conversations.length > 0 && !currentConversationId) {
+        const latestConversation = conversations[0]; // 最新的对话
+        await get().setCurrentConversation(latestConversation.id);
+      }
+    } catch (error) {
+      console.error('加载对话历史失败:', error);
+    }
+  },
   
   setCurrentConversation: async (id) => {
     if (!id) {
@@ -71,18 +92,36 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         currentConversationId: null,
         currentMessages: [],
         currentTitle: '新对话',
-        systemPrompt: '你是一个友好、乐于助人的AI助手。'
+        systemPrompt: '你是一个友好、乐于助人的AI助手。',
+        messageCounter: 0
       });
       return;
     }
     
     const conversation = await conversationStorage.getConversation(id);
     if (conversation) {
+      // 计算最大的消息编号
+      let maxMessageNumber = 0;
+      const messagesWithNumbers = conversation.messages.map(msg => {
+        // 保留已有的消息编号，或者分配新编号
+        if (msg.messageNumber) {
+          maxMessageNumber = Math.max(maxMessageNumber, msg.messageNumber);
+          return msg;
+        }
+        // 系统消息不分配楼层号
+        if (msg.role === 'system') return msg;
+        
+        // 为用户和助手消息分配楼层号
+        maxMessageNumber++;
+        return { ...msg, messageNumber: maxMessageNumber };
+      });
+      
       set({
         currentConversationId: id,
-        currentMessages: conversation.messages,
+        currentMessages: messagesWithNumbers,
         currentTitle: conversation.title,
-        systemPrompt: conversation.systemPrompt || '你是一个友好、乐于助人的AI助手。'
+        systemPrompt: conversation.systemPrompt || '你是一个友好、乐于助人的AI助手。',
+        messageCounter: maxMessageNumber
       });
     }
   },
@@ -90,17 +129,29 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   addMessage: async (message) => {
     // 检查消息是否已存在（用于流式响应更新）
     const existingIndex = get().currentMessages.findIndex(msg => msg.id === message.id);
+    let updatedMessage = { ...message };
+    
+    // 为非系统消息添加楼层号
+    if (message.role !== 'system' && !message.messageNumber) {
+      const newCounter = get().messageCounter + 1;
+      updatedMessage = { 
+        ...updatedMessage, 
+        messageNumber: newCounter,
+        charCount: message.content.length
+      };
+      set({ messageCounter: newCounter });
+    }
     
     if (existingIndex !== -1) {
       // 如果消息已存在，更新它而不是添加新消息
       const updatedMessages = [...get().currentMessages];
-      updatedMessages[existingIndex] = message;
+      updatedMessages[existingIndex] = updatedMessage;
       
       set({ currentMessages: updatedMessages });
     } else {
       // 如果是新消息，添加到列表
       set((state) => ({
-        currentMessages: [...state.currentMessages, message]
+        currentMessages: [...state.currentMessages, updatedMessage]
       }));
     }
     
@@ -120,7 +171,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     // 获取当前消息列表，考虑到可能刚刚更新过
     const messagesToSave = existingIndex !== -1 
       ? get().currentMessages // 使用最新的消息列表
-      : [...currentMessages, message]; // 添加新消息
+      : [...currentMessages, updatedMessage]; // 添加新消息
     
     // 保存到IndexedDB
     await conversationStorage.saveConversation(
@@ -134,6 +185,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     if (!currentConversationId) {
       set({ currentConversationId: conversationId, currentTitle: title });
     }
+    
+    // 更新对话列表
+    get().loadConversations();
   },
   
   // 添加一个专门用于更新消息的方法
@@ -146,8 +200,17 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       return;
     }
     
+    // 保留原有的楼层号和其他元数据
+    const existingMessage = currentMessages[existingIndex];
+    const updatedMessage = { 
+      ...existingMessage, 
+      ...message,
+      messageNumber: existingMessage.messageNumber,
+      charCount: message.content.length
+    };
+    
     const updatedMessages = [...currentMessages];
-    updatedMessages[existingIndex] = message;
+    updatedMessages[existingIndex] = updatedMessage;
     
     // 立即更新UI状态，不等待保存完成
     set({ currentMessages: updatedMessages });
@@ -176,7 +239,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       currentConversationId: null,
       currentMessages: [],
       currentTitle: '新对话',
-      systemPrompt: '你是一个友好、乐于助人的AI助手。'
+      systemPrompt: '你是一个友好、乐于助人的AI助手。',
+      messageCounter: 0
     });
   },
   
@@ -196,3 +260,11 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   
   setIsLoading: (loading) => set({ isLoading: loading })
 })); 
+
+// 初始化时加载对话历史
+if (typeof window !== 'undefined') {
+  // 确保在浏览器环境中执行
+  setTimeout(() => {
+    useChatStore.getState().loadConversations();
+  }, 0);
+} 

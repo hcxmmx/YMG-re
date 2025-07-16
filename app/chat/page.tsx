@@ -19,13 +19,12 @@ export default function ChatPage() {
     startNewConversation
   } = useChatStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const responseStartTimeRef = useRef<number>(0);
 
   // 当消息更新时滚动到底部
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentMessages]);
-
-  // 移除欢迎消息的useEffect
 
   // 发送消息
   const handleSendMessage = async (content: string, images?: string[]) => {
@@ -50,6 +49,9 @@ export default function ChatPage() {
     
     await addMessage(userMessage);
     setIsLoading(true);
+    
+    // 记录响应开始时间
+    responseStartTimeRef.current = Date.now();
 
     try {
       // 构建请求消息历史
@@ -98,6 +100,7 @@ export default function ChatPage() {
         let buffer = ""; // 用于存储不完整的数据块
         let chunkCount = 0;
         let dataChunkCount = 0;
+        let firstChunkReceived = false;
 
         // 创建初始空消息
         const assistantMessageId = generateId();
@@ -159,7 +162,6 @@ export default function ChatPage() {
                   `[错误: ${parsed.error}]`;
                 
                 // 使用updateMessage更新消息内容
-                // 移除await，不阻塞后续处理
                 updateMessage({
                   id: assistantMessageId,
                   role: "assistant",
@@ -170,10 +172,16 @@ export default function ChatPage() {
               }
               
               if (parsed.text !== undefined) {
+                // 记录第一个内容块的时间
+                if (!firstChunkReceived) {
+                  firstChunkReceived = true;
+                  const firstChunkTime = Date.now() - responseStartTimeRef.current;
+                  console.log(`首个响应块接收时间: ${firstChunkTime}ms`);
+                }
+                
                 accumulatedContent += parsed.text;
                 // 使用updateMessage更新消息内容，并添加时间戳用于调试
                 console.log(`更新消息内容，时间: ${new Date().toISOString()}, 新增内容: "${parsed.text}"`);
-                // 移除await，不阻塞后续处理
                 updateMessage({
                   id: assistantMessageId,
                   role: "assistant",
@@ -204,7 +212,6 @@ export default function ChatPage() {
               if (parsed.text !== undefined) {
                 accumulatedContent += parsed.text;
                 // 使用updateMessage更新消息内容
-                // 移除await，不阻塞后续处理
                 updateMessage({
                   id: assistantMessageId,
                   role: "assistant",
@@ -218,15 +225,28 @@ export default function ChatPage() {
           }
         }
         
+        // 计算总响应时间并更新消息
+        const responseTime = Date.now() - responseStartTimeRef.current;
+        console.log(`总响应时间: ${responseTime}ms`);
+        
         // 如果最终没有收到任何内容，显示提示信息
         if (!accumulatedContent) {
           console.warn("流式响应未产生任何内容");
-          // 移除await，不阻塞后续处理
           updateMessage({
             id: assistantMessageId,
             role: "assistant",
             content: "AI未能生成回复。可能是由于安全过滤或其他原因。",
             timestamp: new Date(),
+            responseTime: responseTime
+          });
+        } else {
+          // 更新最终消息，包含响应时间
+          updateMessage({
+            id: assistantMessageId,
+            role: "assistant",
+            content: accumulatedContent,
+            timestamp: new Date(),
+            responseTime: responseTime
           });
         }
       } else {
@@ -243,6 +263,7 @@ export default function ChatPage() {
         }
 
         const data = await response.json();
+        const responseTime = Date.now() - responseStartTimeRef.current;
 
         // 添加助手回复
         await addMessage({
@@ -250,6 +271,7 @@ export default function ChatPage() {
           role: "assistant",
           content: data.text,
           timestamp: new Date(),
+          responseTime: responseTime
         });
       }
     } catch (error: any) {
