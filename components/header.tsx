@@ -6,10 +6,17 @@ import { Button } from "@/components/ui/button";
 import { MoonIcon, SunIcon, MessageSquare, Users, User, BookOpen, Puzzle, Settings } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
+import { useEffect, useState } from "react";
 
 export function Header() {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  
+  // 在客户端完成挂载后才渲染主题按钮内容
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   
   // 导航链接
   const navLinks = [
@@ -48,19 +55,19 @@ export function Header() {
             </Link>
           ))}
           
-          {/* 主题切换 */}
+          {/* 主题切换 - 只在客户端渲染后显示图标和title */}
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             className="ml-1"
-            title={theme === "dark" ? "切换到亮色模式" : "切换到暗色模式"}
+            title={mounted ? (theme === "dark" ? "切换到亮色模式" : "切换到暗色模式") : "切换主题"}
           >
-            {theme === "dark" ? (
+            {mounted && (theme === "dark" ? (
               <SunIcon className="h-4 w-4 md:h-5 md:w-5" />
             ) : (
               <MoonIcon className="h-4 w-4 md:h-5 md:w-5" />
-            )}
+            ))}
             <span className="sr-only">切换主题</span>
           </Button>
         </nav>
