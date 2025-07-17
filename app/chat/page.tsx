@@ -7,6 +7,7 @@ import { ChatHeader } from "@/components/chat/chat-header";
 import { useSettingsStore, useChatStore } from "@/lib/store";
 import { Message as MessageType } from "@/lib/types";
 import { generateId } from "@/lib/utils";
+import { useNavbar } from "@/app/layout";
 
 export default function ChatPage() {
   const { settings } = useSettingsStore();
@@ -19,6 +20,7 @@ export default function ChatPage() {
     setIsLoading,
     startNewConversation
   } = useChatStore();
+  const { isNavbarVisible } = useNavbar();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const responseStartTimeRef = useRef<number>(0);
 
@@ -26,6 +28,18 @@ export default function ChatPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentMessages]);
+  
+  // 当导航栏状态改变时，保持滚动位置
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      // 如果有新消息，滚动到底部
+      if (currentMessages.length > 0 && !isLoading) {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
+    }, 300); // 等待导航栏动画完成
+    
+    return () => clearTimeout(timer);
+  }, [isNavbarVisible, isLoading]);
 
   // 发送消息
   const handleSendMessage = async (content: string, images?: string[]) => {
@@ -290,7 +304,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-65px)]">
+    <div className={`flex flex-col ${isNavbarVisible ? 'h-[calc(100vh-65px)]' : 'h-screen'}`}>
       <ChatHeader />
       <div className="flex-1 overflow-y-auto p-4">
         {currentMessages.map((message) => (
