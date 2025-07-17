@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { Message as MessageType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Copy, Check, Clock, Hash, BarChart2 } from "lucide-react";
+import { useSettingsStore } from "@/lib/store";
 
 interface MessageProps {
   message: MessageType;
@@ -13,6 +14,10 @@ interface MessageProps {
 export function Message({ message }: MessageProps) {
   const [showRaw, setShowRaw] = useState(false);
   const [copied, setCopied] = useState(false);
+  const { uiSettings } = useSettingsStore();
+  
+  // 获取UI设置
+  const { showResponseTime, showCharCount, showMessageNumber } = uiSettings;
 
   // 根据角色确定消息的样式
   const isUser = message.role === "user";
@@ -44,7 +49,7 @@ export function Message({ message }: MessageProps) {
       )}
     >
       {/* 楼层号 - 非用户消息时显示在左侧 */}
-      {!isUser && message.messageNumber && (
+      {!isUser && message.messageNumber && showMessageNumber && (
         <div className="flex items-start mt-1">
           <span className="text-xs text-muted-foreground flex items-center">
             <Hash size={12} className="mr-1" />
@@ -104,7 +109,7 @@ export function Message({ message }: MessageProps) {
             </span>
             
             {/* 字符统计 */}
-            {message.charCount !== undefined && (
+            {message.charCount !== undefined && showCharCount && (
               <span className="flex items-center" title="字符数">
                 <BarChart2 size={12} className="mr-1" />
                 {message.charCount}
@@ -112,14 +117,14 @@ export function Message({ message }: MessageProps) {
             )}
             
             {/* 响应时间 */}
-            {message.responseTime !== undefined && !isUser && (
+            {message.responseTime !== undefined && !isUser && showResponseTime && (
               <span className="flex items-center" title="响应时间">
                 {(message.responseTime / 1000).toFixed(1)}s
               </span>
             )}
             
             {/* 楼层号 - 用户消息时显示在这里 */}
-            {isUser && message.messageNumber && (
+            {isUser && message.messageNumber && showMessageNumber && (
               <span className="flex items-center">
                 <Hash size={12} className="mr-1" />
                 {message.messageNumber}

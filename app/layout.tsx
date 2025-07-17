@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Header } from "@/components/header";
 import { useState, useEffect, createContext, useContext } from "react";
 import { usePathname } from "next/navigation";
+import { useSettingsStore } from "@/lib/store";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -26,11 +27,22 @@ export default function RootLayout({
 }>) {
   const [isNavbarVisible, setIsNavbarVisible] = useState(true);
   const pathname = usePathname();
+  const { uiSettings } = useSettingsStore();
   
   // 当路由变化时，重置导航栏为可见
   useEffect(() => {
     setIsNavbarVisible(true);
   }, [pathname]);
+  
+  // 初始化localStorage中的UI设置值
+  useEffect(() => {
+    // 确保只在客户端执行
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('showResponseTime', String(uiSettings.showResponseTime));
+      localStorage.setItem('showCharCount', String(uiSettings.showCharCount));
+      localStorage.setItem('showMessageNumber', String(uiSettings.showMessageNumber));
+    }
+  }, [uiSettings]);
   
   const toggleNavbar = () => {
     setIsNavbarVisible(prev => !prev);

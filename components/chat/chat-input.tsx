@@ -4,6 +4,7 @@ import { useState, useRef, ChangeEvent, FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send, Image } from "lucide-react";
+import { ChatSettings } from "./chat-settings";
 
 export interface ChatInputProps {
   onSendMessage: (content: string, images?: string[]) => void;
@@ -85,6 +86,8 @@ export function ChatInput({ onSendMessage, isLoading, disabled }: ChatInputProps
       )}
       
       <div className="flex gap-2 items-center">
+        <ChatSettings />
+        
         <Button
           type="button"
           variant="ghost"

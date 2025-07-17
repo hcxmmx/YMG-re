@@ -8,7 +8,17 @@ import { generateId } from './utils';
 // 用户设置存储
 interface SettingsState {
   settings: UserSettings;
+  uiSettings: {
+    showResponseTime: boolean;
+    showCharCount: boolean;
+    showMessageNumber: boolean;
+  };
   updateSettings: (settings: Partial<UserSettings>) => void;
+  updateUISettings: (settings: Partial<{
+    showResponseTime: boolean;
+    showCharCount: boolean;
+    showMessageNumber: boolean;
+  }>) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -30,10 +40,32 @@ export const useSettingsStore = create<SettingsState>()(
           dangerousContent: HarmBlockThreshold.BLOCK_NONE,
         },
       },
+      uiSettings: {
+        showResponseTime: true,
+        showCharCount: true,
+        showMessageNumber: true,
+      },
       updateSettings: (newSettings) =>
         set((state) => ({
           settings: { ...state.settings, ...newSettings },
         })),
+      updateUISettings: (newUISettings) =>
+        set((state) => {
+          // 同时更新localStorage以便消息组件可以直接读取
+          if (newUISettings.showResponseTime !== undefined) {
+            localStorage.setItem('showResponseTime', String(newUISettings.showResponseTime));
+          }
+          if (newUISettings.showCharCount !== undefined) {
+            localStorage.setItem('showCharCount', String(newUISettings.showCharCount));
+          }
+          if (newUISettings.showMessageNumber !== undefined) {
+            localStorage.setItem('showMessageNumber', String(newUISettings.showMessageNumber));
+          }
+          
+          return {
+            uiSettings: { ...state.uiSettings, ...newUISettings },
+          };
+        }),
     }),
     {
       name: 'ai-roleplay-settings',
