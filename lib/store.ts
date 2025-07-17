@@ -59,6 +59,7 @@ interface ChatState {
   setSystemPrompt: (prompt: string) => void;
   setIsLoading: (loading: boolean) => void;
   loadConversations: () => Promise<void>;
+  updateConversationTitle: (title: string) => Promise<void>;
 }
 
 export const useChatStore = create<ChatState>()((set, get) => ({
@@ -255,6 +256,24 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         currentMessages,
         prompt
       );
+    }
+  },
+  
+  updateConversationTitle: async (title) => {
+    const { currentConversationId, currentMessages, systemPrompt } = get();
+    
+    if (currentConversationId) {
+      set({ currentTitle: title });
+      
+      await conversationStorage.saveConversation(
+        currentConversationId,
+        title,
+        currentMessages,
+        systemPrompt
+      );
+      
+      // 更新对话列表
+      get().loadConversations();
     }
   },
   

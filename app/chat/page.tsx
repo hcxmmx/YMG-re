@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Message } from "@/components/chat/message";
 import { ChatInput } from "@/components/chat/chat-input";
+import { ChatHeader } from "@/components/chat/chat-header";
 import { useSettingsStore, useChatStore } from "@/lib/store";
 import { Message as MessageType } from "@/lib/types";
 import { generateId } from "@/lib/utils";
@@ -290,14 +291,19 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-65px)]">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <ChatHeader />
+      <div className="flex-1 overflow-y-auto p-4">
         {currentMessages.map((message) => (
           <Message key={message.id} message={message} />
         ))}
         <div ref={messagesEndRef} />
       </div>
-      <div className="sticky bottom-0 bg-background border-t">
-        <ChatInput onSendMessage={handleSendMessage} disabled={isLoading} isLoading={isLoading} />
+      <div className="border-t">
+        <ChatInput 
+          onSendMessage={handleSendMessage} 
+          isLoading={isLoading}
+          disabled={isLoading}
+        />
       </div>
     </div>
   );
