@@ -40,6 +40,262 @@ export default function ChatPage() {
     
     return () => clearTimeout(timer);
   }, [isNavbarVisible, isLoading]);
+  
+  // 重新生成AI回复
+  const handleRegenerateMessage = async (messageId: string) => {
+    // 找到需要重新生成的消息
+    const messageToRegenerate = currentMessages.find(msg => msg.id === messageId);
+    if (!messageToRegenerate || messageToRegenerate.role !== 'assistant') return;
+    
+    // 找到该消息之前的用户消息作为提示
+    const messageIndex = currentMessages.findIndex(msg => msg.id === messageId);
+    if (messageIndex <= 0) return; // 没有前置消息，无法重新生成
+    
+    // 获取最近的用户消息
+    let userMessageIndex = messageIndex - 1;
+    while (userMessageIndex >= 0 && currentMessages[userMessageIndex].role !== 'user') {
+      userMessageIndex--;
+    }
+    
+    if (userMessageIndex < 0) return; // 没有找到前置用户消息
+    
+    // 保存原始消息的楼层号，确保重新生成时保持相同的编号
+    const originalMessageNumber = messageToRegenerate.messageNumber;
+    
+    // 将当前消息内容设置为"正在重新生成..."
+    updateMessage({
+      ...messageToRegenerate,
+      content: "正在重新生成...",
+      messageNumber: originalMessageNumber // 确保保留原始楼层号
+    });
+    
+    setIsLoading(true);
+    
+    // 记录响应开始时间
+    responseStartTimeRef.current = Date.now();
+    
+    try {
+      // 构建请求消息历史（不包含当前消息和之后的消息）
+      const requestMessages = currentMessages.slice(0, messageIndex);
+      
+      // API调用参数
+      const params = {
+        messages: requestMessages,
+        systemPrompt: systemPrompt,
+        apiKey: settings.apiKey,
+        stream: settings.enableStreaming,
+        temperature: settings.temperature,
+        maxOutputTokens: settings.maxTokens,
+        topK: settings.topK,
+        topP: settings.topP,
+        model: settings.model,
+        safetySettings: [
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: settings.safetySettings.hateSpeech },
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: settings.safetySettings.harassment },
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: settings.safetySettings.sexuallyExplicit },
+          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: settings.safetySettings.dangerousContent }
+        ]
+      };
+
+      // 调用API获取回复
+      if (settings.enableStreaming) {
+        // 流式响应处理
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(params),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "API请求失败");
+        }
+
+        console.log("流式响应开始接收");
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("流式响应读取失败");
+
+        // 累积的响应内容
+        let accumulatedContent = "";
+        let decoder = new TextDecoder();
+        let buffer = ""; // 用于存储不完整的数据块
+        let chunkCount = 0;
+        let dataChunkCount = 0;
+        let firstChunkReceived = false;
+        
+        // 处理流式数据
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            console.log("流式响应接收完成");
+            break;
+          }
+
+          // 解码为文本
+          const text = decoder.decode(value, { stream: true });
+          chunkCount++;
+          console.log(`接收到第 ${chunkCount} 个原始数据块，长度: ${text.length}`);
+          buffer += text; // 将新数据添加到缓冲区
+          
+          // 尝试按SSE格式分割数据
+          const lines = buffer.split("\n\n");
+          // 保留最后一个可能不完整的块
+          buffer = lines.pop() || "";
+          
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            
+            if (!line.startsWith("data: ")) {
+              console.warn("非预期格式的数据行:", line);
+              continue;
+            }
+            
+            const data = line.replace("data: ", "");
+            if (data === "[DONE]") {
+              console.log("收到流结束标记");
+              continue;
+            }
+            
+            try {
+              dataChunkCount++;
+              const parsed = JSON.parse(data);
+              console.log(`解析第 ${dataChunkCount} 个数据块:`, 
+                parsed.text ? `文本(${parsed.text.length}字符)` : 
+                parsed.error ? `错误(${parsed.error})` : "无内容");
+              
+              if (parsed.error) {
+                console.error("流式响应错误:", parsed.error);
+                // 不抛出异常，而是显示错误消息
+                const updatedContent = accumulatedContent + 
+                  (accumulatedContent ? "\n\n" : "") + 
+                  `[错误: ${parsed.error}]`;
+                
+                // 使用updateMessage更新消息内容
+                updateMessage({
+                  ...messageToRegenerate,
+                  content: updatedContent,
+                  timestamp: new Date(),
+                  messageNumber: originalMessageNumber // 保留原始楼层号
+                });
+                continue;
+              }
+              
+              if (parsed.text !== undefined) {
+                // 记录第一个内容块的时间
+                if (!firstChunkReceived) {
+                  firstChunkReceived = true;
+                  const firstChunkTime = Date.now() - responseStartTimeRef.current;
+                  console.log(`首个响应块接收时间: ${firstChunkTime}ms`);
+                }
+                
+                accumulatedContent += parsed.text;
+                // 使用updateMessage更新消息内容，并添加时间戳用于调试
+                console.log(`更新消息内容，时间: ${new Date().toISOString()}, 新增内容: "${parsed.text}"`);
+                updateMessage({
+                  ...messageToRegenerate,
+                  content: accumulatedContent,
+                  timestamp: new Date(),
+                  messageNumber: originalMessageNumber // 保留原始楼层号
+                });
+              }
+            } catch (e) {
+              // 解析失败，记录错误但不中断流程
+              console.error("解析流式数据失败:", e, "原始数据:", data);
+              // 继续处理下一个数据块
+            }
+          }
+        }
+        
+        // 处理缓冲区中可能剩余的数据
+        if (buffer.trim()) {
+          console.log("处理剩余缓冲区数据");
+          const lines = buffer.split("\n\n");
+          for (const line of lines) {
+            if (!line.trim() || !line.startsWith("data: ")) continue;
+            
+            const data = line.replace("data: ", "");
+            if (data === "[DONE]") continue;
+            
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.text !== undefined) {
+                accumulatedContent += parsed.text;
+                // 使用updateMessage更新消息内容
+                updateMessage({
+                  ...messageToRegenerate,
+                  content: accumulatedContent,
+                  timestamp: new Date(),
+                  messageNumber: originalMessageNumber // 保留原始楼层号
+                });
+              }
+            } catch (e) {
+              console.error("解析剩余流式数据失败:", e);
+            }
+          }
+        }
+        
+        // 计算总响应时间并更新消息
+        const responseTime = Date.now() - responseStartTimeRef.current;
+        console.log(`总响应时间: ${responseTime}ms`);
+        
+        // 如果最终没有收到任何内容，显示提示信息
+        if (!accumulatedContent) {
+          console.warn("流式响应未产生任何内容");
+          updateMessage({
+            ...messageToRegenerate,
+            content: "AI未能生成回复。可能是由于安全过滤或其他原因。",
+            timestamp: new Date(),
+            responseTime: responseTime,
+            messageNumber: originalMessageNumber // 保留原始楼层号
+          });
+        } else {
+          // 更新最终消息，包含响应时间
+          updateMessage({
+            ...messageToRegenerate,
+            content: accumulatedContent,
+            timestamp: new Date(),
+            responseTime: responseTime,
+            messageNumber: originalMessageNumber // 保留原始楼层号
+          });
+        }
+      } else {
+        // 非流式响应
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(params),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "API请求失败");
+        }
+
+        const data = await response.json();
+        const responseTime = Date.now() - responseStartTimeRef.current;
+
+        // 更新消息
+        updateMessage({
+          ...messageToRegenerate,
+          content: data.text,
+          timestamp: new Date(),
+          responseTime: responseTime,
+          messageNumber: originalMessageNumber // 保留原始楼层号
+        });
+      }
+    } catch (error: any) {
+      console.error("API调用失败:", error);
+      // 更新为错误消息
+      updateMessage({
+        ...messageToRegenerate,
+        content: `重新生成失败: ${error.message || "未知错误"}。请检查网络连接和API密钥设置。`,
+        timestamp: new Date(),
+        messageNumber: originalMessageNumber // 保留原始楼层号
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // 发送消息
   const handleSendMessage = async (content: string, images?: string[]) => {
@@ -308,7 +564,11 @@ export default function ChatPage() {
       <ChatHeader />
       <div className="flex-1 overflow-y-auto p-4">
         {currentMessages.map((message) => (
-          <Message key={message.id} message={message} />
+          <Message 
+            key={message.id} 
+            message={message} 
+            onRegenerate={handleRegenerateMessage}
+          />
         ))}
         <div ref={messagesEndRef} />
       </div>

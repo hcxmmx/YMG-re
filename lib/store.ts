@@ -87,6 +87,7 @@ interface ChatState {
   setCurrentConversation: (id: string | null) => Promise<void>;
   addMessage: (message: Message) => Promise<void>;
   updateMessage: (message: Message) => Promise<void>;
+  deleteMessage: (messageId: string) => Promise<void>;
   startNewConversation: () => void;
   setSystemPrompt: (prompt: string) => void;
   setIsLoading: (loading: boolean) => void;
@@ -238,8 +239,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     const updatedMessage = { 
       ...existingMessage, 
       ...message,
-      messageNumber: existingMessage.messageNumber,
-      charCount: message.content.length
+      // 确保保留原有楼层号，除非新消息明确指定了楼层号
+      messageNumber: message.messageNumber || existingMessage.messageNumber,
+      // 更新字符统计
+      charCount: message.content ? message.content.length : 0
     };
     
     const updatedMessages = [...currentMessages];
@@ -265,6 +268,54 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         }
       }, 300); // 300ms延迟，避免频繁保存
     }
+  },
+
+  // 删除消息并重新计算楼层号
+  deleteMessage: async (messageId) => {
+    const { currentMessages } = get();
+    
+    // 找到要删除的消息
+    const messageIndex = currentMessages.findIndex(msg => msg.id === messageId);
+    if (messageIndex === -1) return;
+    
+    // 删除消息
+    const updatedMessages = currentMessages.filter(msg => msg.id !== messageId);
+    
+    // 重新计算非系统消息的楼层号
+    let counter = 0;
+    const messagesWithUpdatedNumbers = updatedMessages.map(msg => {
+      if (msg.role === 'system') return msg;
+      
+      counter++;
+      return {
+        ...msg,
+        messageNumber: counter
+      };
+    });
+    
+    // 更新状态
+    set({
+      currentMessages: messagesWithUpdatedNumbers,
+      messageCounter: counter
+    });
+    
+    // 保存更新后的消息
+    const { currentConversationId, currentTitle, systemPrompt } = get();
+    if (currentConversationId) {
+      try {
+        await conversationStorage.saveConversation(
+          currentConversationId,
+          currentTitle,
+          messagesWithUpdatedNumbers,
+          systemPrompt
+        );
+      } catch (error) {
+        console.error('保存对话失败:', error);
+      }
+    }
+    
+    // 更新对话列表
+    get().loadConversations();
   },
   
   startNewConversation: () => {
