@@ -4,7 +4,7 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Message as MessageType, Character } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Copy, Check, Clock, Hash, BarChart2, Trash2, Edit, RefreshCw, User } from "lucide-react";
+import { Copy, Check, Clock, Hash, BarChart2, Trash2, Edit, RefreshCw, User, ChevronLeft, ChevronRight } from "lucide-react";
 import { useSettingsStore, useChatStore } from "@/lib/store";
 import Image from "next/image";
 
@@ -21,7 +21,7 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
   const { uiSettings } = useSettingsStore();
-  const { updateMessage, deleteMessage } = useChatStore();
+  const { updateMessage, deleteMessage, currentMessages } = useChatStore();
   
   // 获取UI设置
   const { showResponseTime, showCharCount, showMessageNumber } = uiSettings;
@@ -30,6 +30,12 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
   const isAssistant = message.role === "assistant";
+  
+  // 判断是否为第一条消息
+  const isFirstMessage = isAssistant && 
+    currentMessages.findIndex(msg => msg.id === message.id) === 0 && 
+    character?.alternateGreetings && 
+    character.alternateGreetings.length > 0;
 
   // 复制消息内容
   const copyToClipboard = () => {
@@ -67,6 +73,34 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
     if (onRegenerate && isAssistant) {
       onRegenerate(message.id);
     }
+  };
+
+  // 切换开场白
+  const handleSwitchGreeting = (direction: 'prev' | 'next') => {
+    if (!character || !character.alternateGreetings || !character.firstMessage) return;
+    
+    // 收集所有可能的开场白
+    const allGreetings = [character.firstMessage, ...character.alternateGreetings];
+    
+    // 找到当前开场白的索引
+    const currentIndex = allGreetings.findIndex(greeting => greeting === message.content);
+    
+    // 如果没找到匹配的开场白，默认使用第一个
+    const currentGreetingIndex = currentIndex === -1 ? 0 : currentIndex;
+    
+    // 计算新的索引
+    let newIndex: number;
+    if (direction === 'prev') {
+      newIndex = (currentGreetingIndex - 1 + allGreetings.length) % allGreetings.length;
+    } else {
+      newIndex = (currentGreetingIndex + 1) % allGreetings.length;
+    }
+    
+    // 更新消息
+    updateMessage({
+      ...message,
+      content: allGreetings[newIndex]
+    });
   };
 
   // 如果是系统消息，则使用特殊样式
@@ -115,8 +149,6 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
             )}
           </div>
         )}
-
-        {/* 移除旧的楼层号显示代码 */}
 
         <div className="flex flex-col max-w-[85%]">
           <div
@@ -215,8 +247,6 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                     {(message.responseTime / 1000).toFixed(1)}s
                   </span>
                 )}
-                
-                {/* 移除旧的楼层号显示代码 */}
               </div>
 
               {/* 查看渲染/原文按钮（保留在消息气泡内） */}
@@ -250,25 +280,15 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
               <button
                 onClick={handleEdit}
                 className="flex items-center gap-0.5 p-0.5 rounded hover:bg-muted/30"
-                title="编辑"
+                title="编辑消息"
               >
                 <Edit size={12} />
                 <span className="text-xs">编辑</span>
               </button>
             )}
             
-            {/* 删除 */}
-            <button
-              onClick={handleDelete}
-              className="flex items-center gap-0.5 p-0.5 rounded hover:bg-muted/30 text-muted-foreground hover:text-destructive"
-              title="删除"
-            >
-              <Trash2 size={12} />
-              <span className="text-xs">删除</span>
-            </button>
-            
-            {/* 重新生成（仅针对AI消息） */}
-            {isAssistant && (
+            {/* 重新生成 - 仅对AI消息显示 */}
+            {isAssistant && onRegenerate && (
               <button
                 onClick={handleRegenerate}
                 className="flex items-center gap-0.5 p-0.5 rounded hover:bg-muted/30"
@@ -278,28 +298,46 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                 <span className="text-xs">重新生成</span>
               </button>
             )}
+            
+            {/* 删除 */}
+            <button
+              onClick={handleDelete}
+              className="flex items-center gap-0.5 p-0.5 rounded hover:bg-muted/30"
+              title="删除消息"
+            >
+              <Trash2 size={12} />
+              <span className="text-xs">删除</span>
+            </button>
+            
+            {/* 切换开场白 - 仅在第一条消息且有可选开场白时显示 */}
+            {isFirstMessage && (
+              <>
+                <button
+                  onClick={() => handleSwitchGreeting('prev')}
+                  className="flex items-center gap-0.5 p-0.5 rounded hover:bg-muted/30"
+                  title="上一个开场白"
+                >
+                  <ChevronLeft size={12} />
+                </button>
+                <button
+                  onClick={() => handleSwitchGreeting('next')}
+                  className="flex items-center gap-0.5 p-0.5 rounded hover:bg-muted/30"
+                  title="下一个开场白"
+                >
+                  <ChevronRight size={12} />
+                </button>
+              </>
+            )}
           </div>
         </div>
 
-        {/* 用户头像和楼层 - 用户消息时显示在右侧 */}
+        {/* 用户头像 - 用户消息时显示在右侧 */}
         {isUser && (
-          <div className="flex flex-col items-center gap-1">
-            <div className="h-8 w-8 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center">
-              <User className="h-5 w-5 text-primary-foreground" />
-            </div>
-            
-            {/* 楼层号 - 用户消息时显示在头像下方 */}
-            {message.messageNumber && showMessageNumber && (
-              <span className="text-xs text-muted-foreground opacity-50 flex items-center">
-                <Hash size={10} className="mr-0.5" />
-                {message.messageNumber}
-              </span>
-            )}
+          <div className="h-8 w-8 rounded-full overflow-hidden bg-muted flex-shrink-0 flex items-center justify-center">
+            <User size={20} className="text-muted-foreground" />
           </div>
         )}
       </div>
-
-      {/* 移除原来的操作按钮，已经移到气泡内部 */}
     </div>
   );
 } 

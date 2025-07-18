@@ -405,6 +405,7 @@ export const useChatStore = create<ChatState>()(
           }
           
           console.log('开始角色聊天:', character.name);
+          console.log('角色可选开场白数量:', character.alternateGreetings?.length || 0);
           
           // 开始新对话
           get().startNewConversation();
