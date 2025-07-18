@@ -57,11 +57,38 @@ export default function ChatPage() {
 
   // 确保在页面加载时加载对话历史
   useEffect(() => {
-    // 如果没有当前对话，加载对话列表
-    if (!currentConversationId && conversations.length === 0) {
-      loadConversations();
-    }
-  }, [currentConversationId, conversations.length, loadConversations]);
+    // 加载对话列表
+    loadConversations().then(() => {
+      console.log('页面加载时对话列表已加载，当前对话ID:', currentConversationId);
+      
+      // 如果有URL参数中的角色ID，优先处理
+      const characterId = searchParams.get('characterId');
+      if (characterId) {
+        console.log('URL中包含角色ID:', characterId);
+        characterIdRef.current = characterId;
+        
+        // 检查当前是否已经是该角色的对话
+        const isCurrentCharacterChat = currentCharacter && currentCharacter.id === characterId;
+        
+        // 如果不是当前角色的对话，启动新的角色聊天
+        if (!isCurrentCharacterChat) {
+          console.log('启动新的角色聊天');
+          startCharacterChat(characterId).catch(error => {
+            console.error('启动角色聊天失败:', error);
+          });
+        } else {
+          console.log('当前已经是该角色的对话');
+        }
+      } else if (currentConversationId) {
+        // 如果没有URL参数但有当前对话ID，确保对话内容已加载
+        console.log('确保当前对话内容已加载');
+      } else if (conversations.length > 0) {
+        // 如果没有当前对话但有对话历史，加载最新的对话
+        console.log('加载最新对话');
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);  // 仅在组件挂载时执行一次，使用ESLint禁用规则避免警告
 
   // 当消息更新时滚动到底部
   useEffect(() => {
