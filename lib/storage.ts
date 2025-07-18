@@ -1,5 +1,5 @@
 import { openDB, DBSchema } from 'idb';
-import { Message, UserSettings } from './types';
+import { Message, UserSettings, Character } from './types';
 import { generateId } from './utils';
 
 // 定义数据库架构
@@ -30,22 +30,48 @@ interface AppDB extends DBSchema {
     };
     indexes: { 'by-name': string };
   };
+  characters: {
+    key: string;
+    value: {
+      id: string;
+      name: string;
+      description?: string;
+      firstMessage?: string;
+      avatar?: string;
+      tags?: string[];
+      createdAt: number;
+      updatedAt: number;
+    };
+    indexes: { 'by-name': string };
+  };
 }
 
 // 初始化数据库
 export const initDB = async () => {
-  return openDB<AppDB>('ai-roleplay-db', 1, {
-    upgrade(db) {
-      // 存储对话历史
-      if (!db.objectStoreNames.contains('conversations')) {
-        const conversationStore = db.createObjectStore('conversations', { keyPath: 'id' });
-        conversationStore.createIndex('by-lastUpdated', 'lastUpdated');
+  return openDB<AppDB>('ai-roleplay-db', 2, {
+    upgrade(db, oldVersion) {
+      // 版本1: 创建conversations和presets表
+      if (oldVersion < 1) {
+        // 存储对话历史
+        if (!db.objectStoreNames.contains('conversations')) {
+          const conversationStore = db.createObjectStore('conversations', { keyPath: 'id' });
+          conversationStore.createIndex('by-lastUpdated', 'lastUpdated');
+        }
+        
+        // 存储角色预设
+        if (!db.objectStoreNames.contains('presets')) {
+          const presetStore = db.createObjectStore('presets', { keyPath: 'id' });
+          presetStore.createIndex('by-name', 'name');
+        }
       }
-      
-      // 存储角色预设
-      if (!db.objectStoreNames.contains('presets')) {
-        const presetStore = db.createObjectStore('presets', { keyPath: 'id' });
-        presetStore.createIndex('by-name', 'name');
+
+      // 版本2: 添加characters表
+      if (oldVersion < 2) {
+        // 存储角色
+        if (!db.objectStoreNames.contains('characters')) {
+          const characterStore = db.createObjectStore('characters', { keyPath: 'id' });
+          characterStore.createIndex('by-name', 'name');
+        }
       }
     }
   });
@@ -118,6 +144,41 @@ export const presetStorage = {
   async deletePreset(id: string) {
     const db = await initDB();
     await db.delete('presets', id);
+  }
+};
+
+// 角色存储接口
+export const characterStorage = {
+  async saveCharacter(character: {
+    id: string;
+    name: string;
+    description?: string;
+    firstMessage?: string;
+    avatar?: string;
+    tags?: string[];
+  }) {
+    const db = await initDB();
+    const now = Date.now();
+    await db.put('characters', {
+      ...character,
+      createdAt: character.id ? (await db.get('characters', character.id))?.createdAt || now : now,
+      updatedAt: now
+    });
+  },
+  
+  async getCharacter(id: string) {
+    const db = await initDB();
+    return db.get('characters', id);
+  },
+  
+  async listCharacters() {
+    const db = await initDB();
+    return db.getAllFromIndex('characters', 'by-name');
+  },
+  
+  async deleteCharacter(id: string) {
+    const db = await initDB();
+    await db.delete('characters', id);
   }
 };
 

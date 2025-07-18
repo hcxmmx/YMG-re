@@ -60,6 +60,18 @@ export interface Preset {
   updatedAt: number;
 }
 
+// 角色类型
+export interface Character {
+  id: string;
+  name: string;
+  description?: string;
+  firstMessage?: string;
+  avatar?: string;
+  tags?: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 // 玩家类型
 export interface Player {
   id: string;
