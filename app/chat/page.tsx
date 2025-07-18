@@ -12,16 +12,19 @@ import { useSearchParams } from "next/navigation";
 
 export default function ChatPage() {
   const { settings } = useSettingsStore();
-  const { 
-    currentMessages, 
-    isLoading, 
+  const {
+    currentMessages,
+    isLoading,
     systemPrompt,
     currentCharacter,
     addMessage,
     updateMessage,
     setIsLoading,
     startNewConversation,
-    startCharacterChat
+    startCharacterChat,
+    currentConversationId,
+    conversations,
+    loadConversations
   } = useChatStore();
   const { isNavbarVisible } = useNavbar();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -32,23 +35,39 @@ export default function ChatPage() {
   // 处理URL参数，加载角色
   useEffect(() => {
     const characterId = searchParams.get('characterId');
-    
+
     // 如果URL参数变化，或者第一次加载且有characterId参数
     if (characterId && characterId !== characterIdRef.current) {
       characterIdRef.current = characterId;
-      
-      // 启动角色聊天
-      startCharacterChat(characterId).catch(error => {
-        console.error('启动角色聊天失败:', error);
-      });
+
+      // 检查是否已经有该角色的消息
+      const hasCharacterMessages = currentMessages.some(
+        msg => msg.role === 'assistant' && currentCharacter?.id === characterId
+      );
+
+      // 只有在没有角色消息的情况下才启动角色聊天
+      if (!hasCharacterMessages) {
+        // 启动角色聊天
+        startCharacterChat(characterId).catch(error => {
+          console.error('启动角色聊天失败:', error);
+        });
+      }
     }
-  }, [searchParams, startCharacterChat]);
+  }, [searchParams, startCharacterChat, currentMessages, currentCharacter]);
+
+  // 确保在页面加载时加载对话历史
+  useEffect(() => {
+    // 如果没有当前对话，加载对话列表
+    if (!currentConversationId && conversations.length === 0) {
+      loadConversations();
+    }
+  }, [currentConversationId, conversations.length, loadConversations]);
 
   // 当消息更新时滚动到底部
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentMessages]);
-  
+
   // 当导航栏状态改变时，保持滚动位置
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -57,47 +76,47 @@ export default function ChatPage() {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }
     }, 300); // 等待导航栏动画完成
-    
+
     return () => clearTimeout(timer);
   }, [isNavbarVisible, isLoading]);
-  
+
   // 重新生成AI回复
   const handleRegenerateMessage = async (messageId: string) => {
     // 找到需要重新生成的消息
     const messageToRegenerate = currentMessages.find(msg => msg.id === messageId);
     if (!messageToRegenerate || messageToRegenerate.role !== 'assistant') return;
-    
+
     // 找到该消息之前的用户消息作为提示
     const messageIndex = currentMessages.findIndex(msg => msg.id === messageId);
     if (messageIndex <= 0) return; // 没有前置消息，无法重新生成
-    
+
     // 获取最近的用户消息
     let userMessageIndex = messageIndex - 1;
     while (userMessageIndex >= 0 && currentMessages[userMessageIndex].role !== 'user') {
       userMessageIndex--;
     }
-    
+
     if (userMessageIndex < 0) return; // 没有找到前置用户消息
-    
+
     // 保存原始消息的楼层号，确保重新生成时保持相同的编号
     const originalMessageNumber = messageToRegenerate.messageNumber;
-    
+
     // 将当前消息内容设置为"正在重新生成..."
     updateMessage({
       ...messageToRegenerate,
       content: "正在重新生成...",
       messageNumber: originalMessageNumber // 确保保留原始楼层号
     });
-    
+
     setIsLoading(true);
-    
+
     // 记录响应开始时间
     responseStartTimeRef.current = Date.now();
-    
+
     try {
       // 构建请求消息历史（不包含当前消息和之后的消息）
       const requestMessages = currentMessages.slice(0, messageIndex);
-      
+
       // API调用参数
       const params = {
         messages: requestMessages,
@@ -142,7 +161,7 @@ export default function ChatPage() {
         let chunkCount = 0;
         let dataChunkCount = 0;
         let firstChunkReceived = false;
-        
+
         // 处理流式数据
         while (true) {
           const { done, value } = await reader.read();
@@ -156,40 +175,40 @@ export default function ChatPage() {
           chunkCount++;
           console.log(`接收到第 ${chunkCount} 个原始数据块，长度: ${text.length}`);
           buffer += text; // 将新数据添加到缓冲区
-          
+
           // 尝试按SSE格式分割数据
           const lines = buffer.split("\n\n");
           // 保留最后一个可能不完整的块
           buffer = lines.pop() || "";
-          
+
           for (const line of lines) {
             if (!line.trim()) continue;
-            
+
             if (!line.startsWith("data: ")) {
               console.warn("非预期格式的数据行:", line);
               continue;
             }
-            
+
             const data = line.replace("data: ", "");
             if (data === "[DONE]") {
               console.log("收到流结束标记");
               continue;
             }
-            
+
             try {
               dataChunkCount++;
               const parsed = JSON.parse(data);
-              console.log(`解析第 ${dataChunkCount} 个数据块:`, 
-                parsed.text ? `文本(${parsed.text.length}字符)` : 
-                parsed.error ? `错误(${parsed.error})` : "无内容");
-              
+              console.log(`解析第 ${dataChunkCount} 个数据块:`,
+                parsed.text ? `文本(${parsed.text.length}字符)` :
+                  parsed.error ? `错误(${parsed.error})` : "无内容");
+
               if (parsed.error) {
                 console.error("流式响应错误:", parsed.error);
                 // 不抛出异常，而是显示错误消息
-                const updatedContent = accumulatedContent + 
-                  (accumulatedContent ? "\n\n" : "") + 
+                const updatedContent = accumulatedContent +
+                  (accumulatedContent ? "\n\n" : "") +
                   `[错误: ${parsed.error}]`;
-                
+
                 // 使用updateMessage更新消息内容
                 updateMessage({
                   ...messageToRegenerate,
@@ -199,7 +218,7 @@ export default function ChatPage() {
                 });
                 continue;
               }
-              
+
               if (parsed.text !== undefined) {
                 // 记录第一个内容块的时间
                 if (!firstChunkReceived) {
@@ -207,7 +226,7 @@ export default function ChatPage() {
                   const firstChunkTime = Date.now() - responseStartTimeRef.current;
                   console.log(`首个响应块接收时间: ${firstChunkTime}ms`);
                 }
-                
+
                 accumulatedContent += parsed.text;
                 // 使用updateMessage更新消息内容，并添加时间戳用于调试
                 console.log(`更新消息内容，时间: ${new Date().toISOString()}, 新增内容: "${parsed.text}"`);
@@ -225,17 +244,17 @@ export default function ChatPage() {
             }
           }
         }
-        
+
         // 处理缓冲区中可能剩余的数据
         if (buffer.trim()) {
           console.log("处理剩余缓冲区数据");
           const lines = buffer.split("\n\n");
           for (const line of lines) {
             if (!line.trim() || !line.startsWith("data: ")) continue;
-            
+
             const data = line.replace("data: ", "");
             if (data === "[DONE]") continue;
-            
+
             try {
               const parsed = JSON.parse(data);
               if (parsed.text !== undefined) {
@@ -253,11 +272,11 @@ export default function ChatPage() {
             }
           }
         }
-        
+
         // 计算总响应时间并更新消息
         const responseTime = Date.now() - responseStartTimeRef.current;
         console.log(`总响应时间: ${responseTime}ms`);
-        
+
         // 如果最终没有收到任何内容，显示提示信息
         if (!accumulatedContent) {
           console.warn("流式响应未产生任何内容");
@@ -337,10 +356,10 @@ export default function ChatPage() {
       images,
       timestamp: new Date(),
     };
-    
+
     await addMessage(userMessage);
     setIsLoading(true);
-    
+
     // 记录响应开始时间
     responseStartTimeRef.current = Date.now();
 
@@ -401,7 +420,7 @@ export default function ChatPage() {
           content: "",
           timestamp: new Date(),
         };
-        
+
         // 添加初始空消息
         await addMessage(initialAssistantMessage);
 
@@ -418,40 +437,40 @@ export default function ChatPage() {
           chunkCount++;
           console.log(`接收到第 ${chunkCount} 个原始数据块，长度: ${text.length}`);
           buffer += text; // 将新数据添加到缓冲区
-          
+
           // 尝试按SSE格式分割数据
           const lines = buffer.split("\n\n");
           // 保留最后一个可能不完整的块
           buffer = lines.pop() || "";
-          
+
           for (const line of lines) {
             if (!line.trim()) continue;
-            
+
             if (!line.startsWith("data: ")) {
               console.warn("非预期格式的数据行:", line);
               continue;
             }
-            
+
             const data = line.replace("data: ", "");
             if (data === "[DONE]") {
               console.log("收到流结束标记");
               continue;
             }
-            
+
             try {
               dataChunkCount++;
               const parsed = JSON.parse(data);
-              console.log(`解析第 ${dataChunkCount} 个数据块:`, 
-                parsed.text ? `文本(${parsed.text.length}字符)` : 
-                parsed.error ? `错误(${parsed.error})` : "无内容");
-              
+              console.log(`解析第 ${dataChunkCount} 个数据块:`,
+                parsed.text ? `文本(${parsed.text.length}字符)` :
+                  parsed.error ? `错误(${parsed.error})` : "无内容");
+
               if (parsed.error) {
                 console.error("流式响应错误:", parsed.error);
                 // 不抛出异常，而是显示错误消息
-                const updatedContent = accumulatedContent + 
-                  (accumulatedContent ? "\n\n" : "") + 
+                const updatedContent = accumulatedContent +
+                  (accumulatedContent ? "\n\n" : "") +
                   `[错误: ${parsed.error}]`;
-                
+
                 // 使用updateMessage更新消息内容
                 updateMessage({
                   id: assistantMessageId,
@@ -461,7 +480,7 @@ export default function ChatPage() {
                 });
                 continue;
               }
-              
+
               if (parsed.text !== undefined) {
                 // 记录第一个内容块的时间
                 if (!firstChunkReceived) {
@@ -469,7 +488,7 @@ export default function ChatPage() {
                   const firstChunkTime = Date.now() - responseStartTimeRef.current;
                   console.log(`首个响应块接收时间: ${firstChunkTime}ms`);
                 }
-                
+
                 accumulatedContent += parsed.text;
                 // 使用updateMessage更新消息内容，并添加时间戳用于调试
                 console.log(`更新消息内容，时间: ${new Date().toISOString()}, 新增内容: "${parsed.text}"`);
@@ -487,17 +506,17 @@ export default function ChatPage() {
             }
           }
         }
-        
+
         // 处理缓冲区中可能剩余的数据
         if (buffer.trim()) {
           console.log("处理剩余缓冲区数据");
           const lines = buffer.split("\n\n");
           for (const line of lines) {
             if (!line.trim() || !line.startsWith("data: ")) continue;
-            
+
             const data = line.replace("data: ", "");
             if (data === "[DONE]") continue;
-            
+
             try {
               const parsed = JSON.parse(data);
               if (parsed.text !== undefined) {
@@ -515,11 +534,11 @@ export default function ChatPage() {
             }
           }
         }
-        
+
         // 计算总响应时间并更新消息
         const responseTime = Date.now() - responseStartTimeRef.current;
         console.log(`总响应时间: ${responseTime}ms`);
-        
+
         // 如果最终没有收到任何内容，显示提示信息
         if (!accumulatedContent) {
           console.warn("流式响应未产生任何内容");
@@ -583,10 +602,10 @@ export default function ChatPage() {
     <div className={`flex flex-col ${isNavbarVisible ? 'h-[calc(100vh-65px)]' : 'h-screen'}`}>
       <ChatHeader character={currentCharacter} />
       <div className="flex-1 overflow-y-auto p-4">
-        {currentMessages.map((message) => (
-          <Message 
-            key={message.id} 
-            message={message} 
+        {currentMessages.map((message, index) => (
+          <Message
+            key={`${message.id}-${index}`}
+            message={message}
             onRegenerate={handleRegenerateMessage}
             character={message.role === 'assistant' ? currentCharacter : undefined}
           />
@@ -594,8 +613,8 @@ export default function ChatPage() {
         <div ref={messagesEndRef} />
       </div>
       <div className="border-t">
-        <ChatInput 
-          onSendMessage={handleSendMessage} 
+        <ChatInput
+          onSendMessage={handleSendMessage}
           isLoading={isLoading}
           disabled={isLoading}
         />

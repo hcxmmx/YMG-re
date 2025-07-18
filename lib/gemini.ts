@@ -26,13 +26,56 @@ export class GeminiService {
     // 提取系统消息
     const systemMessage = messages.find((msg) => msg.role === "system");
     const systemPrompt = systemMessage?.content || "";
-    
+
     // 过滤出用户和助手消息
     const chatMessages = messages.filter((msg) => msg.role !== "system");
-    
+
+    // 确保以用户消息结尾
+    if (chatMessages.length > 0 && chatMessages[chatMessages.length - 1].role === "assistant") {
+      chatMessages.push({
+        id: "temp-user-message",
+        role: "user",
+        content: "请继续",
+        timestamp: new Date()
+      });
+    }
+
+    // 将我们的消息格式转换为Gemini API需要的格式
+    const formattedContents = [];
+
+    // 处理所有消息
+    for (const msg of chatMessages) {
+      if (msg.role === "user") {
+        // 处理用户消息
+        const userContent = {
+          role: "user",
+          parts: [{ text: msg.content }]
+        };
+
+        // 如果有图片，添加到parts中
+        if (msg.images && msg.images.length > 0) {
+          for (const image of msg.images) {
+            // 使用类型断言来处理data属性
+            userContent.parts.push({
+              data: image,
+              type: "image/jpeg" // 假设图片是JPEG格式，可以根据实际情况调整
+            } as any);
+          }
+        }
+
+        formattedContents.push(userContent);
+      } else if (msg.role === "assistant") {
+        // 处理助手消息
+        formattedContents.push({
+          role: "model",
+          parts: [{ text: msg.content }]
+        });
+      }
+    }
+
     return {
       systemPrompt,
-      chatMessages
+      formattedContents
     };
   }
 
@@ -42,53 +85,37 @@ export class GeminiService {
     systemPrompt: string,
     params: GeminiParams = {}
   ) {
-    const { systemPrompt: extractedSystemPrompt, chatMessages } = this.transformMessages(messages);
+    const { systemPrompt: extractedSystemPrompt, formattedContents } = this.transformMessages(messages);
     const finalSystemPrompt = systemPrompt || extractedSystemPrompt;
-    
-    // 创建聊天实例
-    const chat = this.genAI.chats.create({
-      model: params.model || this.defaultModel,
-      config: {
-        temperature: params.temperature ?? 0.7,
-        topK: params.topK ?? 40,
-        topP: params.topP ?? 0.95,
-        maxOutputTokens: params.maxOutputTokens ?? 1024,
-        systemInstruction: finalSystemPrompt,
-        safetySettings: params.safetySettings?.map(setting => ({
-          category: setting.category as HarmCategory,
-          threshold: setting.threshold as HarmBlockThreshold,
-        })),
-      }
-    });
 
-    // 构建聊天历史
-    for (let i = 0; i < chatMessages.length - 1; i++) {
-      const msg = chatMessages[i];
-      if (msg.role === "user") {
-        // 添加用户消息
-        await chat.sendMessage({
-          message: msg.content,
-          ...(msg.images && msg.images.length > 0 && {
-            parts: msg.images.map(img => ({ data: img }))
-          })
-        });
-      }
+    // 如果没有消息，返回空字符串
+    if (formattedContents.length === 0) {
+      return "";
     }
-    
-    // 发送最后一条用户消息并获取响应
-    const lastUserMessage = chatMessages[chatMessages.length - 1];
-    if (!lastUserMessage) {
-      throw new Error("没有用户消息可以发送");
-    }
-    
-    const response = await chat.sendMessage({
-      message: lastUserMessage.content,
-      ...(lastUserMessage.images && lastUserMessage.images.length > 0 && {
-        parts: lastUserMessage.images.map(img => ({ data: img }))
-      })
-    });
 
-    return response.text;
+    try {
+      // 创建生成内容请求
+      const result = await this.genAI.models.generateContent({
+        model: params.model || this.defaultModel,
+        contents: formattedContents,
+        config: {
+          temperature: params.temperature ?? 0.7,
+          topK: params.topK ?? 40,
+          topP: params.topP ?? 0.95,
+          maxOutputTokens: params.maxOutputTokens ?? 1024,
+          systemInstruction: finalSystemPrompt,
+          safetySettings: params.safetySettings?.map(setting => ({
+            category: setting.category as HarmCategory,
+            threshold: setting.threshold as HarmBlockThreshold,
+          })),
+        }
+      });
+
+      return result.text || "";
+    } catch (error) {
+      console.error("生成回复时出错:", error);
+      throw error;
+    }
   }
 
   // 生成流式回复
@@ -97,56 +124,36 @@ export class GeminiService {
     systemPrompt: string,
     params: GeminiParams = {}
   ) {
-    const { systemPrompt: extractedSystemPrompt, chatMessages } = this.transformMessages(messages);
+    const { systemPrompt: extractedSystemPrompt, formattedContents } = this.transformMessages(messages);
     const finalSystemPrompt = systemPrompt || extractedSystemPrompt;
-    
-    // 创建聊天实例
-    const chat = this.genAI.chats.create({
-      model: params.model || this.defaultModel,
-      config: {
-        temperature: params.temperature ?? 0.7,
-        topK: params.topK ?? 40,
-        topP: params.topP ?? 0.95,
-        maxOutputTokens: params.maxOutputTokens ?? 1024,
-        systemInstruction: finalSystemPrompt,
-        safetySettings: params.safetySettings?.map(setting => ({
-          category: setting.category as HarmCategory,
-          threshold: setting.threshold as HarmBlockThreshold,
-        })),
-      }
-    });
+
+    // 如果没有消息，返回空字符串
+    if (formattedContents.length === 0) {
+      yield "";
+      return;
+    }
 
     try {
-      // 构建聊天历史
-      for (let i = 0; i < chatMessages.length - 1; i++) {
-        const msg = chatMessages[i];
-        if (msg.role === "user") {
-          // 添加用户消息
-          await chat.sendMessage({
-            message: msg.content,
-            ...(msg.images && msg.images.length > 0 && {
-              parts: msg.images.map(img => ({ data: img }))
-            })
-          });
+      // 创建流式生成内容请求
+      const result = await this.genAI.models.generateContentStream({
+        model: params.model || this.defaultModel,
+        contents: formattedContents,
+        config: {
+          temperature: params.temperature ?? 0.7,
+          topK: params.topK ?? 40,
+          topP: params.topP ?? 0.95,
+          maxOutputTokens: params.maxOutputTokens ?? 1024,
+          systemInstruction: finalSystemPrompt,
+          safetySettings: params.safetySettings?.map(setting => ({
+            category: setting.category as HarmCategory,
+            threshold: setting.threshold as HarmBlockThreshold,
+          })),
         }
-      }
-      
-      // 发送最后一条用户消息并获取流式响应
-      const lastUserMessage = chatMessages[chatMessages.length - 1];
-      if (!lastUserMessage) {
-        throw new Error("没有用户消息可以发送");
-      }
-      
-      const responseStream = await chat.sendMessageStream({
-        message: lastUserMessage.content,
-        ...(lastUserMessage.images && lastUserMessage.images.length > 0 && {
-          parts: lastUserMessage.images.map(img => ({ data: img }))
-        })
       });
 
       let hasYieldedContent = false;
-      
-      for await (const chunk of responseStream) {
+
+      for await (const chunk of result) {
         // 添加调试信息
         console.debug("流式响应chunk:", JSON.stringify({
           hasText: !!chunk.text,
@@ -154,17 +161,17 @@ export class GeminiService {
           candidatesLength: chunk.candidates?.length,
           hasContent: !!chunk.candidates?.[0]?.content,
           partsLength: chunk.candidates?.[0]?.content?.parts?.length,
-          firstPartType: chunk.candidates?.[0]?.content?.parts?.[0] ? 
+          firstPartType: chunk.candidates?.[0]?.content?.parts?.[0] ?
             Object.keys(chunk.candidates[0].content.parts[0]) : undefined
         }));
-        
+
         // 尝试从chunk中提取文本
         let extractedText = "";
-        
+
         // 方法1: 使用内置的text属性
         if (chunk.text !== undefined) {
           extractedText = chunk.text;
-        } 
+        }
         // 方法2: 手动从parts中提取文本
         else if (chunk.candidates?.[0]?.content?.parts) {
           const parts = chunk.candidates[0].content.parts;
@@ -174,12 +181,12 @@ export class GeminiService {
             }
           }
         }
-        
+
         // 无论是否提取到文本，都返回一个值（可能是空字符串）以保持流的连续性
         hasYieldedContent = true;
         yield extractedText || ""; // 确保始终返回字符串，即使是空字符串
       }
-      
+
       // 如果没有生成任何内容，返回一个提示信息
       if (!hasYieldedContent) {
         console.warn("流式响应未产生任何内容");
