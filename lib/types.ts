@@ -66,6 +66,7 @@ export interface Character {
   name: string;
   description?: string;
   firstMessage?: string;  // 角色的开场白
+  alternateGreetings?: string[];  // 角色的可选开场白
   avatar?: string;        // 角色头像
   tags?: string[];        // 角色标签
   createdAt: number;

@@ -21,11 +21,15 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
       name: "",
       description: "",
       firstMessage: "",
+      alternateGreetings: [],
       tags: [],
     }
   );
   
   const [avatarPreview, setAvatarPreview] = useState<string | null>(initialCharacter?.avatar || null);
+  const [alternateGreetings, setAlternateGreetings] = useState<string[]>(
+    initialCharacter?.alternateGreetings || [""]
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
@@ -56,6 +60,32 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
     setCharacter((prev) => ({ ...prev, tags: tagArray }));
   };
 
+  // 处理可选开场白输入
+  const handleAlternateGreetingChange = (index: number, value: string) => {
+    const newGreetings = [...alternateGreetings];
+    newGreetings[index] = value;
+    setAlternateGreetings(newGreetings);
+    
+    // 同步更新到角色对象
+    const filteredGreetings = newGreetings.filter(greeting => greeting.trim() !== "");
+    setCharacter(prev => ({ ...prev, alternateGreetings: filteredGreetings }));
+  };
+
+  // 添加新的可选开场白字段
+  const addAlternateGreeting = () => {
+    setAlternateGreetings([...alternateGreetings, ""]);
+  };
+
+  // 删除可选开场白字段
+  const removeAlternateGreeting = (index: number) => {
+    const newGreetings = alternateGreetings.filter((_, i) => i !== index);
+    setAlternateGreetings(newGreetings);
+    
+    // 同步更新到角色对象
+    const filteredGreetings = newGreetings.filter(greeting => greeting.trim() !== "");
+    setCharacter(prev => ({ ...prev, alternateGreetings: filteredGreetings }));
+  };
+
   // 保存角色
   const handleSave = async () => {
     if (!character.name) {
@@ -63,9 +93,13 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
       return;
     }
 
+    // 过滤掉空的开场白
+    const filteredGreetings = alternateGreetings.filter(greeting => greeting.trim() !== "");
+    
     const id = character.id || generateId();
     const characterToSave = {
       ...character,
+      alternateGreetings: filteredGreetings,
       id,
     } as Character;
 
@@ -108,7 +142,7 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-medium">开场白（可选）</label>
+            <label className="block text-sm font-medium">开场白（默认）</label>
             <textarea
               name="firstMessage"
               value={character.firstMessage || ""}
@@ -117,6 +151,45 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
               placeholder="角色的第一句话"
               rows={3}
             />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-sm font-medium">可选开场白</label>
+              <Button 
+                type="button" 
+                variant="outline" 
+                size="sm" 
+                onClick={addAlternateGreeting}
+              >
+                添加开场白
+              </Button>
+            </div>
+            
+            {alternateGreetings.map((greeting, index) => (
+              <div key={index} className="flex space-x-2 mb-2">
+                <textarea
+                  value={greeting}
+                  onChange={(e) => handleAlternateGreetingChange(index, e.target.value)}
+                  className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                  placeholder={`可选开场白 #${index + 1}`}
+                  rows={3}
+                />
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="h-10 self-start"
+                  onClick={() => removeAlternateGreeting(index)}
+                >
+                  删除
+                </Button>
+              </div>
+            ))}
+            
+            <p className="text-xs text-muted-foreground">
+              有效的可选开场白数量: {alternateGreetings.filter(g => g.trim() !== "").length}
+            </p>
           </div>
 
           <div className="space-y-2">

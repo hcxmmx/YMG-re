@@ -37,6 +37,7 @@ interface AppDB extends DBSchema {
       name: string;
       description?: string;
       firstMessage?: string;
+      alternateGreetings?: string[];
       avatar?: string;
       tags?: string[];
       createdAt: number;
@@ -154,6 +155,7 @@ export const characterStorage = {
     name: string;
     description?: string;
     firstMessage?: string;
+    alternateGreetings?: string[];
     avatar?: string;
     tags?: string[];
   }) {
@@ -206,6 +208,7 @@ export const characterStorage = {
         name: "",
         description: "",
         firstMessage: "",
+        alternateGreetings: [],
         tags: []
       };
       
@@ -254,6 +257,21 @@ export const characterStorage = {
         characterData.firstMessage = data.char_greeting;
       } else if (data.first_message) {
         characterData.firstMessage = data.first_message;
+      }
+      
+      // 处理可选开场白
+      if (data.data?.alternate_greetings && Array.isArray(data.data.alternate_greetings)) {
+        characterData.alternateGreetings = data.data.alternate_greetings.filter(Boolean);
+      } else if (data.alternate_greetings && Array.isArray(data.alternate_greetings)) {
+        characterData.alternateGreetings = data.alternate_greetings.filter(Boolean);
+      } else if (data.data?.alternate_messages && Array.isArray(data.data.alternate_messages)) {
+        characterData.alternateGreetings = data.data.alternate_messages.filter(Boolean);
+      } else if (data.alternate_messages && Array.isArray(data.alternate_messages)) {
+        characterData.alternateGreetings = data.alternate_messages.filter(Boolean);
+      } else if (data.data?.alternateGreetings && Array.isArray(data.data.alternateGreetings)) {
+        characterData.alternateGreetings = data.data.alternateGreetings.filter(Boolean);
+      } else if (data.alternateGreetings && Array.isArray(data.alternateGreetings)) {
+        characterData.alternateGreetings = data.alternateGreetings.filter(Boolean);
       }
       
       // 处理标签
@@ -325,6 +343,7 @@ export const characterStorage = {
         name: "",
         description: "",
         firstMessage: "",
+        alternateGreetings: [],
         tags: []
       };
       
@@ -333,6 +352,8 @@ export const characterStorage = {
         characterData.name = data.name;
       } else if (data.char_name) {
         characterData.name = data.char_name;
+      } else if (data.data?.name) {
+        characterData.name = data.data.name;
       }
       
       if (!characterData.name) {
@@ -344,14 +365,20 @@ export const characterStorage = {
       
       if (data.description) {
         descriptionParts.push(data.description);
+      } else if (data.data?.description) {
+        descriptionParts.push(data.data.description);
       }
       
       if (data.personality) {
         descriptionParts.push(`性格: ${data.personality}`);
+      } else if (data.data?.personality) {
+        descriptionParts.push(`性格: ${data.data.personality}`);
       }
       
       if (data.scenario) {
         descriptionParts.push(`场景: ${data.scenario}`);
+      } else if (data.data?.scenario) {
+        descriptionParts.push(`场景: ${data.data.scenario}`);
       }
       
       characterData.description = descriptionParts.join('\n\n');
@@ -359,13 +386,34 @@ export const characterStorage = {
       // 处理开场白
       if (data.first_mes) {
         characterData.firstMessage = data.first_mes;
+      } else if (data.data?.first_mes) {
+        characterData.firstMessage = data.data.first_mes;
       } else if (data.greeting) {
         characterData.firstMessage = data.greeting;
+      } else if (data.data?.greeting) {
+        characterData.firstMessage = data.data.greeting;
+      }
+      
+      // 处理可选开场白
+      if (data.data?.alternate_greetings && Array.isArray(data.data.alternate_greetings)) {
+        characterData.alternateGreetings = data.data.alternate_greetings
+          .filter((g: any) => typeof g === 'string' && g.trim() !== '')
+          .map((g: string) => g.trim());
+      } else if (data.alternate_greetings && Array.isArray(data.alternate_greetings)) {
+        characterData.alternateGreetings = data.alternate_greetings
+          .filter((g: any) => typeof g === 'string' && g.trim() !== '')
+          .map((g: string) => g.trim());
+      } else if (data.data?.alternateGreetings && Array.isArray(data.data.alternateGreetings)) {
+        characterData.alternateGreetings = data.data.alternateGreetings
+          .filter((g: any) => typeof g === 'string' && g.trim() !== '')
+          .map((g: string) => g.trim());
       }
       
       // 处理标签
       if (data.tags && Array.isArray(data.tags)) {
         characterData.tags = data.tags;
+      } else if (data.data?.tags && Array.isArray(data.data.tags)) {
+        characterData.tags = data.data.tags;
       }
       
       // 处理头像 - 使用PNG文件本身作为头像
