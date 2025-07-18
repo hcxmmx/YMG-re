@@ -80,65 +80,69 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
   };
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <label className="block text-sm font-medium">角色名称</label>
-        <Input
-          name="name"
-          value={character.name || ""}
-          onChange={handleChange}
-          placeholder="输入角色名称"
-          required
-        />
-      </div>
+    <div className="space-y-4 mt-4">
+      <div className="grid md:grid-cols-[1fr_250px] gap-6">
+        {/* 左侧表单 */}
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="block text-sm font-medium">角色名称</label>
+            <Input
+              name="name"
+              value={character.name || ""}
+              onChange={handleChange}
+              placeholder="输入角色名称"
+              required
+            />
+          </div>
 
-      <div className="space-y-2">
-        <label className="block text-sm font-medium">角色描述</label>
-        <textarea
-          name="description"
-          value={character.description || ""}
-          onChange={handleChange}
-          className="min-h-[150px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-          placeholder="输入角色描述"
-          rows={5}
-        />
-      </div>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium">角色描述</label>
+            <textarea
+              name="description"
+              value={character.description || ""}
+              onChange={handleChange}
+              className="min-h-[150px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+              placeholder="输入角色描述"
+              rows={5}
+            />
+          </div>
 
-      <div className="space-y-2">
-        <label className="block text-sm font-medium">开场白（可选）</label>
-        <textarea
-          name="firstMessage"
-          value={character.firstMessage || ""}
-          onChange={handleChange}
-          className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-          placeholder="角色的第一句话"
-          rows={3}
-        />
-      </div>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium">开场白（可选）</label>
+            <textarea
+              name="firstMessage"
+              value={character.firstMessage || ""}
+              onChange={handleChange}
+              className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+              placeholder="角色的第一句话"
+              rows={3}
+            />
+          </div>
 
-      <div className="space-y-2">
-        <label className="block text-sm font-medium">标签（用逗号分隔）</label>
-        <Input
-          name="tags"
-          value={character.tags?.join(', ') || ""}
-          onChange={handleTagsChange}
-          placeholder="例如：科幻, 冒险, 友善"
-        />
-      </div>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium">标签（用逗号分隔）</label>
+            <Input
+              name="tags"
+              value={character.tags?.join(', ') || ""}
+              onChange={handleTagsChange}
+              placeholder="例如：科幻, 冒险, 友善"
+            />
+          </div>
+        </div>
 
-      <div className="space-y-2">
-        <label className="block text-sm font-medium">角色头像</label>
-        <div className="flex items-center space-x-4">
+        {/* 右侧头像区域 */}
+        <div className="flex flex-col items-center space-y-4">
+          <div className="text-sm font-medium mb-2">角色头像</div>
           <div
-            className="w-24 h-24 border border-gray-300 rounded-md flex items-center justify-center overflow-hidden"
+            className="w-40 h-40 border border-gray-300 rounded-md flex items-center justify-center overflow-hidden cursor-pointer"
             onClick={() => fileInputRef.current?.click()}
           >
             {avatarPreview ? (
               <Image
                 src={avatarPreview}
                 alt="角色头像"
-                width={96}
-                height={96}
+                width={160}
+                height={160}
                 className="object-cover w-full h-full"
               />
             ) : (
@@ -148,6 +152,7 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
           <Button
             type="button"
             variant="outline"
+            size="sm"
             onClick={() => fileInputRef.current?.click()}
           >
             上传头像
@@ -162,15 +167,15 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
         </div>
       </div>
 
-      <div className="flex space-x-2 pt-4">
-        <Button onClick={handleSave}>保存角色</Button>
+      <div className="flex justify-end space-x-2 pt-6">
         <Button
           type="button"
           variant="outline"
-          onClick={onCancel || (() => router.back())}
+          onClick={onCancel}
         >
           取消
         </Button>
+        <Button onClick={handleSave}>保存角色</Button>
       </div>
     </div>
   );

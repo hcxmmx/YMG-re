@@ -1,17 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Character } from "@/lib/types";
 import { characterStorage } from "@/lib/storage";
 import { CharacterCard } from "@/components/ui/character-card";
 import { CharacterForm } from "@/components/ui/character-form";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export default function CharactersPage() {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [dialogTitle, setDialogTitle] = useState("");
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     document.title = "角色管理 - AI角色扮演平台";
@@ -30,59 +40,108 @@ export default function CharactersPage() {
     }
   };
 
-  const handleSaveCharacter = async (character: Character) => {
-    if (editingCharacter) {
-      setEditingCharacter(null);
-    } else {
-      setIsCreating(false);
-    }
-    await loadCharacters();
-  };
-
-  const handleCancelEdit = () => {
+  const handleCreateCharacter = () => {
+    setIsCreating(true);
     setEditingCharacter(null);
-    setIsCreating(false);
+    setDialogTitle("创建新角色");
+    setIsDialogOpen(true);
   };
 
   const handleEditCharacter = (character: Character) => {
     setEditingCharacter(character);
     setIsCreating(false);
+    setDialogTitle(`编辑角色: ${character.name}`);
+    setIsDialogOpen(true);
+  };
+
+  const handleSaveCharacter = async (character: Character) => {
+    setIsDialogOpen(false);
+    await loadCharacters();
+  };
+
+  const handleCancelEdit = () => {
+    setIsDialogOpen(false);
+  };
+
+  // 处理角色卡导入
+  const handleImportCharacter = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 检查文件类型是否为支持的格式
+    const lowerFileName = file.name.toLowerCase();
+    if (!lowerFileName.endsWith('.json') && !lowerFileName.endsWith('.png')) {
+      alert('请选择JSON或PNG格式的角色卡文件');
+      if (importFileRef.current) {
+        importFileRef.current.value = '';
+      }
+      return;
+    }
+
+    try {
+      setIsImporting(true);
+      
+      // 导入角色卡
+      const importedId = await characterStorage.importCharacter(file);
+      
+      if (importedId) {
+        alert('角色卡导入成功');
+        await loadCharacters(); // 重新加载角色列表
+      } else {
+        alert('角色卡导入失败，请检查文件格式');
+      }
+    } catch (error) {
+      console.error('导入角色卡失败:', error);
+      alert('导入过程中出错，请重试');
+    } finally {
+      setIsImporting(false);
+      // 重置文件输入，允许用户导入同一个文件
+      if (importFileRef.current) {
+        importFileRef.current.value = '';
+      }
+    }
   };
 
   return (
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">角色管理</h1>
-        {!isCreating && !editingCharacter && (
+        <div className="flex space-x-2">
           <Button 
-            onClick={() => setIsCreating(true)}
-            className="ml-auto"
+            onClick={() => importFileRef.current?.click()}
+            variant="outline"
+            disabled={isImporting}
+          >
+            {isImporting ? '导入中...' : '导入角色卡'}
+          </Button>
+          <input
+            type="file"
+            ref={importFileRef}
+            onChange={handleImportCharacter}
+            accept=".json,.png"
+            className="hidden"
+          />
+          <Button 
+            onClick={handleCreateCharacter}
           >
             创建角色
           </Button>
-        )}
+        </div>
       </div>
 
-      {isCreating && (
-        <div className="mb-8 border p-4 rounded-lg shadow-sm">
-          <h2 className="text-xl font-semibold mb-4">创建新角色</h2>
+      {/* 角色表单模态框 */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[850px] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{dialogTitle}</DialogTitle>
+          </DialogHeader>
           <CharacterForm
+            initialCharacter={editingCharacter || undefined}
             onSave={handleSaveCharacter}
             onCancel={handleCancelEdit}
           />
-        </div>
-      )}
-
-      {editingCharacter && (
-        <div className="mb-8 border p-4 rounded-lg shadow-sm">
-          <h2 className="text-xl font-semibold mb-4">编辑角色</h2>
-          <CharacterForm
-            initialCharacter={editingCharacter}
-            onSave={handleSaveCharacter}
-            onCancel={handleCancelEdit}
-          />
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
 
       {loading ? (
         <div className="flex justify-center items-center h-40">
@@ -102,11 +161,18 @@ export default function CharactersPage() {
       ) : (
         <div className="flex flex-col items-center justify-center h-60">
           <p className="text-muted-foreground mb-4">还没有创建角色</p>
-          {!isCreating && (
-            <Button onClick={() => setIsCreating(true)}>
-              创建第一个角色
+          <div className="flex space-x-2">
+            <Button 
+              variant="outline"
+              onClick={() => importFileRef.current?.click()}
+              disabled={isImporting}
+            >
+              导入角色卡
             </Button>
-          )}
+            <Button onClick={handleCreateCharacter}>
+              创建角色
+            </Button>
+          </div>
         </div>
       )}
     </div>
