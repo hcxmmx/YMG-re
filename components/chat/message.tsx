@@ -89,7 +89,7 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
       >
         {/* 头像 - 非用户消息时显示在左侧 */}
         {!isUser && (
-          <div className="mt-1">
+          <div className="flex flex-col items-center gap-1">
             <div className="h-8 w-8 rounded-full overflow-hidden bg-muted flex-shrink-0">
               {character && character.avatar ? (
                 <Image
@@ -105,18 +105,18 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                 </div>
               )}
             </div>
+            
+            {/* 楼层号 - 非用户消息时显示在头像下方 */}
+            {message.messageNumber && showMessageNumber && (
+              <span className="text-xs text-muted-foreground opacity-50 flex items-center">
+                <Hash size={10} className="mr-0.5" />
+                {message.messageNumber}
+              </span>
+            )}
           </div>
         )}
 
-        {/* 楼层号 - 非用户消息时显示在左侧（如果没有头像） */}
-        {!isUser && !character && message.messageNumber && showMessageNumber && (
-          <div className="flex items-start mt-1">
-            <span className="text-xs text-muted-foreground opacity-50 flex items-center">
-              <Hash size={10} className="mr-0.5" />
-              {message.messageNumber}
-            </span>
-          </div>
-        )}
+        {/* 移除旧的楼层号显示代码 */}
 
         <div
           className={cn(
@@ -216,13 +216,7 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                 </span>
               )}
               
-              {/* 楼层号 - 用户消息时显示在这里 */}
-              {isUser && message.messageNumber && showMessageNumber && (
-                <span className="flex items-center">
-                  <Hash size={10} className="mr-0.5" />
-                  {message.messageNumber}
-                </span>
-              )}
+              {/* 移除旧的楼层号显示代码 */}
             </div>
 
             {/* 查看渲染/原文按钮（保留在消息气泡内） */}
@@ -238,10 +232,18 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
 
         {/* 用户头像 - 用户消息时显示在右侧 */}
         {isUser && (
-          <div className="mt-1">
+          <div className="flex flex-col items-center gap-1">
             <div className="h-8 w-8 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center">
               <User className="h-5 w-5 text-primary-foreground" />
             </div>
+            
+            {/* 楼层号 - 用户消息时显示在头像下方 */}
+            {message.messageNumber && showMessageNumber && (
+              <span className="text-xs text-muted-foreground opacity-50 flex items-center">
+                <Hash size={10} className="mr-0.5" />
+                {message.messageNumber}
+              </span>
+            )}
           </div>
         )}
       </div>
