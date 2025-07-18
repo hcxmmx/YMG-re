@@ -333,8 +333,18 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
 
         {/* 用户头像 - 用户消息时显示在右侧 */}
         {isUser && (
-          <div className="h-8 w-8 rounded-full overflow-hidden bg-muted flex-shrink-0 flex items-center justify-center">
-            <User size={20} className="text-muted-foreground" />
+          <div className="flex flex-col items-center gap-1">
+            <div className="h-8 w-8 rounded-full overflow-hidden bg-muted flex-shrink-0 flex items-center justify-center">
+              <User size={20} className="text-muted-foreground" />
+            </div>
+            
+            {/* 楼层号 - 用户消息时显示在头像下方 */}
+            {message.messageNumber && showMessageNumber && (
+              <span className="text-xs text-muted-foreground opacity-50 flex items-center">
+                <Hash size={10} className="mr-0.5" />
+                {message.messageNumber}
+              </span>
+            )}
           </div>
         )}
       </div>

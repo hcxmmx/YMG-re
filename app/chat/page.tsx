@@ -24,7 +24,8 @@ export default function ChatPage() {
     startCharacterChat,
     currentConversationId,
     conversations,
-    loadConversations
+    loadConversations,
+    setCurrentConversation
   } = useChatStore();
   const { isNavbarVisible } = useNavbar();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -40,17 +41,20 @@ export default function ChatPage() {
     if (characterId && characterId !== characterIdRef.current) {
       characterIdRef.current = characterId;
 
-      // 检查是否已经有该角色的消息
-      const hasCharacterMessages = currentMessages.some(
-        msg => msg.role === 'assistant' && currentCharacter?.id === characterId
-      );
+      // 检查是否已经有该角色的消息，通过角色ID和当前对话标题匹配
+      const hasCharacterMessages = currentCharacter?.id === characterId && 
+        currentMessages.some(msg => msg.role === 'assistant');
 
       // 只有在没有角色消息的情况下才启动角色聊天
+      // 或者当前不是这个角色的对话时才启动角色聊天
       if (!hasCharacterMessages) {
+        console.log('URL参数包含角色ID，启动角色聊天:', characterId);
         // 启动角色聊天
         startCharacterChat(characterId).catch(error => {
           console.error('启动角色聊天失败:', error);
         });
+      } else {
+        console.log('已有该角色的聊天记录，无需重新启动');
       }
     }
   }, [searchParams, startCharacterChat, currentMessages, currentCharacter]);
@@ -58,6 +62,7 @@ export default function ChatPage() {
   // 确保在页面加载时加载对话历史
   useEffect(() => {
     // 加载对话列表
+    console.log('页面初始化，开始加载对话历史...');
     loadConversations().then(() => {
       console.log('页面加载时对话列表已加载，当前对话ID:', currentConversationId);
       
@@ -81,11 +86,20 @@ export default function ChatPage() {
         }
       } else if (currentConversationId) {
         // 如果没有URL参数但有当前对话ID，确保对话内容已加载
-        console.log('确保当前对话内容已加载');
+        console.log('确保当前对话内容已加载，消息数量:', currentMessages.length);
       } else if (conversations.length > 0) {
         // 如果没有当前对话但有对话历史，加载最新的对话
         console.log('加载最新对话');
+        const latestConversation = conversations[0];
+        if (latestConversation) {
+          console.log('找到最新对话:', latestConversation.id);
+          setCurrentConversation(latestConversation.id).catch(error => {
+            console.error('加载最新对话失败:', error);
+          });
+        }
       }
+    }).catch(error => {
+      console.error('加载对话列表失败:', error);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);  // 仅在组件挂载时执行一次，使用ESLint禁用规则避免警告

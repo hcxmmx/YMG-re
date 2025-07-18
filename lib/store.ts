@@ -4,6 +4,7 @@ import type { UserSettings, Message, Conversation, Character } from './types';
 import { HarmBlockThreshold } from './types';
 import { conversationStorage, characterStorage } from './storage';
 import { generateId } from './utils';
+import { createJSONStorage } from 'zustand/middleware';
 
 // 用户设置存储
 interface SettingsState {
@@ -406,6 +407,37 @@ export const useChatStore = create<ChatState>()(
           
           console.log('开始角色聊天:', character.name);
           console.log('角色可选开场白数量:', character.alternateGreetings?.length || 0);
+
+          // 检查是否已有该角色的对话存在
+          const conversations = await conversationStorage.listConversations();
+          // 查找该角色的最近对话，通过标题匹配（不是最好的方式，但目前没有更好的方式关联）
+          const existingConversation = conversations.find(conv => 
+            conv.title === character.name &&
+            conv.messages.length > 0 && 
+            conv.messages.some(msg => msg.role === 'assistant')
+          );
+
+          if (existingConversation) {
+            console.log('发现该角色的已有对话:', existingConversation.id);
+            
+            // 如果有已有对话，恢复该对话而不是创建新对话
+            // 设置当前角色
+            set({
+              currentCharacter: character,
+              currentConversationId: existingConversation.id,
+              currentTitle: existingConversation.title,
+              systemPrompt: existingConversation.systemPrompt || '你是一个友好、乐于助人的AI助手。'
+            });
+            
+            // 加载对话消息
+            await get().setCurrentConversation(existingConversation.id);
+            
+            console.log('已恢复与角色的已有对话');
+            return true;
+          }
+          
+          // 如果没有已有对话，创建新对话
+          console.log('没有找到与该角色的已有对话，创建新对话');
           
           // 开始新对话
           get().startNewConversation();
@@ -473,51 +505,79 @@ export const useChatStore = create<ChatState>()(
     {
       name: 'ai-roleplay-chat-state',
       // 只持久化这些关键状态，其他数据从IndexedDB加载
-      partialize: (state) => ({
-        currentConversationId: state.currentConversationId,
-        currentCharacter: state.currentCharacter ? {
-          id: state.currentCharacter.id,
-          name: state.currentCharacter.name
-        } : null,
-      }),
+      partialize: (state) => {
+        // 只保留当前对话ID和角色ID等关键状态
+        // 完整的消息和其他大数据全部存入IndexedDB
+        return {
+          currentConversationId: state.currentConversationId,
+          currentCharacter: state.currentCharacter ? {
+            id: state.currentCharacter.id,
+            name: state.currentCharacter.name
+          } : null,
+          // 保留systemPrompt用于对话恢复
+          systemPrompt: state.systemPrompt,
+          // 仅保存最后一条消息的ID，不保存完整消息内容
+          lastMessageId: state.currentMessages.length > 0 ? 
+                        state.currentMessages[state.currentMessages.length - 1].id : null,
+          currentTitle: state.currentTitle,
+        };
+      },
       // 加载持久化数据后的处理
       onRehydrateStorage: () => (state) => {
         if (state) {
           console.log('持久化状态恢复:', {
             currentConversationId: state.currentConversationId,
-            currentCharacter: state.currentCharacter
+            currentCharacter: state.currentCharacter,
+            systemPrompt: state.systemPrompt
           });
           
           // 立即加载对话列表
-          state.loadConversations().then(() => {
-            console.log('对话列表加载完成');
-            
-            // 如果有持久化的对话ID，加载该对话
-            if (state.currentConversationId) {
-              console.log('尝试加载对话:', state.currentConversationId);
-              state.setCurrentConversation(state.currentConversationId)
-                .then(() => console.log('对话加载成功'))
-                .catch(err => console.error('加载对话失败:', err));
-            }
-            
-            // 如果有持久化的角色ID但没有完整角色数据，加载角色
-            const currentCharacter = state.currentCharacter;
-            if (currentCharacter && currentCharacter.id) {
-              console.log('尝试加载角色:', currentCharacter.id);
-              characterStorage.getCharacter(currentCharacter.id)
-                .then(character => {
-                  if (character) {
-                    console.log('角色加载成功:', character.name);
-                    state.setCurrentCharacter(character);
-                  } else {
-                    console.warn('未找到角色:', currentCharacter.id);
-                  }
-                })
-                .catch(error => console.error('加载角色失败:', error));
-            }
-          });
+          setTimeout(() => {
+            state.loadConversations().then(() => {
+              console.log('对话列表加载完成');
+              
+              // 如果有持久化的对话ID，验证数据库中是否存在
+              if (state.currentConversationId) {
+                console.log('尝试验证对话:', state.currentConversationId);
+                conversationStorage.getConversation(state.currentConversationId)
+                  .then(conversation => {
+                    if (conversation) {
+                      // 数据库中存在此对话，则加载
+                      console.log('数据库中存在对话，加载对话:', state.currentConversationId);
+                      state.setCurrentConversation(state.currentConversationId)
+                        .then(() => console.log('对话加载成功'))
+                        .catch(err => console.error('加载对话失败:', err));
+                    } else {
+                      console.warn('对话在数据库中不存在，但本地存储有记录:', state.currentConversationId);
+                      // 对于不存在的对话，创建新对话但不保留任何消息
+                      // 这样避免localStorage和IndexedDB不一致
+                      state.startNewConversation();
+                    }
+                  })
+                  .catch(err => console.error('验证对话失败:', err));
+              }
+              
+              // 如果有持久化的角色ID但没有完整角色数据，加载角色
+              const currentCharacter = state.currentCharacter;
+              if (currentCharacter && currentCharacter.id) {
+                console.log('尝试加载角色:', currentCharacter.id);
+                characterStorage.getCharacter(currentCharacter.id)
+                  .then(character => {
+                    if (character) {
+                      console.log('角色加载成功:', character.name);
+                      state.setCurrentCharacter(character);
+                    } else {
+                      console.warn('未找到角色:', currentCharacter.id);
+                    }
+                  })
+                  .catch(error => console.error('加载角色失败:', error));
+              }
+            });
+          }, 0);
         }
-      }
+      },
+      // 使用localStorage而非默认的sessionStorage
+      storage: createJSONStorage(() => localStorage)
     }
   )
 );
