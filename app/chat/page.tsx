@@ -8,6 +8,7 @@ import { useSettingsStore, useChatStore } from "@/lib/store";
 import { Message as MessageType } from "@/lib/types";
 import { generateId } from "@/lib/utils";
 import { useNavbar } from "@/app/layout";
+import { useSearchParams } from "next/navigation";
 
 export default function ChatPage() {
   const { settings } = useSettingsStore();
@@ -15,14 +16,33 @@ export default function ChatPage() {
     currentMessages, 
     isLoading, 
     systemPrompt,
+    currentCharacter,
     addMessage,
     updateMessage,
     setIsLoading,
-    startNewConversation
+    startNewConversation,
+    startCharacterChat
   } = useChatStore();
   const { isNavbarVisible } = useNavbar();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const responseStartTimeRef = useRef<number>(0);
+  const searchParams = useSearchParams();
+  const characterIdRef = useRef<string | null>(null);
+
+  // 处理URL参数，加载角色
+  useEffect(() => {
+    const characterId = searchParams.get('characterId');
+    
+    // 如果URL参数变化，或者第一次加载且有characterId参数
+    if (characterId && characterId !== characterIdRef.current) {
+      characterIdRef.current = characterId;
+      
+      // 启动角色聊天
+      startCharacterChat(characterId).catch(error => {
+        console.error('启动角色聊天失败:', error);
+      });
+    }
+  }, [searchParams, startCharacterChat]);
 
   // 当消息更新时滚动到底部
   useEffect(() => {
@@ -561,13 +581,14 @@ export default function ChatPage() {
 
   return (
     <div className={`flex flex-col ${isNavbarVisible ? 'h-[calc(100vh-65px)]' : 'h-screen'}`}>
-      <ChatHeader />
+      <ChatHeader character={currentCharacter} />
       <div className="flex-1 overflow-y-auto p-4">
         {currentMessages.map((message) => (
           <Message 
             key={message.id} 
             message={message} 
             onRegenerate={handleRegenerateMessage}
+            character={message.role === 'assistant' ? currentCharacter : undefined}
           />
         ))}
         <div ref={messagesEndRef} />

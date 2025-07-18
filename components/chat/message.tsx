@@ -2,18 +2,20 @@
 
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Message as MessageType } from "@/lib/types";
+import { Message as MessageType, Character } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Copy, Check, Clock, Hash, BarChart2, Trash2, Edit, RefreshCw } from "lucide-react";
+import { Copy, Check, Clock, Hash, BarChart2, Trash2, Edit, RefreshCw, User } from "lucide-react";
 import { useSettingsStore, useChatStore } from "@/lib/store";
+import Image from "next/image";
 
 interface MessageProps {
   message: MessageType;
+  character?: Character | null;
   onEdit?: (messageId: string, content: string) => void;
   onRegenerate?: (messageId: string) => void;
 }
 
-export function Message({ message, onEdit, onRegenerate }: MessageProps) {
+export function Message({ message, character, onEdit, onRegenerate }: MessageProps) {
   const [showRaw, setShowRaw] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -85,8 +87,29 @@ export function Message({ message, onEdit, onRegenerate }: MessageProps) {
           isUser ? "justify-end" : "justify-start"
         )}
       >
-        {/* 楼层号 - 非用户消息时显示在左侧 */}
-        {!isUser && message.messageNumber && showMessageNumber && (
+        {/* 头像 - 非用户消息时显示在左侧 */}
+        {!isUser && (
+          <div className="mt-1">
+            <div className="h-8 w-8 rounded-full overflow-hidden bg-muted flex-shrink-0">
+              {character && character.avatar ? (
+                <Image
+                  src={character.avatar}
+                  alt={character.name || "AI"}
+                  width={32}
+                  height={32}
+                  className="object-cover w-full h-full"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary">
+                  {character?.name ? character.name.charAt(0).toUpperCase() : "AI"}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 楼层号 - 非用户消息时显示在左侧（如果没有头像） */}
+        {!isUser && !character && message.messageNumber && showMessageNumber && (
           <div className="flex items-start mt-1">
             <span className="text-xs text-muted-foreground opacity-50 flex items-center">
               <Hash size={10} className="mr-0.5" />
@@ -212,6 +235,15 @@ export function Message({ message, onEdit, onRegenerate }: MessageProps) {
             </button>
           </div>
         </div>
+
+        {/* 用户头像 - 用户消息时显示在右侧 */}
+        {isUser && (
+          <div className="mt-1">
+            <div className="h-8 w-8 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center">
+              <User className="h-5 w-5 text-primary-foreground" />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 消息操作按钮 - 移至消息气泡外部，淡化显示 */}

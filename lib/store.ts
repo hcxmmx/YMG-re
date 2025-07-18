@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { UserSettings, Message, Conversation } from './types';
+import type { UserSettings, Message, Conversation, Character } from './types';
 import { HarmBlockThreshold } from './types';
-import { conversationStorage } from './storage';
+import { conversationStorage, characterStorage } from './storage';
 import { generateId } from './utils';
 
 // 用户设置存储
@@ -82,6 +82,7 @@ interface ChatState {
   systemPrompt: string;
   conversations: Conversation[];
   messageCounter: number;
+  currentCharacter: Character | null;
   
   // 操作方法
   setCurrentConversation: (id: string | null) => Promise<void>;
@@ -93,6 +94,8 @@ interface ChatState {
   setIsLoading: (loading: boolean) => void;
   loadConversations: () => Promise<void>;
   updateConversationTitle: (title: string) => Promise<void>;
+  setCurrentCharacter: (character: Character | null) => void;
+  startCharacterChat: (characterId: string) => Promise<boolean>;
 }
 
 export const useChatStore = create<ChatState>()((set, get) => ({
@@ -103,6 +106,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   systemPrompt: '你是一个友好、乐于助人的AI助手。',
   conversations: [],
   messageCounter: 0,
+  currentCharacter: null,
   
   loadConversations: async () => {
     try {
@@ -127,7 +131,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         currentMessages: [],
         currentTitle: '新对话',
         systemPrompt: '你是一个友好、乐于助人的AI助手。',
-        messageCounter: 0
+        messageCounter: 0,
+        currentCharacter: null
       });
       return;
     }
@@ -155,7 +160,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         currentMessages: messagesWithNumbers,
         currentTitle: conversation.title,
         systemPrompt: conversation.systemPrompt || '你是一个友好、乐于助人的AI助手。',
-        messageCounter: maxMessageNumber
+        messageCounter: maxMessageNumber,
+        // 不改变当前角色状态
+        currentCharacter: get().currentCharacter
       });
     }
   },
@@ -324,7 +331,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       currentMessages: [],
       currentTitle: '新对话',
       systemPrompt: '你是一个友好、乐于助人的AI助手。',
-      messageCounter: 0
+      messageCounter: 0,
+      currentCharacter: null // 重置当前角色
     });
   },
   
@@ -360,7 +368,55 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     }
   },
   
-  setIsLoading: (loading) => set({ isLoading: loading })
+  setIsLoading: (loading) => set({ isLoading: loading }),
+  
+  // 设置当前角色
+  setCurrentCharacter: (character) => {
+    set({ currentCharacter: character });
+    
+    // 注释: 系统提示词将在未来的预设模块中处理
+    // 此处仅设置角色信息，不设置系统提示词
+  },
+  
+  // 开始与特定角色的聊天
+  startCharacterChat: async (characterId) => {
+    try {
+      // 加载角色信息
+      const character = await characterStorage.getCharacter(characterId);
+      if (!character) {
+        console.error('未找到指定角色:', characterId);
+        return false;
+      }
+      
+      // 开始新对话
+      get().startNewConversation();
+      
+      // 设置当前角色
+      get().setCurrentCharacter(character);
+      
+      // 设置聊天标题为角色名称
+      set({ currentTitle: character.name });
+      
+      // 注释: 系统提示词将在未来的预设模块中处理
+      
+      // 如果有开场白，添加作为助手的第一条消息
+      if (character.firstMessage) {
+        const assistantMessage: Message = {
+          id: generateId(),
+          role: 'assistant',
+          content: character.firstMessage,
+          timestamp: new Date()
+        };
+        
+        await get().addMessage(assistantMessage);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('开始角色聊天失败:', error);
+      return false;
+    }
+  }
 })); 
 
 // 初始化时加载对话历史

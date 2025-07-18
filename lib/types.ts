@@ -65,11 +65,12 @@ export interface Character {
   id: string;
   name: string;
   description?: string;
-  firstMessage?: string;
-  avatar?: string;
-  tags?: string[];
+  firstMessage?: string;  // 角色的开场白
+  avatar?: string;        // 角色头像
+  tags?: string[];        // 角色标签
   createdAt: number;
   updatedAt: number;
+  // 注意: 系统提示词(systemPrompt)将在未来的预设模块中处理，而不是直接存储在角色信息中
 }
 
 // 玩家类型

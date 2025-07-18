@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { characterStorage } from "@/lib/storage";
+import { MessageCircle, Edit, Trash2 } from "lucide-react";
 
 interface CharacterCardProps {
   character: Character;
@@ -43,6 +44,11 @@ export function CharacterCard({ character, onEdit, onDelete }: CharacterCardProp
       router.push(`/characters/edit/${id}`);
     }
   };
+
+  // 开始与角色聊天
+  const handleStartChat = () => {
+    router.push(`/chat?characterId=${id}`);
+  };
   
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString('zh-CN', {
@@ -54,7 +60,10 @@ export function CharacterCard({ character, onEdit, onDelete }: CharacterCardProp
   
   return (
     <div className="border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-      <div className="relative aspect-square bg-gray-100">
+      <div 
+        className="relative aspect-square bg-gray-100 cursor-pointer" 
+        onClick={handleStartChat}
+      >
         {avatar ? (
           <Image
             src={avatar}
@@ -97,17 +106,31 @@ export function CharacterCard({ character, onEdit, onDelete }: CharacterCardProp
           <Button 
             variant="outline" 
             size="sm"
-            className="flex-1"
+            className="flex-1 flex items-center gap-1"
+            onClick={handleStartChat}
+          >
+            <MessageCircle className="h-3.5 w-3.5" />
+            开始聊天
+          </Button>
+        </div>
+
+        <div className="flex space-x-2">
+          <Button 
+            variant="outline" 
+            size="sm"
+            className="flex-1 flex items-center gap-1"
             onClick={handleEdit}
           >
+            <Edit className="h-3.5 w-3.5" />
             编辑
           </Button>
           <Button 
             variant={isDeleting ? "destructive" : "outline"}
             size="sm"
-            className="flex-1"
+            className="flex-1 flex items-center gap-1"
             onClick={handleDelete}
           >
+            <Trash2 className="h-3.5 w-3.5" />
             {isDeleting ? '确认删除' : '删除'}
           </Button>
         </div>
