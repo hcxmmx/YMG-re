@@ -9,6 +9,10 @@ import { Message as MessageType } from "@/lib/types";
 import { generateId } from "@/lib/utils";
 import { useNavbar } from "@/app/layout";
 import { useSearchParams } from "next/navigation";
+import { TypingIndicator } from "@/components/chat/message";
+
+// 定义加载类型
+type LoadingType = 'new' | 'regenerate' | 'variant';
 
 export default function ChatPage() {
   const { settings } = useSettingsStore();
@@ -35,6 +39,10 @@ export default function ChatPage() {
   const characterIdRef = useRef<string | null>(null);
   // 标记是否已处理URL参数
   const urlParamsProcessedRef = useRef(false);
+  
+  // 添加状态来跟踪当前加载的类型和消息ID
+  const [loadingType, setLoadingType] = useState<LoadingType>('new');
+  const [loadingMessageId, setLoadingMessageId] = useState<string | null>(null);
 
   // 处理URL参数，加载角色和对话，但只在首次加载时处理
   useEffect(() => {
@@ -206,15 +214,11 @@ export default function ChatPage() {
     // 保存原始消息的楼层号，确保重新生成时保持相同的编号
     const originalMessageNumber = messageToRegenerate.messageNumber;
 
-    // 将当前消息内容设置为"正在重新生成..."
-    updateMessage({
-      ...messageToRegenerate,
-      content: "正在重新生成...",
-      messageNumber: originalMessageNumber // 确保保留原始楼层号
-    });
-
+    // 设置加载状态
     setIsLoading(true);
-
+    setLoadingType('regenerate');
+    setLoadingMessageId(messageId);
+    
     // 记录响应开始时间
     responseStartTimeRef.current = Date.now();
 
@@ -255,7 +259,7 @@ export default function ChatPage() {
           throw new Error(errorData.error || "API请求失败");
         }
 
-        console.log("流式响应开始接收");
+        console.log("[重新生成] 流式响应开始接收");
         const reader = response.body?.getReader();
         if (!reader) throw new Error("流式响应读取失败");
 
@@ -271,14 +275,14 @@ export default function ChatPage() {
         while (true) {
           const { done, value } = await reader.read();
           if (done) {
-            console.log("流式响应接收完成");
+            console.log("[重新生成] 流式响应接收完成");
             break;
           }
 
           // 解码为文本
           const text = decoder.decode(value, { stream: true });
           chunkCount++;
-          console.log(`接收到第 ${chunkCount} 个原始数据块，长度: ${text.length}`);
+          console.log(`[重新生成] 接收到第 ${chunkCount} 个原始数据块，长度: ${text.length}`);
           buffer += text; // 将新数据添加到缓冲区
 
           // 尝试按SSE格式分割数据
@@ -290,25 +294,25 @@ export default function ChatPage() {
             if (!line.trim()) continue;
 
             if (!line.startsWith("data: ")) {
-              console.warn("非预期格式的数据行:", line);
+              console.warn("[重新生成] 非预期格式的数据行:", line);
               continue;
             }
 
             const data = line.replace("data: ", "");
             if (data === "[DONE]") {
-              console.log("收到流结束标记");
+              console.log("[重新生成] 收到流结束标记");
               continue;
             }
 
             try {
               dataChunkCount++;
               const parsed = JSON.parse(data);
-              console.log(`解析第 ${dataChunkCount} 个数据块:`,
+              console.log(`[重新生成] 解析第 ${dataChunkCount} 个数据块:`,
                 parsed.text ? `文本(${parsed.text.length}字符)` :
                   parsed.error ? `错误(${parsed.error})` : "无内容");
 
               if (parsed.error) {
-                console.error("流式响应错误:", parsed.error);
+                console.error("[重新生成] 流式响应错误:", parsed.error);
                 // 不抛出异常，而是显示错误消息
                 const updatedContent = accumulatedContent +
                   (accumulatedContent ? "\n\n" : "") +
@@ -329,12 +333,11 @@ export default function ChatPage() {
                 if (!firstChunkReceived) {
                   firstChunkReceived = true;
                   const firstChunkTime = Date.now() - responseStartTimeRef.current;
-                  console.log(`首个响应块接收时间: ${firstChunkTime}ms`);
+                  console.log(`[重新生成] 首个响应块接收时间: ${firstChunkTime}ms`);
                 }
 
                 accumulatedContent += parsed.text;
-                // 使用updateMessage更新消息内容，并添加时间戳用于调试
-                console.log(`更新消息内容，时间: ${new Date().toISOString()}, 新增内容: "${parsed.text}"`);
+                // 使用updateMessage更新消息内容
                 updateMessage({
                   ...messageToRegenerate,
                   content: accumulatedContent,
@@ -344,15 +347,14 @@ export default function ChatPage() {
               }
             } catch (e) {
               // 解析失败，记录错误但不中断流程
-              console.error("解析流式数据失败:", e, "原始数据:", data);
-              // 继续处理下一个数据块
+              console.error("[重新生成] 解析流式数据失败:", e, "原始数据:", data);
             }
           }
         }
 
         // 处理缓冲区中可能剩余的数据
         if (buffer.trim()) {
-          console.log("处理剩余缓冲区数据");
+          console.log("[重新生成] 处理剩余缓冲区数据");
           const lines = buffer.split("\n\n");
           for (const line of lines) {
             if (!line.trim() || !line.startsWith("data: ")) continue;
@@ -373,18 +375,18 @@ export default function ChatPage() {
                 });
               }
             } catch (e) {
-              console.error("解析剩余流式数据失败:", e);
+              console.error("[重新生成] 解析剩余流式数据失败:", e);
             }
           }
         }
 
         // 计算总响应时间并更新消息
         const responseTime = Date.now() - responseStartTimeRef.current;
-        console.log(`总响应时间: ${responseTime}ms`);
+        console.log(`[重新生成] 总响应时间: ${responseTime}ms`);
 
         // 如果最终没有收到任何内容，显示提示信息
         if (!accumulatedContent) {
-          console.warn("流式响应未产生任何内容");
+          console.warn("[重新生成] 流式响应未产生任何内容");
           updateMessage({
             ...messageToRegenerate,
             content: "AI未能生成回复。可能是由于安全过滤或其他原因。",
@@ -428,7 +430,7 @@ export default function ChatPage() {
         });
       }
     } catch (error: any) {
-      console.error("API调用失败:", error);
+      console.error("[重新生成] API调用失败:", error);
       // 更新为错误消息
       updateMessage({
         ...messageToRegenerate,
@@ -438,6 +440,7 @@ export default function ChatPage() {
       });
     } finally {
       setIsLoading(false);
+      setLoadingMessageId(null);
     }
   };
 
@@ -466,15 +469,11 @@ export default function ChatPage() {
     // 准备变体数据
     const currentAlternates = messageToAddVariant.alternateResponses || [];
     
-    // 显示"正在生成变体..."消息
-    updateMessage({
-      ...messageToAddVariant,
-      content: "正在生成变体...",
-      // 不改变原始内容的索引或变体数组，直到我们有了新回复
-      messageNumber: originalMessageNumber
-    });
-
+    // 设置加载状态
     setIsLoading(true);
+    setLoadingType('variant');
+    setLoadingMessageId(messageId);
+    
     // 记录响应开始时间
     responseStartTimeRef.current = Date.now();
 
@@ -515,6 +514,7 @@ export default function ChatPage() {
           throw new Error(errorData.error || "API请求失败");
         }
 
+        console.log("[生成变体] 流式响应开始接收");
         const reader = response.body?.getReader();
         if (!reader) throw new Error("流式响应读取失败");
 
@@ -523,17 +523,22 @@ export default function ChatPage() {
         let decoder = new TextDecoder();
         let buffer = ""; // 用于存储不完整的数据块
         let chunkCount = 0;
+        let dataChunkCount = 0;
         let firstChunkReceived = false;
         const startTime = Date.now();
 
         // 处理流式数据
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            console.log("[生成变体] 流式响应接收完成");
+            break;
+          }
 
           // 解码为文本
           const text = decoder.decode(value, { stream: true });
           chunkCount++;
+          console.log(`[生成变体] 接收到第 ${chunkCount} 个原始数据块，长度: ${text.length}`);
           buffer += text; // 将新数据添加到缓冲区
 
           // 尝试按SSE格式分割数据
@@ -549,62 +554,71 @@ export default function ChatPage() {
 
             try {
               const parsed = JSON.parse(data);
-
-              if (parsed.error) {
-                console.error("流式响应错误:", parsed.error);
-                // 恢复原始内容
-                updateMessage({
-                  ...messageToAddVariant,
-                  content: originalContent,
-                  messageNumber: originalMessageNumber
-                });
-                continue;
-              }
-
               if (parsed.text !== undefined) {
+                // 记录第一个内容块的时间
                 if (!firstChunkReceived) {
                   firstChunkReceived = true;
+                  const firstChunkTime = Date.now() - responseStartTimeRef.current;
+                  console.log(`[生成变体] 首个响应块接收时间: ${firstChunkTime}ms`);
                 }
 
                 accumulatedContent += parsed.text;
-                
-                // 实时更新消息内容
-                updateMessage({
-                  ...messageToAddVariant,
-                  content: accumulatedContent,
-                  timestamp: new Date(),
-                  responseTime: Date.now() - startTime,
-                  messageNumber: originalMessageNumber
-                });
               }
             } catch (e) {
-              console.error("解析流式数据失败:", e);
+              // 解析失败，记录错误但不中断流程
+              console.error("[生成变体] 解析流式数据失败:", e, "原始数据:", data);
             }
           }
         }
-        
-        // 流式响应完成，保存新内容为变体
-        if (accumulatedContent && accumulatedContent !== originalContent) {
-          // 将新内容添加到变体列表
-          const newAlternates = [...currentAlternates, accumulatedContent];
-          const newIndex = newAlternates.length; // 将索引设置为最新的变体
-          
-          // 更新消息
-          updateMessage({
-            ...messageToAddVariant,
-            content: accumulatedContent, // 显示新生成的内容
-            timestamp: new Date(),
-            responseTime: Date.now() - startTime,
-            messageNumber: originalMessageNumber,
-            alternateResponses: newAlternates,
-            currentResponseIndex: newIndex
-          });
-        } else {
-          // 恢复原始内容，可能生成失败或生成的内容与原始内容相同
+
+        // 处理缓冲区中可能剩余的数据
+        if (buffer.trim()) {
+          console.log("[生成变体] 处理剩余缓冲区数据");
+          const lines = buffer.split("\n\n");
+          for (const line of lines) {
+            if (!line.trim() || !line.startsWith("data: ")) continue;
+
+            const data = line.replace("data: ", "");
+            if (data === "[DONE]") continue;
+
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.text !== undefined) {
+                accumulatedContent += parsed.text;
+              }
+            } catch (e) {
+              console.error("[生成变体] 解析剩余流式数据失败:", e);
+            }
+          }
+        }
+
+        // 计算总响应时间
+        const responseTime = Date.now() - responseStartTimeRef.current;
+        console.log(`[生成变体] 总响应时间: ${responseTime}ms`);
+
+        // 如果最终没有收到任何内容，显示提示信息
+        if (!accumulatedContent) {
+          console.warn("[生成变体] 流式响应未产生任何内容");
+          // 保持原始内容，显示错误
           updateMessage({
             ...messageToAddVariant,
             content: originalContent,
-            messageNumber: originalMessageNumber
+            alternateResponses: currentAlternates,
+            currentResponseIndex: 0, // 重置为原始内容
+            timestamp: new Date(),
+          });
+        } else {
+          // 将新生成的变体添加到变体数组中
+          const updatedAlternates = [...currentAlternates, accumulatedContent];
+          // 更新消息，将新生成的内容设为当前显示内容，并记录原始内容为变体之一
+          updateMessage({
+            ...messageToAddVariant,
+            content: accumulatedContent, // 显示新生成的内容
+            alternateResponses: updatedAlternates.length > 0 ? 
+              [originalContent, ...currentAlternates] : undefined, // 确保原始内容被保存为第一个变体
+            currentResponseIndex: updatedAlternates.length, // 索引为变体数组长度，指向新内容
+            timestamp: new Date(),
+            responseTime: responseTime
           });
         }
       } else {
@@ -622,43 +636,33 @@ export default function ChatPage() {
 
         const data = await response.json();
         const responseTime = Date.now() - responseStartTimeRef.current;
-        
-        // 检查新内容是否有效且不与原始内容相同
-        if (data.text && data.text !== originalContent) {
-          // 保存新生成的内容作为变体
-          const newAlternates = [...currentAlternates, data.text];
-          const newIndex = newAlternates.length; // 设置索引为最新的变体
-          
-          // 更新消息
-          updateMessage({
-            ...messageToAddVariant,
-            content: data.text,
-            timestamp: new Date(),
-            responseTime: responseTime,
-            messageNumber: originalMessageNumber,
-            alternateResponses: newAlternates,
-            currentResponseIndex: newIndex
-          });
-        } else {
-          // 恢复原始内容
-          updateMessage({
-            ...messageToAddVariant,
-            content: originalContent,
-            messageNumber: originalMessageNumber
-          });
-        }
+
+        // 将新生成的变体添加到变体数组中
+        const updatedAlternates = [...currentAlternates, data.text];
+        // 更新消息，将新生成的内容设为当前显示内容，并记录原始内容为变体之一
+        updateMessage({
+          ...messageToAddVariant,
+          content: data.text, // 显示新生成的内容
+          alternateResponses: updatedAlternates.length > 0 ? 
+            [originalContent, ...currentAlternates] : undefined, // 确保原始内容被保存为第一个变体
+          currentResponseIndex: updatedAlternates.length, // 索引为变体数组长度，指向新内容
+          timestamp: new Date(),
+          responseTime: responseTime
+        });
       }
     } catch (error: any) {
-      console.error("生成变体失败:", error);
-      
-      // 恢复原始内容
+      console.error("[生成变体] API调用失败:", error);
+      // 保持原始内容，显示错误
       updateMessage({
         ...messageToAddVariant,
         content: originalContent,
-        messageNumber: originalMessageNumber
+        alternateResponses: currentAlternates,
+        currentResponseIndex: 0, // 重置为原始内容
+        timestamp: new Date(),
       });
     } finally {
       setIsLoading(false);
+      setLoadingMessageId(null);
     }
   };
   
@@ -697,7 +701,11 @@ export default function ChatPage() {
     };
 
     await addMessage(userMessage);
+    
+    // 设置加载状态
     setIsLoading(true);
+    setLoadingType('new');
+    setLoadingMessageId(null);
 
     // 记录响应开始时间
     responseStartTimeRef.current = Date.now();
@@ -934,6 +942,7 @@ export default function ChatPage() {
       });
     } finally {
       setIsLoading(false);
+      setLoadingMessageId(null);
     }
   };
 
@@ -968,6 +977,9 @@ export default function ChatPage() {
     if (!canRequestReply || !lastUserMessage) return;
     
     setIsLoading(true);
+    setLoadingType('new');
+    setLoadingMessageId(null);
+
     // 记录响应开始时间
     responseStartTimeRef.current = Date.now();
 
@@ -1202,6 +1214,7 @@ export default function ChatPage() {
       });
     } finally {
       setIsLoading(false);
+      setLoadingMessageId(null);
     }
   };
 
@@ -1209,29 +1222,56 @@ export default function ChatPage() {
     <div className={`flex flex-col ${isNavbarVisible ? 'h-[calc(100vh-65px)]' : 'h-screen'}`}>
       <ChatHeader character={currentCharacter} />
       <div className="flex-1 overflow-y-auto p-4">
-        {currentMessages.map((message, index) => (
-          <Message
-            key={`${message.id}-${index}`}
-            message={message}
-            onRegenerate={handleMessageAction}
-            character={message.role === 'assistant' ? currentCharacter : undefined}
-          />
-        ))}
+        {currentMessages.map((message, index) => {
+          // 检查当前消息是否正在加载中（重新生成或变体生成）
+          const isMessageLoading = isLoading && loadingMessageId === message.id;
+          const currentLoadingType = isMessageLoading ? loadingType : undefined;
+          
+          return (
+            <div key={`${message.id}-${index}`}>
+              <Message
+                message={message}
+                onRegenerate={handleMessageAction}
+                character={message.role === 'assistant' ? currentCharacter : undefined}
+              />
+              {/* 显示消息特定的加载指示器 */}
+              {isMessageLoading && (
+                <div className="pl-11 -mt-4 mb-2">
+                  <div className="text-xs text-muted-foreground flex items-center gap-1">
+                    <div className="flex space-x-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "0ms" }}></div>
+                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "200ms" }}></div>
+                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "400ms" }}></div>
+                    </div>
+                    <span className="ml-1">
+                      {currentLoadingType === 'regenerate' 
+                        ? "正在重新生成回复..."
+                        : "正在生成回复变体..."}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        
+        {/* 仅在创建新消息或回复时在底部显示加载指示器 */}
+        {isLoading && loadingType === 'new' && (
+          <TypingIndicator character={currentCharacter} loadingType="new" />
+        )}
+        
+        {/* 重新生成和变体生成的指示器由相应功能处理，不在这里显示 */}
+        
         <div ref={messagesEndRef} />
       </div>
       <div className="border-t">
-        {/* 
-          ChatInput组件: 
-          - 传递onRequestReply回调以支持"直接请求回复"功能
-          - 传递canRequestReply标志来控制功能启用条件
-        */}
         <ChatInput
           onSendMessage={handleSendMessage}
           onRequestReply={handleRequestReply}
           isLoading={isLoading}
-          disabled={isLoading}
+          disabled={false} // 始终允许用户输入
           lastUserMessage={lastUserMessage?.content || null}
-          canRequestReply={canRequestReply}
+          canRequestReply={canRequestReply && !isLoading} // AI回复时不允许直接请求回复
         />
       </div>
     </div>

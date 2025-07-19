@@ -43,12 +43,12 @@ export function ChatInput({
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     
-    if (message.trim() && !isLoading && !disabled) {
-      // 正常发送新消息
+    if (message.trim()) {
+      // 正常发送新消息，即使AI正在回复中也允许发送
       onSendMessage(message, images.length > 0 ? images : undefined);
       setMessage("");
       setImages([]);
-    } else if (!message.trim() && canRequestReply && onRequestReply && !isLoading && !disabled) {
+    } else if (!message.trim() && canRequestReply && onRequestReply && !disabled) {
       // 直接请求对最后一条用户消息的回复（不会重发用户消息）
       // 这个功能允许用户在输入框为空时，点击发送按钮直接获取对最后一条用户消息的回复
       onRequestReply();
@@ -122,7 +122,7 @@ export function ChatInput({
           variant="ghost"
           size="icon"
           onClick={() => fileInputRef.current?.click()}
-          disabled={isLoading || disabled}
+          disabled={disabled}
           className="shrink-0"
         >
           <Image className="h-5 w-5" />
@@ -134,9 +134,9 @@ export function ChatInput({
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={isLoading ? "AI正在回复..." : canRequestReply ? "按发送键直接请求回复..." : "输入消息..."}
+          placeholder={canRequestReply ? "输入新消息或按发送键请求回复..." : "输入消息..."}
           className="flex-1"
-          disabled={isLoading || disabled}
+          disabled={disabled}
           autoFocus
         />
         
@@ -144,7 +144,7 @@ export function ChatInput({
         <Button 
           type="submit" 
           size="icon"
-          disabled={!canSendMessage() || isLoading || disabled}
+          disabled={!canSendMessage() || disabled}
           className="shrink-0"
         >
           <Send className="h-5 w-5" />
@@ -159,7 +159,7 @@ export function ChatInput({
         accept="image/*"
         multiple
         className="hidden"
-        disabled={isLoading || disabled}
+        disabled={disabled}
       />
     </form>
   );

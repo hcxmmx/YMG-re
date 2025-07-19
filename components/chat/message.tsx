@@ -18,6 +18,59 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
+// 添加一个打字动画指示器组件
+function TypingIndicator({ 
+  character,
+  loadingType = 'new' 
+}: { 
+  character?: Character | null;
+  loadingType?: 'new' | 'regenerate' | 'variant'; // 加载类型：新消息、重新生成、变体生成
+}) {
+  // 根据不同的加载类型显示不同的文本
+  const loadingText = loadingType === 'regenerate' 
+    ? "正在重新生成回复..." 
+    : loadingType === 'variant'
+      ? "正在生成回复变体..."
+      : "正在回复...";
+
+  return (
+    <div className="mb-6 group">
+      <div className="flex gap-3 justify-start">
+        {/* 角色头像 */}
+        <div className="flex flex-col items-center gap-1">
+          <div className="h-8 w-8 rounded-full overflow-hidden bg-muted flex-shrink-0">
+            {character && character.avatar ? (
+              <Image
+                src={character.avatar}
+                alt={character.name || "AI"}
+                width={32}
+                height={32}
+                className="object-cover w-full h-full"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary">
+                {character?.name ? character.name.charAt(0).toUpperCase() : "AI"}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 正在输入的动画指示器 */}
+        <div className="flex flex-col max-w-[85%]">
+          <div className="px-4 py-3 rounded-lg bg-muted inline-flex items-center">
+            <div className="flex space-x-1">
+              <div className="w-2 h-2 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "0ms" }}></div>
+              <div className="w-2 h-2 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "200ms" }}></div>
+              <div className="w-2 h-2 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "400ms" }}></div>
+            </div>
+            <span className="ml-3 text-sm text-muted-foreground">{loadingText}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface MessageProps {
   message: MessageType;
   character?: Character | null;
@@ -494,3 +547,6 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
     </div>
   );
 } 
+
+// 导出TypingIndicator组件以便在ChatPage中使用
+export { TypingIndicator }; 
