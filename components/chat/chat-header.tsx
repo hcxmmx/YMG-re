@@ -5,26 +5,69 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useChatStore } from "@/lib/store";
 import { useNavbar } from "@/app/layout";
-import { ChevronUp, ChevronDown, User } from "lucide-react";
-import { Character } from "@/lib/types";
+import { ChevronUp, ChevronDown, User, Plus, MessageCircle, MoreHorizontal, MessageSquare, Pencil, Trash, MoreVertical } from "lucide-react";
+import { Character, Conversation } from "@/lib/types";
 import Image from "next/image";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogClose,
+} from "@/components/ui/dialog";
+import { useRouter } from 'next/navigation';
 
 interface ChatHeaderProps {
   character?: Character | null;
 }
 
 export function ChatHeader({ character }: ChatHeaderProps) {
-  const { currentTitle, currentConversationId, updateConversationTitle } = useChatStore();
+  const { 
+    currentTitle, 
+    currentConversationId, 
+    updateConversationTitle,
+    getCharacterConversations,
+    createNewCharacterChat,
+    setCurrentConversation,
+    conversations,
+    deleteConversation,
+    renameConversation
+  } = useChatStore();
   const { isNavbarVisible, toggleNavbar } = useNavbar();
   const [isEditing, setIsEditing] = useState(false);
   const [title, setTitle] = useState(currentTitle);
+  const [characterConversations, setCharacterConversations] = useState<Conversation[]>([]);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
+  const [selectedConversation, setSelectedConversation] = useState<{id: string, title: string} | null>(null);
+  const [newTitle, setNewTitle] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   // 当currentTitle从store中更新时，同步本地状态
   useEffect(() => {
     setTitle(currentTitle);
   }, [currentTitle]);
+
+  // 获取角色相关的对话
+  useEffect(() => {
+    if (character?.id) {
+      const convs = getCharacterConversations(character.id);
+      setCharacterConversations(convs);
+    }
+  }, [character, getCharacterConversations, conversations]);
 
   // 处理导航栏切换并滚动到适当位置
   const handleToggleNavbar = () => {
@@ -79,6 +122,76 @@ export function ChatHeader({ character }: ChatHeaderProps) {
     }
   };
 
+  // 创建新对话
+  const handleCreateNewChat = async () => {
+    if (character?.id) {
+      const newConversationId = await createNewCharacterChat(character.id);
+      if (newConversationId) {
+        // 刷新页面以加载新对话
+        router.push(`/chat?characterId=${character.id}&conversationId=${newConversationId}`);
+      }
+    }
+  };
+
+  // 切换到指定对话
+  const handleSwitchConversation = (conversationId: string) => {
+    setCurrentConversation(conversationId);
+  };
+
+  // 格式化日期
+  const formatDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleDateString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  // 处理对话删除
+  const handleDeleteConversation = async (conversationId: string) => {
+    try {
+      await deleteConversation(conversationId);
+      setIsDeleteDialogOpen(false);
+      setSelectedConversation(null);
+    } catch (error) {
+      console.error('删除对话失败:', error);
+    }
+  };
+
+  // 打开重命名对话框
+  const handleOpenRenameDialog = (conversation: {id: string, title: string}) => {
+    setSelectedConversation(conversation);
+    setNewTitle(conversation.title);
+    setIsRenameDialogOpen(true);
+    
+    // 等待对话框打开后聚焦输入框
+    setTimeout(() => {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }, 100);
+  };
+
+  // 执行重命名
+  const handleRenameConversation = async () => {
+    if (!selectedConversation || !newTitle.trim()) return;
+    
+    try {
+      await renameConversation(selectedConversation.id, newTitle.trim());
+      setIsRenameDialogOpen(false);
+      setSelectedConversation(null);
+      setNewTitle('');
+    } catch (error) {
+      console.error('重命名对话失败:', error);
+    }
+  };
+
+  // 打开删除对话框
+  const handleOpenDeleteDialog = (conversation: {id: string, title: string}) => {
+    setSelectedConversation(conversation);
+    setIsDeleteDialogOpen(true);
+  };
+
   return (
     <div ref={headerRef} className="w-full border-b">
       <div className="h-12 flex items-center px-4">
@@ -115,12 +228,104 @@ export function ChatHeader({ character }: ChatHeaderProps) {
                 placeholder="对话名称"
               />
             ) : (
-              <div 
-                className="font-medium truncate cursor-pointer py-1"
-                onClick={handleTitleEdit}
-                title={currentTitle}
-              >
-                {character ? character.name : currentTitle}
+              <div className="flex items-center gap-2">
+                <div 
+                  className="font-medium truncate cursor-pointer py-1"
+                  onClick={handleTitleEdit}
+                  title={currentTitle}
+                >
+                  {character ? character.name : currentTitle}
+                </div>
+                
+                {/* 对话管理下拉菜单 */}
+                {character && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                        <MessageCircle className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-56">
+                      <div className="text-xs font-medium text-muted-foreground px-2 py-1.5">
+                        对话管理
+                      </div>
+                      
+                      <DropdownMenuSeparator />
+                      
+                      {/* 创建新对话 */}
+                      <DropdownMenuItem 
+                        className="cursor-pointer flex items-center gap-2"
+                        onClick={handleCreateNewChat}
+                      >
+                        <Plus className="h-4 w-4" />
+                        <span>创建新对话</span>
+                      </DropdownMenuItem>
+                      
+                      {characterConversations.length > 0 && <DropdownMenuSeparator />}
+                      
+                      {/* 已有对话列表 */}
+                      <div className="max-h-60 overflow-y-auto">
+                        {characterConversations.map(conv => (
+                          <DropdownMenuItem
+                            key={conv.id}
+                            className={`cursor-pointer flex items-start justify-between gap-2 pr-1 ${
+                              conv.id === currentConversationId ? 'bg-muted' : ''
+                            }`}
+                            onClick={() => handleSwitchConversation(conv.id)}
+                          >
+                            <div className="flex items-start gap-2 flex-1 min-w-0">
+                              <MessageSquare className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                              <div className="flex flex-col min-w-0">
+                                <span className="truncate">{conv.title}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {formatDate(conv.lastUpdated)}
+                                  {' · '}
+                                  {conv.messages.length}条消息
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {/* 对话操作按钮 */}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon"
+                                  className="h-6 w-6 p-0"
+                                >
+                                  <MoreVertical className="h-3.5 w-3.5" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-36">
+                                <DropdownMenuItem 
+                                  className="cursor-pointer flex items-center gap-2"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenRenameDialog({id: conv.id, title: conv.title});
+                                  }}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                  <span>重命名</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem 
+                                  className="cursor-pointer text-destructive flex items-center gap-2"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenDeleteDialog({id: conv.id, title: conv.title});
+                                  }}
+                                >
+                                  <Trash className="h-3.5 w-3.5" />
+                                  <span>删除</span>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </DropdownMenuItem>
+                        ))}
+                      </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
             )}
           </div>
@@ -152,6 +357,76 @@ export function ChatHeader({ character }: ChatHeaderProps) {
           </p>
         </div>
       )}
+
+      {/* 删除对话确认对话框 */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>删除对话</DialogTitle>
+            <DialogDescription>
+              确定要删除这个对话吗？此操作不可撤销。
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedConversation && (
+            <div className="py-2">
+              <p className="text-sm font-medium">对话名称：{selectedConversation.title}</p>
+            </div>
+          )}
+          
+          <DialogFooter className="flex space-x-2 justify-end">
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              取消
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={() => selectedConversation && handleDeleteConversation(selectedConversation.id)}
+            >
+              确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 重命名对话对话框 */}
+      <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>重命名对话</DialogTitle>
+            <DialogDescription>
+              请输入新的对话名称。
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <Input
+              ref={renameInputRef}
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="对话名称"
+              className="w-full"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleRenameConversation();
+                }
+              }}
+            />
+          </div>
+          
+          <DialogFooter className="flex space-x-2 justify-end">
+            <Button variant="outline" onClick={() => setIsRenameDialogOpen(false)}>
+              取消
+            </Button>
+            <Button 
+              variant="default"
+              onClick={handleRenameConversation}
+              disabled={!newTitle.trim()}
+            >
+              确认
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 } 

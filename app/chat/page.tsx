@@ -32,32 +32,57 @@ export default function ChatPage() {
   const responseStartTimeRef = useRef<number>(0);
   const searchParams = useSearchParams();
   const characterIdRef = useRef<string | null>(null);
+  // 标记是否已处理URL参数
+  const urlParamsProcessedRef = useRef(false);
 
-  // 处理URL参数，加载角色
+  // 处理URL参数，加载角色和对话，但只在首次加载时处理
   useEffect(() => {
-    const characterId = searchParams.get('characterId');
+    // 如果已经处理过URL参数，则不再处理
+    if (urlParamsProcessedRef.current) {
+      return;
+    }
 
-    // 如果URL参数变化，或者第一次加载且有characterId参数
-    if (characterId && characterId !== characterIdRef.current) {
+    const characterId = searchParams.get('characterId');
+    const conversationId = searchParams.get('conversationId');
+
+    // 标记URL参数已处理
+    urlParamsProcessedRef.current = true;
+
+    // 如果有对话ID参数，优先加载指定对话
+    if (conversationId) {
+      setCurrentConversation(conversationId).catch(error => {
+        console.error('加载指定对话失败:', error);
+      });
+      return; // 已经处理了对话加载，不需要进一步处理角色
+    }
+
+    // 如果只有角色ID参数
+    if (characterId) {
       characterIdRef.current = characterId;
 
-      // 检查是否已经有该角色的消息，通过角色ID和当前对话标题匹配
-      const hasCharacterMessages = currentCharacter?.id === characterId && 
-        currentMessages.some(msg => msg.role === 'assistant');
+      // 检查是否已经有该角色的对话
+      const characterConversations = conversations.filter(conv => 
+        conv.messages.some(msg => msg.role === 'assistant' && msg.characterId === characterId)
+      );
 
-      // 只有在没有角色消息的情况下才启动角色聊天
-      // 或者当前不是这个角色的对话时才启动角色聊天
-      if (!hasCharacterMessages) {
+      // 如果有该角色的对话，加载最新的
+      if (characterConversations.length > 0) {
+        // 按最后更新时间排序，选择最新的对话
+        const sortedConversations = [...characterConversations]
+          .sort((a, b) => b.lastUpdated - a.lastUpdated);
+        
+        setCurrentConversation(sortedConversations[0].id).catch(error => {
+          console.error('加载角色最近对话失败:', error);
+        });
+      } else {
+        // 没有该角色的对话，创建新的
         console.log('URL参数包含角色ID，启动角色聊天:', characterId);
-        // 启动角色聊天
         startCharacterChat(characterId).catch(error => {
           console.error('启动角色聊天失败:', error);
         });
-      } else {
-        console.log('已有该角色的聊天记录，无需重新启动');
       }
     }
-  }, [searchParams, startCharacterChat, currentMessages, currentCharacter]);
+  }, [searchParams, startCharacterChat, setCurrentConversation, conversations]);
 
   // 确保在页面加载时加载对话历史
   useEffect(() => {
@@ -68,7 +93,14 @@ export default function ChatPage() {
       
       // 如果有URL参数中的角色ID，优先处理
       const characterId = searchParams.get('characterId');
-      if (characterId) {
+      const conversationId = searchParams.get('conversationId');
+      
+      if (characterId && conversationId) {
+        console.log('URL中包含角色ID和对话ID，直接加载特定对话');
+        setCurrentConversation(conversationId).catch(error => {
+          console.error('加载指定对话失败:', error);
+        });
+      } else if (characterId) {
         console.log('URL中包含角色ID:', characterId);
         characterIdRef.current = characterId;
         

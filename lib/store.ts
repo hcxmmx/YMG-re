@@ -84,6 +84,7 @@ interface ChatState {
   conversations: Conversation[];
   messageCounter: number;
   currentCharacter: Character | null;
+  lastSelectedCharacterConversation: Record<string, string>; // 记录每个角色ID对应的最后选择的对话ID
 
   // 操作方法
   setCurrentConversation: (id: string | null) => Promise<void>;
@@ -97,6 +98,11 @@ interface ChatState {
   updateConversationTitle: (title: string) => Promise<void>;
   setCurrentCharacter: (character: Character | null) => void;
   startCharacterChat: (characterId: string) => Promise<boolean>;
+  getCharacterConversations: (characterId: string) => Conversation[];
+  createNewCharacterChat: (characterId: string) => Promise<string | null>;
+  getLastSelectedCharacterConversation: (characterId: string) => string | null;
+  deleteConversation: (id: string) => Promise<void>; // 删除对话
+  renameConversation: (id: string, newTitle: string) => Promise<void>; // 重命名对话
 }
 
 export const useChatStore = create<ChatState>()(
@@ -110,6 +116,7 @@ export const useChatStore = create<ChatState>()(
       conversations: [],
       messageCounter: 0,
       currentCharacter: null,
+      lastSelectedCharacterConversation: {}, // 初始化
 
       loadConversations: async () => {
         try {
@@ -157,6 +164,26 @@ export const useChatStore = create<ChatState>()(
             maxMessageNumber++;
             return { ...msg, messageNumber: maxMessageNumber };
           });
+
+          // 确定该对话关联的角色ID
+          let characterId = null;
+          for (const msg of conversation.messages) {
+            if (msg.role === 'assistant' && msg.characterId) {
+              characterId = msg.characterId;
+              break;
+            }
+          }
+
+          // 如果找到角色ID，更新该角色的最后选择对话
+          if (characterId) {
+            set(state => ({
+              lastSelectedCharacterConversation: {
+                ...state.lastSelectedCharacterConversation,
+                [characterId]: id
+              }
+            }));
+            console.log(`已更新角色 ${characterId} 的最后选择对话: ${id}`);
+          }
 
           set({
             currentConversationId: id,
@@ -467,7 +494,8 @@ export const useChatStore = create<ChatState>()(
               content: character.firstMessage,
               timestamp: new Date(),
               messageNumber: 1,
-              charCount: character.firstMessage.length
+              charCount: character.firstMessage.length,
+              characterId: character.id // 添加角色ID
             };
             
             messages.push(assistantMessage);
@@ -500,6 +528,152 @@ export const useChatStore = create<ChatState>()(
           console.error('开始角色聊天失败:', error);
           return false;
         }
+      },
+
+      getCharacterConversations: (characterId) => {
+        const { conversations } = get();
+        // 检查所有对话，找出与指定角色相关的对话
+        return conversations.filter(conv => {
+          // 方法1：检查消息中的characterId
+          const hasCharacterId = conv.messages.some(msg => 
+            msg.role === 'assistant' && msg.characterId === characterId
+          );
+          
+          // 方法2：通过对话标题匹配（向后兼容没有characterId的旧对话）
+          const characterName = get().conversations.find(c => 
+            c.messages.some(m => m.characterId === characterId)
+          )?.title;
+          
+          const matchesTitle = characterName && conv.title === characterName;
+          
+          return hasCharacterId || matchesTitle;
+        });
+      },
+
+      createNewCharacterChat: async (characterId) => {
+        try {
+          const character = await characterStorage.getCharacter(characterId);
+          if (!character) {
+            console.error('未找到指定角色:', characterId);
+            return null;
+          }
+
+          const conversationId = generateId();
+          const messages: Message[] = [];
+
+          if (character.firstMessage) {
+            const messageId = generateId();
+            const assistantMessage: Message = {
+              id: messageId,
+              role: 'assistant',
+              content: character.firstMessage,
+              timestamp: new Date(),
+              messageNumber: 1,
+              charCount: character.firstMessage.length,
+              characterId: characterId // 添加角色ID
+            };
+            messages.push(assistantMessage);
+            set({
+              currentMessages: messages,
+              messageCounter: 1
+            });
+          }
+
+          set({
+            currentConversationId: conversationId,
+            currentTitle: character.name,
+            currentCharacter: character,
+            systemPrompt: '你是一个友好、乐于助人的AI助手。'
+          });
+
+          await conversationStorage.saveConversation(
+            conversationId,
+            character.name,
+            messages,
+            '你是一个友好、乐于助人的AI助手。'
+          );
+
+          get().loadConversations();
+          return conversationId;
+        } catch (error) {
+          console.error('创建新角色聊天失败:', error);
+          return null;
+        }
+      },
+
+      getLastSelectedCharacterConversation: (characterId) => {
+        return get().lastSelectedCharacterConversation[characterId] || null;
+      },
+
+      deleteConversation: async (id) => {
+        try {
+          // 检查当前是否正在查看要删除的对话
+          const { currentConversationId } = get();
+          
+          // 从数据库中删除对话
+          await conversationStorage.deleteConversation(id);
+          
+          // 更新对话列表
+          await get().loadConversations();
+          
+          // 如果删除的是当前对话，重置当前对话状态或加载其他对话
+          if (currentConversationId === id) {
+            const { conversations } = get();
+            if (conversations.length > 0) {
+              // 如果还有其他对话，加载第一个对话
+              await get().setCurrentConversation(conversations[0].id);
+            } else {
+              // 如果没有其他对话，重置为新对话
+              get().startNewConversation();
+            }
+          }
+          
+          // 如果被删除的对话是某个角色的最后选择对话，也需要清除该记录
+          const { lastSelectedCharacterConversation } = get();
+          const updatedLastSelected = { ...lastSelectedCharacterConversation };
+          
+          // 检查每个角色的最后选择对话
+          Object.entries(updatedLastSelected).forEach(([characterId, conversationId]) => {
+            if (conversationId === id) {
+              delete updatedLastSelected[characterId];
+            }
+          });
+          
+          // 更新状态
+          set({ lastSelectedCharacterConversation: updatedLastSelected });
+        } catch (error) {
+          console.error('删除对话失败:', error);
+          throw error;
+        }
+      },
+
+      renameConversation: async (id, newTitle) => {
+        try {
+          // 获取要重命名的对话
+          const conversation = await conversationStorage.getConversation(id);
+          if (!conversation) {
+            throw new Error('对话不存在');
+          }
+          
+          // 更新对话标题
+          await conversationStorage.saveConversation(
+            id,
+            newTitle,
+            conversation.messages,
+            conversation.systemPrompt
+          );
+          
+          // 如果是当前对话，更新当前标题
+          if (get().currentConversationId === id) {
+            set({ currentTitle: newTitle });
+          }
+          
+          // 重新加载对话列表
+          await get().loadConversations();
+        } catch (error) {
+          console.error('重命名对话失败:', error);
+          throw error;
+        }
       }
     }),
     {
@@ -520,6 +694,7 @@ export const useChatStore = create<ChatState>()(
           lastMessageId: state.currentMessages.length > 0 ? 
                         state.currentMessages[state.currentMessages.length - 1].id : null,
           currentTitle: state.currentTitle,
+          lastSelectedCharacterConversation: state.lastSelectedCharacterConversation,
         };
       },
       // 加载持久化数据后的处理

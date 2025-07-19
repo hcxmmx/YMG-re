@@ -8,6 +8,7 @@ export interface Message {
   messageNumber?: number; // 消息楼层号
   charCount?: number; // 字符数统计
   responseTime?: number; // 响应时间（毫秒）
+  characterId?: string; // 角色ID，标记消息是哪个角色发送的
 }
 
 // 安全设置阈值类型
