@@ -1,5 +1,5 @@
 import { openDB, DBSchema } from 'idb';
-import { Message, UserSettings, Character } from './types';
+import { Message, UserSettings, Character, Branch } from './types';
 import { generateId, extractCharaDataFromPng } from './utils';
 
 // 定义数据库架构
@@ -12,6 +12,8 @@ interface AppDB extends DBSchema {
       messages: Message[];
       systemPrompt?: string;
       lastUpdated: number;
+      branches?: Branch[];
+      currentBranchId?: string | null;
     };
     indexes: { 'by-lastUpdated': number };
   };
@@ -49,7 +51,7 @@ interface AppDB extends DBSchema {
 
 // 初始化数据库
 export const initDB = async () => {
-  return openDB<AppDB>('ai-roleplay-db', 2, {
+  return openDB<AppDB>('ai-roleplay-db', 3, {
     upgrade(db, oldVersion) {
       // 版本1: 创建conversations和presets表
       if (oldVersion < 1) {
@@ -74,19 +76,80 @@ export const initDB = async () => {
           characterStore.createIndex('by-name', 'name');
         }
       }
+      
+      // 版本3: 更新数据结构支持分支功能
+      if (oldVersion < 3) {
+        console.log("升级数据库到版本3，添加分支支持");
+        // 数据迁移将在单独的函数中进行，以避免阻塞版本升级事务
+      }
     }
   });
 };
 
+// 初始化主分支 - 为每个对话添加默认主分支
+export const initializeMainBranch = async (conversationId: string): Promise<string> => {
+  const db = await initDB();
+  const conversation = await db.get('conversations', conversationId);
+  
+  if (!conversation) {
+    throw new Error('对话不存在');
+  }
+  
+  // 检查是否已有分支
+  if (conversation.branches && conversation.branches.length > 0) {
+    // 如果已有分支，返回第一个分支ID
+    return conversation.branches[0].id;
+  }
+  
+  // 创建主分支
+  const mainBranchId = generateId();
+  const mainBranch: Branch = {
+    id: mainBranchId,
+    name: '主分支',
+    parentMessageId: '', // 主分支没有父消息
+    createdAt: Date.now()
+  };
+  
+  // 为所有消息添加分支ID
+  if (conversation.messages) {
+    conversation.messages = conversation.messages.map(msg => ({
+      ...msg,
+      branchId: mainBranchId
+    }));
+  }
+  
+  // 更新对话
+  conversation.branches = [mainBranch];
+  conversation.currentBranchId = mainBranchId;
+  
+  await db.put('conversations', conversation);
+  
+  return mainBranchId;
+};
+
 // 对话存储接口
 export const conversationStorage = {
-  async saveConversation(id: string, title: string, messages: Message[], systemPrompt?: string) {
+  async saveConversation(id: string, title: string, messages: Message[], systemPrompt?: string, branches?: Branch[], currentBranchId?: string | null) {
     const db = await initDB();
+    
+    // 如果未提供分支信息，尝试获取现有信息
+    if (!branches || !currentBranchId) {
+      try {
+        const existingConv = await db.get('conversations', id);
+        branches = branches || existingConv?.branches;
+        currentBranchId = currentBranchId || existingConv?.currentBranchId;
+      } catch (error) {
+        // 忽略错误，可能是新对话
+      }
+    }
+    
     await db.put('conversations', {
       id,
       title,
       messages,
       systemPrompt,
+      branches,
+      currentBranchId,
       lastUpdated: Date.now()
     });
   },
@@ -109,6 +172,184 @@ export const conversationStorage = {
   async clearAllConversations() {
     const db = await initDB();
     await db.clear('conversations');
+  },
+  
+  // 分支相关操作
+  
+  // 获取对话的所有分支
+  async getBranches(conversationId: string): Promise<Branch[]> {
+    const db = await initDB();
+    const conversation = await db.get('conversations', conversationId);
+    
+    if (!conversation) {
+      throw new Error('对话不存在');
+    }
+    
+    // 如果没有分支，初始化主分支
+    if (!conversation.branches || conversation.branches.length === 0) {
+      await initializeMainBranch(conversationId);
+      const updatedConversation = await db.get('conversations', conversationId);
+      return updatedConversation?.branches || [];
+    }
+    
+    return conversation.branches || [];
+  },
+  
+  // 创建新分支
+  async createBranch(conversationId: string, name: string, parentMessageId: string): Promise<string> {
+    const db = await initDB();
+    const conversation = await db.get('conversations', conversationId);
+    
+    if (!conversation) {
+      throw new Error('对话不存在');
+    }
+    
+    // 确保对话有分支
+    if (!conversation.branches || conversation.branches.length === 0) {
+      await initializeMainBranch(conversationId);
+      // 重新获取对话信息
+      const updatedConversation = await db.get('conversations', conversationId);
+      if (!updatedConversation) throw new Error('初始化主分支后无法获取对话');
+      conversation.branches = updatedConversation.branches;
+      conversation.currentBranchId = updatedConversation.currentBranchId;
+    }
+    
+    // 找到父消息在消息列表中的索引和父消息的分支ID
+    const parentMessage = conversation.messages.find(m => m.id === parentMessageId);
+    if (!parentMessage) throw new Error('找不到父消息');
+    
+    const parentBranchId = parentMessage.branchId || conversation.currentBranchId;
+    if (!parentBranchId) throw new Error('无法确定父分支');
+    
+    // 创建新分支
+    const branchId = generateId();
+    const newBranch: Branch = {
+      id: branchId,
+      name,
+      parentMessageId,
+      createdAt: Date.now()
+    };
+    
+    // 添加新分支到分支列表
+    conversation.branches = [...(conversation.branches || []), newBranch];
+    
+    // 找到父消息的索引
+    const parentIndex = conversation.messages.findIndex(m => m.id === parentMessageId);
+    if (parentIndex === -1) throw new Error('找不到父消息');
+    
+    // 从父分支复制消息到分岔点
+    const messagesUpToParent = conversation.messages.filter(msg => {
+      // 如果是父分支且在分岔点之前的消息，复制过来
+      return (msg.branchId === parentBranchId && 
+             conversation.messages.findIndex(m => m.id === msg.id) <= parentIndex);
+    });
+    
+    // 为复制的消息设置新的分支ID
+    const newBranchMessages = messagesUpToParent.map(msg => ({
+      ...msg,
+      branchId // 设置新分支ID
+    }));
+    
+    // 保存所有原有消息和新分支的消息
+    const allMessages = [
+      ...conversation.messages, // 保留所有原有消息
+      ...newBranchMessages.filter(newMsg => 
+        // 过滤掉与原消息ID相同的消息（避免重复）
+        !conversation.messages.some(existingMsg => existingMsg.id === newMsg.id && existingMsg.branchId === newMsg.branchId)
+      )
+    ];
+    
+    // 更新当前分支ID
+    conversation.currentBranchId = branchId;
+    
+    // 保存更新后的对话
+    await db.put('conversations', {
+      ...conversation,
+      messages: allMessages,
+    });
+    
+    return branchId;
+  },
+  
+  // 切换分支
+  async switchBranch(conversationId: string, branchId: string): Promise<Message[]> {
+    const db = await initDB();
+    const conversation = await db.get('conversations', conversationId);
+    
+    if (!conversation) {
+      throw new Error('对话不存在');
+    }
+    
+    // 检查分支是否存在
+    const targetBranch = conversation.branches?.find(b => b.id === branchId);
+    if (!targetBranch) {
+      throw new Error('分支不存在');
+    }
+    
+    // 记录之前的分支ID
+    const previousBranchId = conversation.currentBranchId;
+    
+    // 查找完整的分支路径（包括父分支的消息）
+    let branchMessages: Message[] = [];
+    
+    if (targetBranch.parentMessageId) {
+      // 非主分支：找到父消息所在的分支，并包含直到父消息的所有消息
+      let currentBranch = targetBranch;
+      let processedBranches = new Set<string>();
+      
+      while (currentBranch && currentBranch.parentMessageId && !processedBranches.has(currentBranch.id)) {
+        // 防止循环引用
+        processedBranches.add(currentBranch.id);
+        
+        // 获取该分支的所有消息
+        const currentBranchMessages = conversation.messages.filter(msg => msg.branchId === currentBranch.id);
+        branchMessages = [...currentBranchMessages, ...branchMessages];
+        
+        // 找到父分支
+        const parentMessage = conversation.messages.find(msg => msg.id === currentBranch.parentMessageId);
+        if (!parentMessage || !parentMessage.branchId) break;
+        
+        // 获取父分支信息
+        const parentBranch = conversation.branches?.find(b => b.id === parentMessage.branchId);
+        if (!parentBranch) break;
+        
+        currentBranch = parentBranch;
+      }
+      
+      // 如果存在父分支，还需要包含父分支中直到分支点的消息
+      if (targetBranch.parentMessageId) {
+        const parentMessage = conversation.messages.find(msg => msg.id === targetBranch.parentMessageId);
+        if (parentMessage && parentMessage.branchId) {
+          const parentMessages = conversation.messages.filter(msg => 
+            msg.branchId === parentMessage.branchId && 
+            conversation.messages.findIndex(m => m.id === msg.id) <= 
+            conversation.messages.findIndex(m => m.id === targetBranch.parentMessageId)
+          );
+          
+          // 将父分支消息添加到结果中
+          branchMessages = [...parentMessages, ...branchMessages];
+        }
+      }
+    } else {
+      // 主分支：直接获取所有属于主分支的消息
+      branchMessages = conversation.messages.filter(msg => msg.branchId === branchId);
+    }
+    
+    // 按照原始顺序对消息进行排序
+    branchMessages.sort((a, b) => {
+      return conversation.messages.findIndex(m => m.id === a.id) - 
+             conversation.messages.findIndex(m => m.id === b.id);
+    });
+    
+    // 去除可能的重复消息
+    const uniqueMessages = Array.from(new Map(branchMessages.map(msg => [msg.id, msg])).values());
+    
+    // 更新当前分支ID
+    conversation.currentBranchId = branchId;
+    
+    await db.put('conversations', conversation);
+    
+    return uniqueMessages;
   }
 };
 

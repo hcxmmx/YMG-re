@@ -4,9 +4,19 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Message as MessageType, Character } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Copy, Check, Clock, Hash, BarChart2, Trash2, Edit, RefreshCw, User, ChevronLeft, ChevronRight } from "lucide-react";
+import { Copy, Check, Clock, Hash, BarChart2, Trash2, Edit, RefreshCw, User, ChevronLeft, ChevronRight, GitBranch } from "lucide-react";
 import { useSettingsStore, useChatStore } from "@/lib/store";
 import Image from "next/image";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 interface MessageProps {
   message: MessageType;
@@ -21,7 +31,11 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
   const { uiSettings } = useSettingsStore();
-  const { updateMessage, deleteMessage, currentMessages } = useChatStore();
+  const { updateMessage, deleteMessage, currentMessages, createBranch, branches } = useChatStore();
+  
+  // 分支创建对话框状态
+  const [isBranchDialogOpen, setIsBranchDialogOpen] = useState(false);
+  const [branchName, setBranchName] = useState("");
   
   // 获取UI设置
   const { showResponseTime, showCharCount, showMessageNumber } = uiSettings;
@@ -101,6 +115,25 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
       ...message,
       content: allGreetings[newIndex]
     });
+  };
+  
+  // 打开创建分支对话框
+  const handleOpenBranchDialog = () => {
+    const nextBranchNum = branches.length + 1;
+    setBranchName(`分支 ${nextBranchNum}`);
+    setIsBranchDialogOpen(true);
+  };
+  
+  // 创建分支
+  const handleCreateBranch = async () => {
+    if (!branchName.trim()) return;
+    
+    // 创建分支
+    await createBranch(branchName.trim(), message.id);
+    
+    // 关闭对话框
+    setIsBranchDialogOpen(false);
+    setBranchName("");
   };
 
   // 如果是系统消息，则使用特殊样式
@@ -275,6 +308,16 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
               <span className="text-xs">{copied ? "已复制" : "复制"}</span>
             </button>
             
+            {/* 创建分支按钮 */}
+            <button
+              onClick={handleOpenBranchDialog}
+              className="flex items-center gap-0.5 p-0.5 rounded hover:bg-muted/30"
+              title="从这里创建分支"
+            >
+              <GitBranch size={12} />
+              <span className="text-xs">创建分支</span>
+            </button>
+            
             {/* 编辑 */}
             {!isEditing && (
               <button
@@ -348,6 +391,37 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
           </div>
         )}
       </div>
+      
+      {/* 分支创建对话框 */}
+      <Dialog open={isBranchDialogOpen} onOpenChange={setIsBranchDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>创建新分支</DialogTitle>
+            <DialogDescription>
+              从这条消息创建新的对话分支，探索不同的对话方向
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              value={branchName}
+              onChange={(e) => setBranchName(e.target.value)}
+              placeholder="分支名称"
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground mt-2">
+              分支将包含从对话开始到当前消息的所有内容，之后可以继续新的对话。
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBranchDialogOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={handleCreateBranch} disabled={!branchName.trim()}>
+              创建
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 } 

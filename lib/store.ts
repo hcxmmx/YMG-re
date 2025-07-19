@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { UserSettings, Message, Conversation, Character } from './types';
+import type { UserSettings, Message, Conversation, Character, Branch } from './types';
 import { HarmBlockThreshold } from './types';
-import { conversationStorage, characterStorage } from './storage';
+import { conversationStorage, characterStorage, initializeMainBranch } from './storage';
 import { generateId } from './utils';
 import { createJSONStorage } from 'zustand/middleware';
 
@@ -85,6 +85,10 @@ interface ChatState {
   messageCounter: number;
   currentCharacter: Character | null;
   lastSelectedCharacterConversation: Record<string, string>; // 记录每个角色ID对应的最后选择的对话ID
+  
+  // 分支相关状态
+  branches: Branch[];
+  currentBranchId: string | null;
 
   // 操作方法
   setCurrentConversation: (id: string | null) => Promise<void>;
@@ -103,6 +107,11 @@ interface ChatState {
   getLastSelectedCharacterConversation: (characterId: string) => string | null;
   deleteConversation: (id: string) => Promise<void>; // 删除对话
   renameConversation: (id: string, newTitle: string) => Promise<void>; // 重命名对话
+  
+  // 分支相关方法
+  loadBranches: () => Promise<void>; // 加载当前对话的分支
+  createBranch: (name: string, messageId: string) => Promise<string | null>; // 创建分支
+  switchBranch: (branchId: string) => Promise<void>; // 切换分支
 }
 
 export const useChatStore = create<ChatState>()(
@@ -117,16 +126,30 @@ export const useChatStore = create<ChatState>()(
       messageCounter: 0,
       currentCharacter: null,
       lastSelectedCharacterConversation: {}, // 初始化
+      
+      // 分支相关状态初始化
+      branches: [],
+      currentBranchId: null,
 
       loadConversations: async () => {
         try {
           const conversations = await conversationStorage.listConversations();
-          set({ conversations: conversations.reverse() }); // 最新的对话排在前面
+          
+          // 确保数据符合Conversation接口要求
+          const typedConversations: Conversation[] = conversations.map(conv => ({
+            ...conv,
+            // 确保currentBranchId类型一致
+            currentBranchId: conv.currentBranchId || null
+          }));
+          
+          set({ conversations: typedConversations.reverse() }); // 最新的对话排在前面
+          
+          console.log('对话列表加载完成');
 
           // 如果有对话历史但没有当前对话，自动加载最近的对话
           const { currentConversationId } = get();
-          if (conversations.length > 0 && !currentConversationId) {
-            const latestConversation = conversations[0]; // 最新的对话
+          if (typedConversations.length > 0 && !currentConversationId) {
+            const latestConversation = typedConversations[0]; // 最新的对话
             await get().setCurrentConversation(latestConversation.id);
           }
         } catch (error) {
@@ -142,89 +165,151 @@ export const useChatStore = create<ChatState>()(
             currentTitle: '新对话',
             systemPrompt: '你是一个友好、乐于助人的AI助手。',
             messageCounter: 0,
-            currentCharacter: null
+            currentCharacter: null,
+            branches: [],
+            currentBranchId: null
           });
           return;
         }
 
-        const conversation = await conversationStorage.getConversation(id);
-        if (conversation) {
-          // 计算最大的消息编号
-          let maxMessageNumber = 0;
-          const messagesWithNumbers = conversation.messages.map(msg => {
-            // 保留已有的消息编号，或者分配新编号
-            if (msg.messageNumber) {
-              maxMessageNumber = Math.max(maxMessageNumber, msg.messageNumber);
-              return msg;
-            }
-            // 系统消息不分配楼层号
-            if (msg.role === 'system') return msg;
-
-            // 为用户和助手消息分配楼层号
-            maxMessageNumber++;
-            return { ...msg, messageNumber: maxMessageNumber };
-          });
-
-          // 确定该对话关联的角色ID
-          let characterId = null;
-          for (const msg of conversation.messages) {
-            if (msg.role === 'assistant' && msg.characterId) {
-              characterId = msg.characterId;
-              break;
-            }
-          }
-
-          // 如果找到角色ID，更新该角色的最后选择对话
-          if (characterId) {
-            set(state => ({
-              lastSelectedCharacterConversation: {
-                ...state.lastSelectedCharacterConversation,
-                [characterId]: id
+        try {
+          const conversation = await conversationStorage.getConversation(id);
+          if (conversation) {
+            // 计算最大的消息编号
+            let maxMessageNumber = 0;
+            const messagesWithNumbers = conversation.messages.map(msg => {
+              // 保留已有的消息编号，或者分配新编号
+              if (msg.messageNumber) {
+                maxMessageNumber = Math.max(maxMessageNumber, msg.messageNumber);
+                return msg;
               }
-            }));
-            console.log(`已更新角色 ${characterId} 的最后选择对话: ${id}`);
-          }
+              // 系统消息不分配楼层号
+              if (msg.role === 'system') return msg;
 
-          set({
-            currentConversationId: id,
-            currentMessages: messagesWithNumbers,
-            currentTitle: conversation.title,
-            systemPrompt: conversation.systemPrompt || '你是一个友好、乐于助人的AI助手。',
-            messageCounter: maxMessageNumber,
-            // 不改变当前角色状态
-            currentCharacter: get().currentCharacter
-          });
+              // 为用户和助手消息分配楼层号
+              maxMessageNumber++;
+              return { ...msg, messageNumber: maxMessageNumber };
+            });
+
+            // 确定该对话关联的角色ID
+            let characterId = null;
+            for (const msg of conversation.messages) {
+              if (msg.role === 'assistant' && msg.characterId) {
+                characterId = msg.characterId;
+                break;
+              }
+            }
+
+            // 如果找到角色ID，更新该角色的最后选择对话
+            if (characterId) {
+              set(state => ({
+                lastSelectedCharacterConversation: {
+                  ...state.lastSelectedCharacterConversation,
+                  [characterId]: id
+                }
+              }));
+              console.log(`已更新角色 ${characterId} 的最后选择对话: ${id}`);
+            }
+
+            // 确保对话有分支信息
+            let updatedBranches = conversation.branches || [];
+            let updatedCurrentBranchId = conversation.currentBranchId;
+            
+            // 如果没有分支，初始化主分支
+            if (!updatedBranches || updatedBranches.length === 0) {
+              try {
+                const mainBranchId = await initializeMainBranch(id);
+                
+                // 重新获取对话信息，以获取更新后的分支信息
+                const updatedConversation = await conversationStorage.getConversation(id);
+                if (updatedConversation) {
+                  updatedBranches = updatedConversation.branches || [];
+                  updatedCurrentBranchId = updatedConversation.currentBranchId;
+                  
+                  // 更新消息的分支ID
+                  messagesWithNumbers.forEach(msg => {
+                    if (!msg.branchId) {
+                      msg.branchId = mainBranchId;
+                    }
+                  });
+                }
+              } catch (error) {
+                console.error('初始化主分支失败:', error);
+              }
+            }
+
+            // 只显示当前分支的消息
+            const currentBranchMessages = messagesWithNumbers.filter(msg => 
+              !msg.branchId || msg.branchId === updatedCurrentBranchId
+            );
+
+            set({
+              currentConversationId: id,
+              currentMessages: currentBranchMessages,
+              currentTitle: conversation.title,
+              systemPrompt: conversation.systemPrompt || '你是一个友好、乐于助人的AI助手。',
+              messageCounter: maxMessageNumber,
+              currentCharacter: get().currentCharacter, // 不改变当前角色状态
+              branches: updatedBranches,
+              currentBranchId: updatedCurrentBranchId
+            });
+          }
+        } catch (error) {
+          console.error('设置当前对话失败:', error);
         }
       },
 
       addMessage: async (message) => {
+        // 获取当前分支ID
+        const { currentBranchId } = get();
+        
+        // 确保消息有分支ID
+        const messageWithBranch = {
+          ...message,
+          branchId: currentBranchId || undefined
+        };
+        
         // 检查消息是否已存在（用于流式响应更新）
-        const existingIndex = get().currentMessages.findIndex(msg => msg.id === message.id);
+        const existingIndex = get().currentMessages.findIndex(msg => msg.id === messageWithBranch.id);
 
         // 检查是否存在相同内容的消息（防止重复添加）
         const duplicateContentIndex = get().currentMessages.findIndex(msg =>
-          msg.role === message.role &&
-          msg.content === message.content &&
-          msg.id !== message.id
+          msg.role === messageWithBranch.role &&
+          msg.content === messageWithBranch.content &&
+          msg.id !== messageWithBranch.id
         );
 
         // 如果找到内容相同的消息，避免重复添加
-        if (duplicateContentIndex !== -1 && message.role === 'assistant') {
+        if (duplicateContentIndex !== -1 && messageWithBranch.role === 'assistant') {
           console.warn('避免添加重复内容的消息');
           return;
         }
 
-        let updatedMessage = { ...message };
+        let updatedMessage = { ...messageWithBranch };
 
         // 为非系统消息添加楼层号
-        if (message.role !== 'system' && !message.messageNumber) {
+        if (messageWithBranch.role !== 'system' && !messageWithBranch.messageNumber) {
           const newCounter = get().messageCounter + 1;
           updatedMessage = {
             ...updatedMessage,
             messageNumber: newCounter,
-            charCount: message.content.length
+            charCount: messageWithBranch.content.length
           };
           set({ messageCounter: newCounter });
+        }
+
+        // 获取当前对话的所有消息（包括所有分支）
+        const { currentConversationId, currentMessages, currentTitle, systemPrompt, branches } = get();
+        
+        // 如果是新对话，创建一个ID
+        const conversationId = currentConversationId || generateId();
+
+        // 确定标题（如果是新对话，使用用户的第一条消息作为标题基础）
+        let title = currentTitle;
+        if (!currentConversationId && messageWithBranch.role === 'user') {
+          title = messageWithBranch.content.length > 30
+            ? `${messageWithBranch.content.substring(0, 30)}...`
+            : messageWithBranch.content;
         }
 
         if (existingIndex !== -1) {
@@ -233,46 +318,93 @@ export const useChatStore = create<ChatState>()(
           updatedMessages[existingIndex] = updatedMessage;
 
           set({ currentMessages: updatedMessages });
+          
+          // 更新IndexedDB中的消息
+          if (currentConversationId) {
+            // 获取完整对话信息
+            const conversation = await conversationStorage.getConversation(currentConversationId);
+            if (conversation) {
+              // 更新对应消息
+              const allMessages = conversation.messages.map(msg => 
+                msg.id === updatedMessage.id ? updatedMessage : msg
+              );
+              
+              // 保存更新后的对话
+              await conversationStorage.saveConversation(
+                conversationId,
+                title,
+                allMessages,
+                systemPrompt,
+                branches,
+                currentBranchId
+              );
+            }
+          }
         } else {
           // 如果是新消息，添加到列表
           set((state) => ({
             currentMessages: [...state.currentMessages, updatedMessage]
           }));
+          
+          // 更新IndexedDB中的消息
+          if (currentConversationId) {
+            // 获取完整对话信息
+            const conversation = await conversationStorage.getConversation(currentConversationId);
+            if (conversation) {
+              // 添加新消息到所有消息列表
+              const allMessages = [...conversation.messages, updatedMessage];
+              
+              // 保存更新后的对话
+              await conversationStorage.saveConversation(
+                conversationId,
+                title,
+                allMessages,
+                systemPrompt,
+                branches,
+                currentBranchId
+              );
+            }
+          } else {
+            // 新对话，直接保存
+            await conversationStorage.saveConversation(
+              conversationId,
+              title,
+              [updatedMessage],
+              systemPrompt,
+              branches,
+              currentBranchId
+            );
+          }
         }
 
-        const { currentConversationId, currentMessages, currentTitle, systemPrompt } = get();
-
-        // 如果是新对话，创建一个ID
-        const conversationId = currentConversationId || generateId();
-
-        // 确定标题（如果是新对话，使用用户的第一条消息作为标题基础）
-        let title = currentTitle;
-        if (!currentConversationId && message.role === 'user') {
-          title = message.content.length > 30
-            ? `${message.content.substring(0, 30)}...`
-            : message.content;
-        }
-
-        // 获取当前消息列表，考虑到可能刚刚更新过
-        const messagesToSave = existingIndex !== -1
-          ? get().currentMessages // 使用最新的消息列表
-          : [...currentMessages, updatedMessage]; // 添加新消息
-
-        // 保存到IndexedDB
-        await conversationStorage.saveConversation(
-          conversationId,
-          title,
-          messagesToSave,
-          systemPrompt
-        );
-
-        // 更新当前ID（如果是新对话）
+        // 如果是新对话，设置当前对话ID和标题
         if (!currentConversationId) {
-          set({ currentConversationId: conversationId, currentTitle: title });
+          set({ 
+            currentConversationId: conversationId, 
+            currentTitle: title 
+          });
+          
+          // 如果是新对话，初始化主分支
+          if (!get().currentBranchId) {
+            try {
+              const mainBranchId = await initializeMainBranch(conversationId);
+              set({ 
+                branches: [{ 
+                  id: mainBranchId, 
+                  name: '主分支', 
+                  parentMessageId: '', 
+                  createdAt: Date.now() 
+                }],
+                currentBranchId: mainBranchId
+              });
+            } catch (error) {
+              console.error('初始化主分支失败:', error);
+            }
+          }
         }
 
-        // 更新对话列表
-        get().loadConversations();
+        // 确保对话列表是最新的
+        await get().loadConversations();
       },
 
       // 添加一个专门用于更新消息的方法
@@ -376,7 +508,9 @@ export const useChatStore = create<ChatState>()(
           currentTitle: '新对话',
           systemPrompt: '你是一个友好、乐于助人的AI助手。',
           messageCounter: 0,
-          currentCharacter: null // 重置当前角色
+          currentCharacter: null, // 重置当前角色
+          branches: [],
+          currentBranchId: null
         });
       },
 
@@ -673,6 +807,99 @@ export const useChatStore = create<ChatState>()(
         } catch (error) {
           console.error('重命名对话失败:', error);
           throw error;
+        }
+      },
+
+      // 分支相关方法
+      loadBranches: async () => {
+        const { currentConversationId } = get();
+        if (!currentConversationId) return;
+
+        try {
+          const branches = await conversationStorage.getBranches(currentConversationId);
+          
+          // 获取当前分支ID
+          let currentBranchId = get().currentBranchId;
+          
+          // 如果没有当前分支ID但有分支，使用第一个分支作为当前分支
+          if (!currentBranchId && branches.length > 0) {
+            currentBranchId = branches[0].id;
+          }
+          
+          set({ 
+            branches, 
+            currentBranchId 
+          });
+          
+          console.log(`已加载 ${branches.length} 个分支，当前分支ID: ${currentBranchId}`);
+        } catch (error) {
+          console.error('加载分支失败:', error);
+        }
+      },
+      
+      createBranch: async (name, messageId) => {
+        const { currentConversationId, currentMessages } = get();
+        if (!currentConversationId) return null;
+
+        try {
+          // 确保分支名称不为空
+          const branchName = name.trim() || `分支 ${get().branches.length + 1}`;
+          
+          // 创建分支
+          const branchId = await conversationStorage.createBranch(
+            currentConversationId,
+            branchName,
+            messageId
+          );
+          
+          // 获取最新的对话信息，包括所有分支的消息
+          const conversation = await conversationStorage.getConversation(currentConversationId);
+          if (!conversation) throw new Error('获取对话失败');
+          
+          // 过滤出新分支的消息
+          const branchMessages = conversation.messages.filter(msg => msg.branchId === branchId);
+          
+          // 更新状态
+          set({
+            currentBranchId: branchId,
+            currentMessages: branchMessages,
+            branches: conversation.branches || []
+          });
+          
+          console.log(`已创建分支 "${branchName}"，ID: ${branchId}，消息数量: ${branchMessages.length}`);
+          
+          return branchId;
+        } catch (error) {
+          console.error('创建分支失败:', error);
+          return null;
+        }
+      },
+      
+      switchBranch: async (branchId) => {
+        const { currentConversationId } = get();
+        if (!currentConversationId) return;
+        
+        try {
+          // 切换分支，获取分支消息
+          const branchMessages = await conversationStorage.switchBranch(
+            currentConversationId,
+            branchId
+          );
+          
+          // 获取最新的分支列表
+          const conversation = await conversationStorage.getConversation(currentConversationId);
+          if (!conversation) throw new Error('获取对话失败');
+          
+          // 更新当前分支ID和消息
+          set({
+            currentBranchId: branchId,
+            currentMessages: branchMessages,
+            branches: conversation.branches || []
+          });
+          
+          console.log(`已切换到分支ID: ${branchId}，消息数量: ${branchMessages.length}`);
+        } catch (error) {
+          console.error('切换分支失败:', error);
         }
       }
     }),

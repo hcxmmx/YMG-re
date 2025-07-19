@@ -25,7 +25,8 @@ export default function ChatPage() {
     currentConversationId,
     conversations,
     loadConversations,
-    setCurrentConversation
+    setCurrentConversation,
+    loadBranches
   } = useChatStore();
   const { isNavbarVisible } = useNavbar();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -50,7 +51,9 @@ export default function ChatPage() {
 
     // 如果有对话ID参数，优先加载指定对话
     if (conversationId) {
-      setCurrentConversation(conversationId).catch(error => {
+      setCurrentConversation(conversationId).then(() => {
+        loadBranches(); // 加载分支数据
+      }).catch(error => {
         console.error('加载指定对话失败:', error);
       });
       return; // 已经处理了对话加载，不需要进一步处理角色
@@ -71,18 +74,22 @@ export default function ChatPage() {
         const sortedConversations = [...characterConversations]
           .sort((a, b) => b.lastUpdated - a.lastUpdated);
         
-        setCurrentConversation(sortedConversations[0].id).catch(error => {
+        setCurrentConversation(sortedConversations[0].id).then(() => {
+          loadBranches(); // 加载分支数据
+        }).catch(error => {
           console.error('加载角色最近对话失败:', error);
         });
       } else {
         // 没有该角色的对话，创建新的
         console.log('URL参数包含角色ID，启动角色聊天:', characterId);
-        startCharacterChat(characterId).catch(error => {
+        startCharacterChat(characterId).then(() => {
+          loadBranches(); // 加载分支数据
+        }).catch(error => {
           console.error('启动角色聊天失败:', error);
         });
       }
     }
-  }, [searchParams, startCharacterChat, setCurrentConversation, conversations]);
+  }, [searchParams, startCharacterChat, setCurrentConversation, conversations, loadBranches]);
 
   // 确保在页面加载时加载对话历史
   useEffect(() => {
@@ -97,7 +104,9 @@ export default function ChatPage() {
       
       if (characterId && conversationId) {
         console.log('URL中包含角色ID和对话ID，直接加载特定对话');
-        setCurrentConversation(conversationId).catch(error => {
+        setCurrentConversation(conversationId).then(() => {
+          loadBranches(); // 加载分支数据
+        }).catch(error => {
           console.error('加载指定对话失败:', error);
         });
       } else if (characterId) {
@@ -110,22 +119,28 @@ export default function ChatPage() {
         // 如果不是当前角色的对话，启动新的角色聊天
         if (!isCurrentCharacterChat) {
           console.log('启动新的角色聊天');
-          startCharacterChat(characterId).catch(error => {
+          startCharacterChat(characterId).then(() => {
+            loadBranches(); // 加载分支数据
+          }).catch(error => {
             console.error('启动角色聊天失败:', error);
           });
         } else {
           console.log('当前已经是该角色的对话');
+          loadBranches(); // 加载分支数据
         }
       } else if (currentConversationId) {
         // 如果没有URL参数但有当前对话ID，确保对话内容已加载
         console.log('确保当前对话内容已加载，消息数量:', currentMessages.length);
+        loadBranches(); // 加载分支数据
       } else if (conversations.length > 0) {
         // 如果没有当前对话但有对话历史，加载最新的对话
         console.log('加载最新对话');
         const latestConversation = conversations[0];
         if (latestConversation) {
           console.log('找到最新对话:', latestConversation.id);
-          setCurrentConversation(latestConversation.id).catch(error => {
+          setCurrentConversation(latestConversation.id).then(() => {
+            loadBranches(); // 加载分支数据
+          }).catch(error => {
             console.error('加载最新对话失败:', error);
           });
         }

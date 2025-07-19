@@ -9,6 +9,15 @@ export interface Message {
   charCount?: number; // 字符数统计
   responseTime?: number; // 响应时间（毫秒）
   characterId?: string; // 角色ID，标记消息是哪个角色发送的
+  branchId?: string; // 分支ID，标记消息属于哪个分支
+}
+
+// 分支类型
+export interface Branch {
+  id: string;
+  name: string;
+  parentMessageId: string; // 分支创建点的消息ID
+  createdAt: number;
 }
 
 // 安全设置阈值类型
@@ -46,6 +55,8 @@ export interface Conversation {
   messages: Message[];
   systemPrompt?: string;
   lastUpdated: number;
+  branches?: Branch[]; // 对话的所有分支
+  currentBranchId?: string | null; // 当前活动的分支ID
 }
 
 // 角色预设类型

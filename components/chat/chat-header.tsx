@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useChatStore } from "@/lib/store";
 import { useNavbar } from "@/app/layout";
-import { ChevronUp, ChevronDown, User, Plus, MessageCircle, MoreHorizontal, MessageSquare, Pencil, Trash, MoreVertical } from "lucide-react";
+import { ChevronUp, ChevronDown, User, Plus, MessageCircle, MoreHorizontal, MessageSquare, Pencil, Trash, MoreVertical, GitBranch, Check } from "lucide-react";
 import { Character, Conversation } from "@/lib/types";
 import Image from "next/image";
 import {
@@ -41,7 +41,11 @@ export function ChatHeader({ character }: ChatHeaderProps) {
     setCurrentConversation,
     conversations,
     deleteConversation,
-    renameConversation
+    renameConversation,
+    branches,
+    currentBranchId,
+    loadBranches,
+    switchBranch
   } = useChatStore();
   const { isNavbarVisible, toggleNavbar } = useNavbar();
   const [isEditing, setIsEditing] = useState(false);
@@ -68,6 +72,13 @@ export function ChatHeader({ character }: ChatHeaderProps) {
       setCharacterConversations(convs);
     }
   }, [character, getCharacterConversations, conversations]);
+  
+  // 加载分支信息
+  useEffect(() => {
+    if (currentConversationId) {
+      loadBranches();
+    }
+  }, [currentConversationId, loadBranches]);
 
   // 处理导航栏切换并滚动到适当位置
   const handleToggleNavbar = () => {
@@ -191,6 +202,22 @@ export function ChatHeader({ character }: ChatHeaderProps) {
     setSelectedConversation(conversation);
     setIsDeleteDialogOpen(true);
   };
+  
+  // 处理分支切换
+  const handleSwitchBranch = async (branchId: string) => {
+    try {
+      await switchBranch(branchId);
+    } catch (error) {
+      console.error('切换分支失败:', error);
+    }
+  };
+  
+  // 获取当前分支
+  const currentBranch = branches.find(b => b.id === currentBranchId);
+  // 判断是否为主分支
+  const isMainBranch = !currentBranch || currentBranch.parentMessageId === '';
+  // 当前分支名称
+  const branchName = isMainBranch ? '主分支' : (currentBranch?.name || '未知分支');
 
   return (
     <div ref={headerRef} className="w-full border-b">
@@ -237,6 +264,63 @@ export function ChatHeader({ character }: ChatHeaderProps) {
                   {character ? character.name : currentTitle}
                 </div>
                 
+                {/* 分支管理下拉菜单 */}
+                {currentConversationId && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-6 px-1.5 flex items-center gap-1 text-xs">
+                        <GitBranch className="h-3.5 w-3.5" />
+                        <span>{branchName}</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-56">
+                      <div className="text-xs font-medium text-muted-foreground px-2 py-1.5">
+                        当前对话的分支
+                      </div>
+                      
+                      {/* 主分支 */}
+                      {branches.filter(b => !b.parentMessageId || b.parentMessageId === '').map(branch => (
+                        <DropdownMenuItem
+                          key={branch.id}
+                          onClick={() => handleSwitchBranch(branch.id)}
+                          className="flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-1">
+                            <GitBranch className="h-4 w-4" />
+                            <span className="font-medium">主分支</span>
+                          </div>
+                          {branch.id === currentBranchId && (
+                            <Check className="h-3.5 w-3.5" />
+                          )}
+                        </DropdownMenuItem>
+                      ))}
+                      
+                      {/* 其他分支 */}
+                      {branches.filter(b => b.parentMessageId && b.parentMessageId !== '').map(branch => (
+                        <DropdownMenuItem
+                          key={branch.id}
+                          onClick={() => handleSwitchBranch(branch.id)}
+                          className="flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-1">
+                            <GitBranch className="h-4 w-4" />
+                            <span>{branch.name}</span>
+                          </div>
+                          {branch.id === currentBranchId && (
+                            <Check className="h-3.5 w-3.5" />
+                          )}
+                        </DropdownMenuItem>
+                      ))}
+                      
+                      {branches.length === 0 && (
+                        <div className="px-2 py-2 text-sm text-muted-foreground">
+                          暂无分支
+                        </div>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                
                 {/* 对话管理下拉菜单 */}
                 {character && (
                   <DropdownMenu>
@@ -253,7 +337,7 @@ export function ChatHeader({ character }: ChatHeaderProps) {
                       <DropdownMenuSeparator />
                       
                       {/* 创建新对话 */}
-                      <DropdownMenuItem 
+                      <DropdownMenuItem
                         className="cursor-pointer flex items-center gap-2"
                         onClick={handleCreateNewChat}
                       >
@@ -288,8 +372,8 @@ export function ChatHeader({ character }: ChatHeaderProps) {
                             {/* 对话操作按钮 */}
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                                <Button 
-                                  variant="ghost" 
+                                <Button
+                                  variant="ghost"
                                   size="icon"
                                   className="h-6 w-6 p-0"
                                 >
@@ -297,7 +381,7 @@ export function ChatHeader({ character }: ChatHeaderProps) {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-36">
-                                <DropdownMenuItem 
+                                <DropdownMenuItem
                                   className="cursor-pointer flex items-center gap-2"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -308,7 +392,7 @@ export function ChatHeader({ character }: ChatHeaderProps) {
                                   <span>重命名</span>
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem 
+                                <DropdownMenuItem
                                   className="cursor-pointer text-destructive flex items-center gap-2"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -349,7 +433,7 @@ export function ChatHeader({ character }: ChatHeaderProps) {
           </Button>
         </div>
       </div>
-      
+
       {character && character.description && (
         <div className="px-4 py-2 text-sm text-muted-foreground border-t bg-muted/30">
           <p className="line-clamp-1">
@@ -357,7 +441,7 @@ export function ChatHeader({ character }: ChatHeaderProps) {
           </p>
         </div>
       )}
-
+      
       {/* 删除对话确认对话框 */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent className="sm:max-w-md">
@@ -387,7 +471,7 @@ export function ChatHeader({ character }: ChatHeaderProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
+      
       {/* 重命名对话对话框 */}
       <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
         <DialogContent className="sm:max-w-md">
@@ -405,11 +489,6 @@ export function ChatHeader({ character }: ChatHeaderProps) {
               onChange={(e) => setNewTitle(e.target.value)}
               placeholder="对话名称"
               className="w-full"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleRenameConversation();
-                }
-              }}
             />
           </div>
           
