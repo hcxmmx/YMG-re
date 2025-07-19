@@ -312,6 +312,9 @@ export const useChatStore = create<ChatState>()(
             : messageWithBranch.content;
         }
 
+        // 标记是否是新对话
+        const isNewConversation = !currentConversationId;
+
         if (existingIndex !== -1) {
           // 如果消息已存在，更新它而不是添加新消息
           const updatedMessages = [...get().currentMessages];
@@ -371,35 +374,56 @@ export const useChatStore = create<ChatState>()(
               title,
               [updatedMessage],
               systemPrompt,
-              branches,
-              currentBranchId
+              [], // 新对话不需要设置分支，后面会初始化
+              null // 新对话不设置分支ID，后面会初始化
             );
           }
         }
 
         // 如果是新对话，设置当前对话ID和标题
-        if (!currentConversationId) {
+        if (isNewConversation) {
           set({ 
             currentConversationId: conversationId, 
             currentTitle: title 
           });
           
-          // 如果是新对话，初始化主分支
-          if (!get().currentBranchId) {
-            try {
-              const mainBranchId = await initializeMainBranch(conversationId);
-              set({ 
-                branches: [{ 
-                  id: mainBranchId, 
-                  name: '主分支', 
-                  parentMessageId: '', 
-                  createdAt: Date.now() 
-                }],
-                currentBranchId: mainBranchId
-              });
-            } catch (error) {
-              console.error('初始化主分支失败:', error);
-            }
+          console.log('创建新对话并初始化主分支');
+          try {
+            // 初始化主分支
+            const mainBranchId = await initializeMainBranch(conversationId);
+            
+            // 重新获取对话信息，确保分支数据是最新的
+            const updatedConversation = await conversationStorage.getConversation(conversationId);
+            if (!updatedConversation) throw new Error('无法获取新创建的对话');
+            
+            // 更新消息的分支ID
+            const updatedMessages = updatedConversation.messages.map(msg => {
+              if (!msg.branchId) {
+                return { ...msg, branchId: mainBranchId };
+              }
+              return msg;
+            });
+            
+            // 保存更新后的消息
+            await conversationStorage.saveConversation(
+              conversationId,
+              title,
+              updatedMessages,
+              systemPrompt,
+              updatedConversation.branches || [],
+              mainBranchId
+            );
+            
+            // 更新状态
+            set({ 
+              currentMessages: updatedMessages.filter(msg => msg.branchId === mainBranchId),
+              branches: updatedConversation.branches || [],
+              currentBranchId: mainBranchId
+            });
+            
+            console.log(`已初始化主分支，ID: ${mainBranchId}`);
+          } catch (error) {
+            console.error('初始化主分支失败:', error);
           }
         }
 
@@ -502,6 +526,9 @@ export const useChatStore = create<ChatState>()(
       },
 
       startNewConversation: () => {
+        console.log('开始新对话，重置所有状态');
+        
+        // 完全重置所有状态，确保没有上一个对话的残留数据
         set({
           currentConversationId: null,
           currentMessages: [],
@@ -509,8 +536,8 @@ export const useChatStore = create<ChatState>()(
           systemPrompt: '你是一个友好、乐于助人的AI助手。',
           messageCounter: 0,
           currentCharacter: null, // 重置当前角色
-          branches: [],
-          currentBranchId: null
+          branches: [], // 清空分支列表
+          currentBranchId: null // 重置当前分支ID
         });
       },
 
@@ -692,6 +719,17 @@ export const useChatStore = create<ChatState>()(
             return null;
           }
 
+          // 重置状态，创建新对话
+          set({
+            currentConversationId: null,
+            currentMessages: [],
+            currentTitle: character.name,
+            currentCharacter: character,
+            systemPrompt: '你是一个友好、乐于助人的AI助手。',
+            branches: [],
+            currentBranchId: null
+          });
+
           const conversationId = generateId();
           const messages: Message[] = [];
 
@@ -713,13 +751,12 @@ export const useChatStore = create<ChatState>()(
             });
           }
 
+          // 设置当前对话ID
           set({
-            currentConversationId: conversationId,
-            currentTitle: character.name,
-            currentCharacter: character,
-            systemPrompt: '你是一个友好、乐于助人的AI助手。'
+            currentConversationId: conversationId
           });
 
+          // 保存对话到数据库，不指定分支信息
           await conversationStorage.saveConversation(
             conversationId,
             character.name,
@@ -727,7 +764,52 @@ export const useChatStore = create<ChatState>()(
             '你是一个友好、乐于助人的AI助手。'
           );
 
+          // 初始化主分支
+          try {
+            const mainBranchId = await initializeMainBranch(conversationId);
+            console.log(`角色对话已初始化主分支, ID: ${mainBranchId}`);
+            
+            // 重新获取对话信息，确保分支数据是最新的
+            const updatedConversation = await conversationStorage.getConversation(conversationId);
+            if (!updatedConversation) throw new Error('无法获取新创建的角色对话');
+            
+            // 更新消息的分支ID
+            const updatedMessages = updatedConversation.messages.map(msg => {
+              if (!msg.branchId) {
+                return { ...msg, branchId: mainBranchId };
+              }
+              return msg;
+            });
+            
+            // 保存更新后的消息
+            await conversationStorage.saveConversation(
+              conversationId,
+              character.name,
+              updatedMessages,
+              '你是一个友好、乐于助人的AI助手。',
+              updatedConversation.branches || [],
+              mainBranchId
+            );
+            
+            // 更新状态
+            set({ 
+              currentMessages: updatedMessages,
+              branches: updatedConversation.branches || [],
+              currentBranchId: mainBranchId
+            });
+          } catch (error) {
+            console.error('初始化角色对话主分支失败:', error);
+          }
+
+          // 更新对话列表和最后选择的对话
           get().loadConversations();
+          set(state => ({
+            lastSelectedCharacterConversation: {
+              ...state.lastSelectedCharacterConversation,
+              [characterId]: conversationId
+            }
+          }));
+
           return conversationId;
         } catch (error) {
           console.error('创建新角色聊天失败:', error);

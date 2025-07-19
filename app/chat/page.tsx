@@ -151,6 +151,23 @@ export default function ChatPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);  // 仅在组件挂载时执行一次，使用ESLint禁用规则避免警告
 
+  // 监听当前对话ID变化，确保加载相应的分支数据
+  useEffect(() => {
+    if (currentConversationId) {
+      console.log(`当前对话ID变更为: ${currentConversationId}，加载分支数据`);
+      loadBranches().catch(error => {
+        console.error('加载分支数据失败:', error);
+      });
+    } else {
+      console.log('当前没有活动对话，重置分支状态');
+      // 当没有活动对话时，确保分支状态被重置
+      useChatStore.setState({
+        branches: [],
+        currentBranchId: null
+      });
+    }
+  }, [currentConversationId, loadBranches]);
+
   // 当消息更新时滚动到底部
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
