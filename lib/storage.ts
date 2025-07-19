@@ -350,6 +350,92 @@ export const conversationStorage = {
     await db.put('conversations', conversation);
     
     return uniqueMessages;
+  },
+
+  // 重命名分支
+  async renameBranch(conversationId: string, branchId: string, newName: string): Promise<Branch[]> {
+    const db = await initDB();
+    const conversation = await db.get('conversations', conversationId);
+    
+    if (!conversation) {
+      throw new Error('对话不存在');
+    }
+    
+    if (!conversation.branches) {
+      throw new Error('对话没有分支');
+    }
+    
+    // 查找目标分支
+    const branchIndex = conversation.branches.findIndex(b => b.id === branchId);
+    if (branchIndex === -1) {
+      throw new Error('分支不存在');
+    }
+    
+    // 检查新名称
+    if (!newName.trim()) {
+      throw new Error('分支名称不能为空');
+    }
+    
+    // 更新分支名称
+    conversation.branches[branchIndex].name = newName.trim();
+    
+    // 保存更新后的对话
+    await db.put('conversations', conversation);
+    
+    return conversation.branches;
+  },
+  
+  // 删除分支
+  async deleteBranch(conversationId: string, branchId: string): Promise<Branch[]> {
+    const db = await initDB();
+    const conversation = await db.get('conversations', conversationId);
+    
+    if (!conversation) {
+      throw new Error('对话不存在');
+    }
+    
+    if (!conversation.branches || conversation.branches.length === 0) {
+      throw new Error('对话没有分支');
+    }
+    
+    // 检查是否是当前分支
+    if (conversation.currentBranchId === branchId) {
+      throw new Error('不能删除当前活动的分支');
+    }
+    
+    // 查找要删除的分支
+    const branchToDelete = conversation.branches.find(b => b.id === branchId);
+    if (!branchToDelete) {
+      throw new Error('分支不存在');
+    }
+    
+    // 检查是否是主分支（第一个创建的分支）
+    const isMainBranch = conversation.branches.length > 0 && conversation.branches[0].id === branchId;
+    if (isMainBranch) {
+      throw new Error('不能删除主分支');
+    }
+    
+    // 查找所有依赖于此分支的子分支
+    const childBranches = conversation.branches.filter(b => {
+      const parentMessage = conversation.messages.find(m => m.id === b.parentMessageId);
+      return parentMessage && parentMessage.branchId === branchId;
+    });
+    
+    // 如果有子分支依赖此分支，不允许删除
+    if (childBranches.length > 0) {
+      throw new Error('该分支有子分支，无法删除');
+    }
+    
+    // 从分支列表中删除
+    conversation.branches = conversation.branches.filter(b => b.id !== branchId);
+    
+    // 删除该分支的所有消息
+    conversation.messages = conversation.messages.filter(m => m.branchId !== branchId);
+    
+    // 保存更新后的对话
+    await db.put('conversations', conversation);
+    
+    return conversation.branches;
   }
 };
 

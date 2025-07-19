@@ -112,6 +112,8 @@ interface ChatState {
   loadBranches: () => Promise<void>; // 加载当前对话的分支
   createBranch: (name: string, messageId: string) => Promise<string | null>; // 创建分支
   switchBranch: (branchId: string) => Promise<void>; // 切换分支
+  renameBranch: (branchId: string, newName: string) => Promise<void>; // 重命名分支
+  deleteBranch: (branchId: string) => Promise<void>; // 删除分支
 }
 
 export const useChatStore = create<ChatState>()(
@@ -982,6 +984,32 @@ export const useChatStore = create<ChatState>()(
           console.log(`已切换到分支ID: ${branchId}，消息数量: ${branchMessages.length}`);
         } catch (error) {
           console.error('切换分支失败:', error);
+        }
+      },
+
+      renameBranch: async (branchId, newName) => {
+        const { currentConversationId } = get();
+        if (!currentConversationId) return;
+
+        try {
+          await conversationStorage.renameBranch(currentConversationId, branchId, newName);
+          await get().loadBranches(); // 重新加载分支以获取更新后的名称
+          console.log(`分支 "${newName}" 重命名成功`);
+        } catch (error) {
+          console.error('重命名分支失败:', error);
+        }
+      },
+
+      deleteBranch: async (branchId) => {
+        const { currentConversationId } = get();
+        if (!currentConversationId) return;
+
+        try {
+          await conversationStorage.deleteBranch(currentConversationId, branchId);
+          await get().loadBranches(); // 重新加载分支以获取更新后的列表
+          console.log(`分支 "${branchId}" 删除成功`);
+        } catch (error) {
+          console.error('删除分支失败:', error);
         }
       }
     }),

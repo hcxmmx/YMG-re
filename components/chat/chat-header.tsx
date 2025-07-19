@@ -45,7 +45,9 @@ export function ChatHeader({ character }: ChatHeaderProps) {
     branches,
     currentBranchId,
     loadBranches,
-    switchBranch
+    switchBranch,
+    renameBranch,
+    deleteBranch
   } = useChatStore();
   const { isNavbarVisible, toggleNavbar } = useNavbar();
   const [isEditing, setIsEditing] = useState(false);
@@ -59,6 +61,13 @@ export function ChatHeader({ character }: ChatHeaderProps) {
   const renameInputRef = useRef<HTMLInputElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  // 分支操作状态
+  const [isRenameBranchDialogOpen, setIsRenameBranchDialogOpen] = useState(false);
+  const [isDeleteBranchDialogOpen, setIsDeleteBranchDialogOpen] = useState(false);
+  const [selectedBranch, setSelectedBranch] = useState<{id: string, name: string} | null>(null);
+  const [newBranchName, setNewBranchName] = useState('');
+  const branchRenameInputRef = useRef<HTMLInputElement>(null);
 
   // 当currentTitle从store中更新时，同步本地状态
   useEffect(() => {
@@ -212,6 +221,54 @@ export function ChatHeader({ character }: ChatHeaderProps) {
     }
   };
   
+  // 打开分支重命名对话框
+  const handleOpenRenameBranchDialog = (branch: {id: string, name: string}) => {
+    setSelectedBranch(branch);
+    setNewBranchName(branch.name);
+    setIsRenameBranchDialogOpen(true);
+    
+    // 等待对话框打开后聚焦输入框
+    setTimeout(() => {
+      branchRenameInputRef.current?.focus();
+      branchRenameInputRef.current?.select();
+    }, 100);
+  };
+  
+  // 执行分支重命名
+  const handleRenameBranch = async () => {
+    if (!selectedBranch || !newBranchName.trim()) return;
+    
+    try {
+      await renameBranch(selectedBranch.id, newBranchName.trim());
+      setIsRenameBranchDialogOpen(false);
+      setSelectedBranch(null);
+      setNewBranchName('');
+    } catch (error) {
+      console.error('重命名分支失败:', error);
+      // TODO: 添加友好的错误提示
+    }
+  };
+  
+  // 打开删除分支对话框
+  const handleOpenDeleteBranchDialog = (branch: {id: string, name: string}) => {
+    setSelectedBranch(branch);
+    setIsDeleteBranchDialogOpen(true);
+  };
+  
+  // 执行分支删除
+  const handleDeleteBranch = async () => {
+    if (!selectedBranch) return;
+    
+    try {
+      await deleteBranch(selectedBranch.id);
+      setIsDeleteBranchDialogOpen(false);
+      setSelectedBranch(null);
+    } catch (error) {
+      console.error('删除分支失败:', error);
+      // TODO: 添加友好的错误提示
+    }
+  };
+  
   // 获取当前分支
   const currentBranch = branches.find(b => b.id === currentBranchId);
   // 判断是否为主分支
@@ -289,9 +346,35 @@ export function ChatHeader({ character }: ChatHeaderProps) {
                             <GitBranch className="h-4 w-4" />
                             <span className="font-medium">主分支</span>
                           </div>
-                          {branch.id === currentBranchId && (
-                            <Check className="h-3.5 w-3.5" />
-                          )}
+                          <div className="flex items-center gap-1">
+                            {branch.id === currentBranchId && (
+                              <Check className="h-3.5 w-3.5" />
+                            )}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-5 w-5 p-0"
+                                >
+                                  <MoreVertical className="h-3 w-3" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-36">
+                                <DropdownMenuItem
+                                  className="cursor-pointer flex items-center gap-2"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenRenameBranchDialog({id: branch.id, name: '主分支'});
+                                  }}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                  <span>重命名</span>
+                                </DropdownMenuItem>
+                                {/* 主分支不允许删除 */}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </DropdownMenuItem>
                       ))}
                       
@@ -306,9 +389,46 @@ export function ChatHeader({ character }: ChatHeaderProps) {
                             <GitBranch className="h-4 w-4" />
                             <span>{branch.name}</span>
                           </div>
-                          {branch.id === currentBranchId && (
-                            <Check className="h-3.5 w-3.5" />
-                          )}
+                          <div className="flex items-center gap-1">
+                            {branch.id === currentBranchId && (
+                              <Check className="h-3.5 w-3.5" />
+                            )}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-5 w-5 p-0"
+                                >
+                                  <MoreVertical className="h-3 w-3" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-36">
+                                <DropdownMenuItem
+                                  className="cursor-pointer flex items-center gap-2"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenRenameBranchDialog({id: branch.id, name: branch.name});
+                                  }}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                  <span>重命名</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="cursor-pointer text-destructive flex items-center gap-2"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenDeleteBranchDialog({id: branch.id, name: branch.name});
+                                  }}
+                                  disabled={branch.id === currentBranchId}
+                                >
+                                  <Trash className="h-3.5 w-3.5" />
+                                  <span>删除</span>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </DropdownMenuItem>
                       ))}
                       
@@ -502,6 +622,60 @@ export function ChatHeader({ character }: ChatHeaderProps) {
               disabled={!newTitle.trim()}
             >
               确认
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* 分支重命名对话框 */}
+      <Dialog open={isRenameBranchDialogOpen} onOpenChange={setIsRenameBranchDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>重命名分支</DialogTitle>
+            <DialogDescription>
+              为分支"{selectedBranch?.name || ''}"输入新名称
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-2">
+            <Input
+              ref={branchRenameInputRef}
+              value={newBranchName}
+              onChange={(e) => setNewBranchName(e.target.value)}
+              placeholder="分支名称"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleRenameBranch();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">取消</Button>
+            </DialogClose>
+            <Button onClick={handleRenameBranch}>确认</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* 删除分支确认对话框 */}
+      <Dialog open={isDeleteBranchDialogOpen} onOpenChange={setIsDeleteBranchDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>删除分支</DialogTitle>
+            <DialogDescription>
+              确定要删除分支"{selectedBranch?.name || ''}"吗？此操作不可撤销，该分支的所有消息将被删除。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">取消</Button>
+            </DialogClose>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteBranch}
+            >
+              删除
             </Button>
           </DialogFooter>
         </DialogContent>
