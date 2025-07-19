@@ -10,6 +10,10 @@ export interface Message {
   responseTime?: number; // 响应时间（毫秒）
   characterId?: string; // 角色ID，标记消息是哪个角色发送的
   branchId?: string; // 分支ID，标记消息属于哪个分支
+  
+  // 回复变体相关
+  alternateResponses?: string[]; // 存储所有备选回复
+  currentResponseIndex?: number; // 当前显示的回复索引，0是原始回复
 }
 
 // 分支类型

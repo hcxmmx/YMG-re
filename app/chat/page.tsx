@@ -441,6 +441,240 @@ export default function ChatPage() {
     }
   };
 
+  // 生成新的回复变体，保留原始回复
+  const handleGenerateVariant = async (messageId: string) => {
+    // 找到需要生成变体的消息
+    const messageToAddVariant = currentMessages.find(msg => msg.id === messageId);
+    if (!messageToAddVariant || messageToAddVariant.role !== 'assistant') return;
+
+    // 找到该消息之前的用户消息作为提示
+    const messageIndex = currentMessages.findIndex(msg => msg.id === messageId);
+    if (messageIndex <= 0) return; // 没有前置消息，无法生成变体
+
+    // 获取最近的用户消息
+    let userMessageIndex = messageIndex - 1;
+    while (userMessageIndex >= 0 && currentMessages[userMessageIndex].role !== 'user') {
+      userMessageIndex--;
+    }
+
+    if (userMessageIndex < 0) return; // 没有找到前置用户消息
+
+    // 保存原始消息数据
+    const originalContent = messageToAddVariant.content;
+    const originalMessageNumber = messageToAddVariant.messageNumber;
+    
+    // 准备变体数据
+    const currentAlternates = messageToAddVariant.alternateResponses || [];
+    
+    // 显示"正在生成变体..."消息
+    updateMessage({
+      ...messageToAddVariant,
+      content: "正在生成变体...",
+      // 不改变原始内容的索引或变体数组，直到我们有了新回复
+      messageNumber: originalMessageNumber
+    });
+
+    setIsLoading(true);
+    // 记录响应开始时间
+    responseStartTimeRef.current = Date.now();
+
+    try {
+      // 构建请求消息历史（不包含当前消息和之后的消息）
+      const requestMessages = currentMessages.slice(0, messageIndex);
+
+      // API调用参数
+      const params = {
+        messages: requestMessages,
+        systemPrompt: systemPrompt,
+        apiKey: settings.apiKey,
+        stream: settings.enableStreaming,
+        temperature: settings.temperature,
+        maxOutputTokens: settings.maxTokens,
+        topK: settings.topK,
+        topP: settings.topP,
+        model: settings.model,
+        safetySettings: [
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: settings.safetySettings.hateSpeech },
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: settings.safetySettings.harassment },
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: settings.safetySettings.sexuallyExplicit },
+          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: settings.safetySettings.dangerousContent }
+        ]
+      };
+
+      // 调用API获取回复
+      if (settings.enableStreaming) {
+        // 流式响应处理
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(params),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "API请求失败");
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("流式响应读取失败");
+
+        // 累积的响应内容
+        let accumulatedContent = "";
+        let decoder = new TextDecoder();
+        let buffer = ""; // 用于存储不完整的数据块
+        let chunkCount = 0;
+        let firstChunkReceived = false;
+        const startTime = Date.now();
+
+        // 处理流式数据
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // 解码为文本
+          const text = decoder.decode(value, { stream: true });
+          chunkCount++;
+          buffer += text; // 将新数据添加到缓冲区
+
+          // 尝试按SSE格式分割数据
+          const lines = buffer.split("\n\n");
+          buffer = lines.pop() || ""; // 保留最后一个可能不完整的块
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            if (!line.startsWith("data: ")) continue;
+
+            const data = line.replace("data: ", "");
+            if (data === "[DONE]") continue;
+
+            try {
+              const parsed = JSON.parse(data);
+
+              if (parsed.error) {
+                console.error("流式响应错误:", parsed.error);
+                // 恢复原始内容
+                updateMessage({
+                  ...messageToAddVariant,
+                  content: originalContent,
+                  messageNumber: originalMessageNumber
+                });
+                continue;
+              }
+
+              if (parsed.text !== undefined) {
+                if (!firstChunkReceived) {
+                  firstChunkReceived = true;
+                }
+
+                accumulatedContent += parsed.text;
+                
+                // 实时更新消息内容
+                updateMessage({
+                  ...messageToAddVariant,
+                  content: accumulatedContent,
+                  timestamp: new Date(),
+                  responseTime: Date.now() - startTime,
+                  messageNumber: originalMessageNumber
+                });
+              }
+            } catch (e) {
+              console.error("解析流式数据失败:", e);
+            }
+          }
+        }
+        
+        // 流式响应完成，保存新内容为变体
+        if (accumulatedContent && accumulatedContent !== originalContent) {
+          // 将新内容添加到变体列表
+          const newAlternates = [...currentAlternates, accumulatedContent];
+          const newIndex = newAlternates.length; // 将索引设置为最新的变体
+          
+          // 更新消息
+          updateMessage({
+            ...messageToAddVariant,
+            content: accumulatedContent, // 显示新生成的内容
+            timestamp: new Date(),
+            responseTime: Date.now() - startTime,
+            messageNumber: originalMessageNumber,
+            alternateResponses: newAlternates,
+            currentResponseIndex: newIndex
+          });
+        } else {
+          // 恢复原始内容，可能生成失败或生成的内容与原始内容相同
+          updateMessage({
+            ...messageToAddVariant,
+            content: originalContent,
+            messageNumber: originalMessageNumber
+          });
+        }
+      } else {
+        // 非流式响应
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(params),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "API请求失败");
+        }
+
+        const data = await response.json();
+        const responseTime = Date.now() - responseStartTimeRef.current;
+        
+        // 检查新内容是否有效且不与原始内容相同
+        if (data.text && data.text !== originalContent) {
+          // 保存新生成的内容作为变体
+          const newAlternates = [...currentAlternates, data.text];
+          const newIndex = newAlternates.length; // 设置索引为最新的变体
+          
+          // 更新消息
+          updateMessage({
+            ...messageToAddVariant,
+            content: data.text,
+            timestamp: new Date(),
+            responseTime: responseTime,
+            messageNumber: originalMessageNumber,
+            alternateResponses: newAlternates,
+            currentResponseIndex: newIndex
+          });
+        } else {
+          // 恢复原始内容
+          updateMessage({
+            ...messageToAddVariant,
+            content: originalContent,
+            messageNumber: originalMessageNumber
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error("生成变体失败:", error);
+      
+      // 恢复原始内容
+      updateMessage({
+        ...messageToAddVariant,
+        content: originalContent,
+        messageNumber: originalMessageNumber
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // 处理消息操作
+  const handleMessageAction = async (actionString: string) => {
+    // 检查是否是变体生成
+    if (actionString.startsWith('variant:')) {
+      const messageId = actionString.substring(8); // 提取消息ID
+      await handleGenerateVariant(messageId);
+      return;
+    }
+    
+    // 否则，这是普通的重新生成请求
+    await handleRegenerateMessage(actionString);
+  };
+
   // 发送消息
   const handleSendMessage = async (content: string, images?: string[]) => {
     if (!settings.apiKey) {
@@ -711,7 +945,7 @@ export default function ChatPage() {
           <Message
             key={`${message.id}-${index}`}
             message={message}
-            onRegenerate={handleRegenerateMessage}
+            onRegenerate={handleMessageAction}
             character={message.role === 'assistant' ? currentCharacter : undefined}
           />
         ))}

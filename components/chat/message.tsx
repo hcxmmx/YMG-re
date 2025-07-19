@@ -50,7 +50,12 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
     currentMessages.findIndex(msg => msg.id === message.id) === 0 && 
     character?.alternateGreetings && 
     character.alternateGreetings.length > 0;
-
+    
+  // 回复变体相关
+  const hasAlternateResponses = isAssistant && message.alternateResponses && message.alternateResponses.length > 0;
+  const currentResponseIndex = message.currentResponseIndex || 0;
+  const responseCount = hasAlternateResponses ? message.alternateResponses!.length + 1 : 1; // +1 表示原始回复
+  
   // 复制消息内容
   const copyToClipboard = () => {
     navigator.clipboard.writeText(message.content).then(() => {
@@ -114,6 +119,43 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
     updateMessage({
       ...message,
       content: allGreetings[newIndex]
+    });
+  };
+  
+  // 切换回复变体
+  const handleSwitchResponse = (direction: 'prev' | 'next') => {
+    if (!isAssistant) return;
+    
+    // 如果向后切换且已经是最后一个变体，或者没有变体
+    if ((direction === 'next' && (!hasAlternateResponses || currentResponseIndex === responseCount - 1)) ||
+        (direction === 'prev' && !hasAlternateResponses)) {
+      // 生成新变体
+      if (onRegenerate) {
+        onRegenerate(`variant:${message.id}`);
+      }
+      return;
+    }
+    
+    // 计算新的变体索引
+    let newIndex: number;
+    if (direction === 'prev') {
+      // 循环到最后一个变体
+      newIndex = (currentResponseIndex - 1 + responseCount) % responseCount;
+    } else {
+      // 切换到下一个变体
+      newIndex = (currentResponseIndex + 1) % responseCount;
+    }
+    
+    // 准备内容：如果是索引0则使用原始内容，否则从alternateResponses中获取
+    const newContent = newIndex === 0 
+      ? message.content 
+      : message.alternateResponses![newIndex - 1];
+    
+    // 更新消息内容
+    updateMessage({
+      ...message,
+      content: newContent,
+      currentResponseIndex: newIndex
     });
   };
   
@@ -280,6 +322,13 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                     {(message.responseTime / 1000).toFixed(1)}s
                   </span>
                 )}
+                
+                {/* 回复变体指示器 */}
+                {isAssistant && hasAlternateResponses && (
+                  <span className="flex items-center" title="回复变体">
+                    {currentResponseIndex + 1}/{responseCount}
+                  </span>
+                )}
               </div>
 
               {/* 查看渲染/原文按钮（保留在消息气泡内） */}
@@ -340,6 +389,26 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                 <RefreshCw size={12} />
                 <span className="text-xs">重新生成</span>
               </button>
+            )}
+            
+            {/* 切换回复变体 - 仅对非第一条的AI消息显示 */}
+            {isAssistant && !isFirstMessage && (
+              <div className="flex items-center gap-0.5">
+                <button
+                  onClick={() => handleSwitchResponse('prev')}
+                  className="p-0.5 rounded hover:bg-muted/30"
+                  title="上一个回复变体"
+                >
+                  <ChevronLeft size={12} />
+                </button>
+                <button
+                  onClick={() => handleSwitchResponse('next')}
+                  className="p-0.5 rounded hover:bg-muted/30"
+                  title="下一个回复变体/生成新变体"
+                >
+                  <ChevronRight size={12} />
+                </button>
+              </div>
             )}
             
             {/* 删除 */}
