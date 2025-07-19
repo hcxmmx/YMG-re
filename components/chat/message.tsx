@@ -4,7 +4,7 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Message as MessageType, Character } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Copy, Check, Clock, Hash, BarChart2, Trash2, Edit, RefreshCw, User, ChevronLeft, ChevronRight, GitBranch } from "lucide-react";
+import { Copy, Check, Clock, Hash, BarChart2, Trash2, Edit, RefreshCw, User, ChevronLeft, ChevronRight, GitBranch, AlertCircle } from "lucide-react";
 import { useSettingsStore, useChatStore } from "@/lib/store";
 import Image from "next/image";
 import {
@@ -108,6 +108,9 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
   const hasAlternateResponses = isAssistant && message.alternateResponses && message.alternateResponses.length > 0;
   const currentResponseIndex = message.currentResponseIndex || 0;
   const responseCount = hasAlternateResponses ? message.alternateResponses!.length + 1 : 1; // +1 表示原始回复
+  
+  // 检查消息是否包含API错误信息
+  const hasError = message.errorDetails !== undefined;
   
   // 复制消息内容
   const copyToClipboard = () => {
@@ -351,6 +354,27 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                 <ReactMarkdown className="break-words">{message.content}</ReactMarkdown>
               )}
             </div>
+
+            {/* 错误信息显示 */}
+            {hasError && (
+              <div className="mt-3 p-2 rounded border border-destructive/50 bg-destructive/10 text-destructive">
+                <div className="flex items-center gap-2 text-sm font-medium mb-1">
+                  <AlertCircle size={14} />
+                  <span>
+                    错误 {message.errorDetails?.code}: {message.errorDetails?.message}
+                  </span>
+                </div>
+                {message.errorDetails?.details && (
+                  <div className="text-xs mt-1 p-1 rounded bg-destructive/5 overflow-auto max-h-[150px]">
+                    <pre className="whitespace-pre-wrap">
+                      {typeof message.errorDetails.details === 'object' 
+                        ? JSON.stringify(message.errorDetails.details, null, 2) 
+                        : message.errorDetails.details}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* 消息元数据和查看原文按钮 */}
             <div className="flex justify-between items-center mt-2 text-xs opacity-60">

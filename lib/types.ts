@@ -14,6 +14,14 @@ export interface Message {
   // 回复变体相关
   alternateResponses?: string[]; // 存储所有备选回复
   currentResponseIndex?: number; // 当前显示的回复索引，0是原始回复
+  
+  // API错误信息
+  errorDetails?: {
+    code: number;        // HTTP状态码或API错误代码
+    message: string;     // 错误消息
+    details?: any;       // 错误详细信息
+    timestamp: string;   // 错误发生时间
+  };
 }
 
 // 分支类型

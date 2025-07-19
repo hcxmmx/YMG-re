@@ -14,6 +14,14 @@ import { TypingIndicator } from "@/components/chat/message";
 // 定义加载类型
 type LoadingType = 'new' | 'regenerate' | 'variant';
 
+// 添加错误详情接口
+interface ErrorDetails {
+  code: number;        // HTTP状态码或API错误代码
+  message: string;     // 错误消息
+  details?: any;       // 错误详细信息
+  timestamp: string;   // 错误发生时间
+}
+
 export default function ChatPage() {
   const { settings } = useSettingsStore();
   const {
@@ -248,19 +256,43 @@ export default function ChatPage() {
       // 调用API获取回复
       if (settings.enableStreaming) {
         // 流式响应处理
-        const response = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(params),
-        });
+        let apiResponse: Response;
+        try {
+          apiResponse = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(params),
+          });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || "API请求失败");
+          if (!apiResponse.ok) {
+            // 提取API错误详情
+            const errorDetails = await extractErrorDetails(null, apiResponse);
+            
+            // 更新消息，添加错误信息
+            updateMessage({
+              ...messageToRegenerate,
+              content: "重新生成失败。",
+              timestamp: new Date(),
+              errorDetails: errorDetails,
+              messageNumber: originalMessageNumber // 保留原始楼层号
+            });
+            return;
+          }
+        } catch (fetchError) {
+          // 处理网络错误
+          const errorDetails = await extractErrorDetails(fetchError);
+          updateMessage({
+            ...messageToRegenerate,
+            content: "连接API服务器失败。",
+            timestamp: new Date(),
+            errorDetails: errorDetails,
+            messageNumber: originalMessageNumber // 保留原始楼层号
+          });
+          return;
         }
 
         console.log("[重新生成] 流式响应开始接收");
-        const reader = response.body?.getReader();
+        const reader = apiResponse.body?.getReader();
         if (!reader) throw new Error("流式响应读取失败");
 
         // 累积的响应内容
@@ -313,16 +345,21 @@ export default function ChatPage() {
 
               if (parsed.error) {
                 console.error("[重新生成] 流式响应错误:", parsed.error);
-                // 不抛出异常，而是显示错误消息
-                const updatedContent = accumulatedContent +
-                  (accumulatedContent ? "\n\n" : "") +
-                  `[错误: ${parsed.error}]`;
-
-                // 使用updateMessage更新消息内容
+                
+                // 提取错误详情
+                const errorDetails: ErrorDetails = {
+                  code: parsed.code || 400,
+                  message: parsed.error || "API响应错误",
+                  details: parsed.details || undefined,
+                  timestamp: new Date().toISOString()
+                };
+                
+                // 更新消息，添加错误信息
                 updateMessage({
                   ...messageToRegenerate,
-                  content: updatedContent,
+                  content: accumulatedContent || "重新生成时发生错误。",
                   timestamp: new Date(),
+                  errorDetails: errorDetails,
                   messageNumber: originalMessageNumber // 保留原始楼层号
                 });
                 continue;
@@ -337,7 +374,7 @@ export default function ChatPage() {
                 }
 
                 accumulatedContent += parsed.text;
-                // 使用updateMessage更新消息内容
+                // 更新消息内容
                 updateMessage({
                   ...messageToRegenerate,
                   content: accumulatedContent,
@@ -366,7 +403,7 @@ export default function ChatPage() {
               const parsed = JSON.parse(data);
               if (parsed.text !== undefined) {
                 accumulatedContent += parsed.text;
-                // 使用updateMessage更新消息内容
+                // 更新消息内容
                 updateMessage({
                   ...messageToRegenerate,
                   content: accumulatedContent,
@@ -387,12 +424,19 @@ export default function ChatPage() {
         // 如果最终没有收到任何内容，显示提示信息
         if (!accumulatedContent) {
           console.warn("[重新生成] 流式响应未产生任何内容");
+          const errorDetails: ErrorDetails = {
+            code: 204, // No Content
+            message: "API返回了空响应",
+            timestamp: new Date().toISOString()
+          };
+          
           updateMessage({
             ...messageToRegenerate,
-            content: "AI未能生成回复。可能是由于安全过滤或其他原因。",
+            content: "AI未能生成回复。",
             timestamp: new Date(),
             responseTime: responseTime,
-            messageNumber: originalMessageNumber // 保留原始楼层号
+            messageNumber: originalMessageNumber, // 保留原始楼层号
+            errorDetails: errorDetails
           });
         } else {
           // 更新最终消息，包含响应时间
@@ -401,41 +445,70 @@ export default function ChatPage() {
             content: accumulatedContent,
             timestamp: new Date(),
             responseTime: responseTime,
-            messageNumber: originalMessageNumber // 保留原始楼层号
+            messageNumber: originalMessageNumber, // 保留原始楼层号
+            errorDetails: undefined // 清除之前可能存在的错误信息
           });
         }
       } else {
         // 非流式响应
-        const response = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(params),
-        });
+        try {
+          const response = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(params),
+          });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || "API请求失败");
+          if (!response.ok) {
+            // 提取API错误详情
+            const errorDetails = await extractErrorDetails(null, response);
+            
+            // 更新消息，添加错误信息
+            updateMessage({
+              ...messageToRegenerate,
+              content: "重新生成失败。",
+              timestamp: new Date(),
+              errorDetails: errorDetails,
+              messageNumber: originalMessageNumber // 保留原始楼层号
+            });
+            return;
+          }
+
+          const data = await response.json();
+          const responseTime = Date.now() - responseStartTimeRef.current;
+
+          // 更新消息
+          updateMessage({
+            ...messageToRegenerate,
+            content: data.text,
+            timestamp: new Date(),
+            responseTime: responseTime,
+            messageNumber: originalMessageNumber, // 保留原始楼层号
+            errorDetails: undefined // 清除之前可能存在的错误信息
+          });
+        } catch (fetchError) {
+          // 处理网络错误
+          const errorDetails = await extractErrorDetails(fetchError);
+          updateMessage({
+            ...messageToRegenerate,
+            content: "连接API服务器失败。",
+            timestamp: new Date(),
+            errorDetails: errorDetails,
+            messageNumber: originalMessageNumber // 保留原始楼层号
+          });
         }
-
-        const data = await response.json();
-        const responseTime = Date.now() - responseStartTimeRef.current;
-
-        // 更新消息
-        updateMessage({
-          ...messageToRegenerate,
-          content: data.text,
-          timestamp: new Date(),
-          responseTime: responseTime,
-          messageNumber: originalMessageNumber // 保留原始楼层号
-        });
       }
     } catch (error: any) {
       console.error("[重新生成] API调用失败:", error);
+      
+      // 提取并格式化错误信息
+      const errorDetails = await extractErrorDetails(error);
+      
       // 更新为错误消息
       updateMessage({
         ...messageToRegenerate,
-        content: `重新生成失败: ${error.message || "未知错误"}。请检查网络连接和API密钥设置。`,
+        content: "重新生成失败。",
         timestamp: new Date(),
+        errorDetails: errorDetails,
         messageNumber: originalMessageNumber // 保留原始楼层号
       });
     } finally {
@@ -503,19 +576,41 @@ export default function ChatPage() {
       // 调用API获取回复
       if (settings.enableStreaming) {
         // 流式响应处理
-        const response = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(params),
-        });
+        let apiResponse: Response;
+        try {
+          apiResponse = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(params),
+          });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || "API请求失败");
+          if (!apiResponse.ok) {
+            // 提取API错误详情
+            const errorDetails = await extractErrorDetails(null, apiResponse);
+            
+            // 保持原始内容，但添加错误信息
+            updateMessage({
+              ...messageToAddVariant,
+              content: originalContent,
+              timestamp: new Date(),
+              errorDetails: errorDetails
+            });
+            return;
+          }
+        } catch (fetchError) {
+          // 处理网络错误
+          const errorDetails = await extractErrorDetails(fetchError);
+          updateMessage({
+            ...messageToAddVariant,
+            content: originalContent,
+            timestamp: new Date(),
+            errorDetails: errorDetails
+          });
+          return;
         }
 
         console.log("[生成变体] 流式响应开始接收");
-        const reader = response.body?.getReader();
+        const reader = apiResponse.body?.getReader();
         if (!reader) throw new Error("流式响应读取失败");
 
         // 累积的响应内容
@@ -525,7 +620,6 @@ export default function ChatPage() {
         let chunkCount = 0;
         let dataChunkCount = 0;
         let firstChunkReceived = false;
-        const startTime = Date.now();
 
         // 处理流式数据
         while (true) {
@@ -553,7 +647,33 @@ export default function ChatPage() {
             if (data === "[DONE]") continue;
 
             try {
+              dataChunkCount++;
               const parsed = JSON.parse(data);
+              
+              // 处理错误
+              if (parsed.error) {
+                console.error("[生成变体] 流式响应错误:", parsed.error);
+                
+                // 提取错误详情
+                const errorDetails: ErrorDetails = {
+                  code: parsed.code || 400,
+                  message: parsed.error || "API响应错误",
+                  details: parsed.details || undefined,
+                  timestamp: new Date().toISOString()
+                };
+                
+                // 恢复原始内容，添加错误信息
+                updateMessage({
+                  ...messageToAddVariant,
+                  content: originalContent,
+                  alternateResponses: currentAlternates,
+                  currentResponseIndex: 0, // 重置为原始内容
+                  timestamp: new Date(),
+                  errorDetails: errorDetails
+                });
+                return;
+              }
+              
               if (parsed.text !== undefined) {
                 // 记录第一个内容块的时间
                 if (!firstChunkReceived) {
@@ -599,6 +719,12 @@ export default function ChatPage() {
         // 如果最终没有收到任何内容，显示提示信息
         if (!accumulatedContent) {
           console.warn("[生成变体] 流式响应未产生任何内容");
+          const errorDetails: ErrorDetails = {
+            code: 204, // No Content
+            message: "API返回了空响应",
+            timestamp: new Date().toISOString()
+          };
+          
           // 保持原始内容，显示错误
           updateMessage({
             ...messageToAddVariant,
@@ -606,6 +732,7 @@ export default function ChatPage() {
             alternateResponses: currentAlternates,
             currentResponseIndex: 0, // 重置为原始内容
             timestamp: new Date(),
+            errorDetails: errorDetails
           });
         } else {
           // 将新生成的变体添加到变体数组中
@@ -618,40 +745,70 @@ export default function ChatPage() {
               [originalContent, ...currentAlternates] : undefined, // 确保原始内容被保存为第一个变体
             currentResponseIndex: updatedAlternates.length, // 索引为变体数组长度，指向新内容
             timestamp: new Date(),
-            responseTime: responseTime
+            responseTime: responseTime,
+            errorDetails: undefined // 清除可能存在的错误信息
           });
         }
       } else {
         // 非流式响应
-        const response = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(params),
-        });
+        try {
+          const response = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(params),
+          });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || "API请求失败");
+          if (!response.ok) {
+            // 提取API错误详情
+            const errorDetails = await extractErrorDetails(null, response);
+            
+            // 保持原始内容，显示错误
+            updateMessage({
+              ...messageToAddVariant,
+              content: originalContent,
+              alternateResponses: currentAlternates,
+              currentResponseIndex: 0, // 重置为原始内容
+              timestamp: new Date(),
+              errorDetails: errorDetails
+            });
+            return;
+          }
+
+          const data = await response.json();
+          const responseTime = Date.now() - responseStartTimeRef.current;
+
+          // 将新生成的变体添加到变体数组中
+          const updatedAlternates = [...currentAlternates, data.text];
+          // 更新消息，将新生成的内容设为当前显示内容，并记录原始内容为变体之一
+          updateMessage({
+            ...messageToAddVariant,
+            content: data.text, // 显示新生成的内容
+            alternateResponses: updatedAlternates.length > 0 ? 
+              [originalContent, ...currentAlternates] : undefined, // 确保原始内容被保存为第一个变体
+            currentResponseIndex: updatedAlternates.length, // 索引为变体数组长度，指向新内容
+            timestamp: new Date(),
+            responseTime: responseTime,
+            errorDetails: undefined // 清除可能存在的错误信息
+          });
+        } catch (fetchError) {
+          // 处理网络错误
+          const errorDetails = await extractErrorDetails(fetchError);
+          updateMessage({
+            ...messageToAddVariant,
+            content: originalContent,
+            alternateResponses: currentAlternates,
+            currentResponseIndex: 0, // 重置为原始内容
+            timestamp: new Date(),
+            errorDetails: errorDetails
+          });
         }
-
-        const data = await response.json();
-        const responseTime = Date.now() - responseStartTimeRef.current;
-
-        // 将新生成的变体添加到变体数组中
-        const updatedAlternates = [...currentAlternates, data.text];
-        // 更新消息，将新生成的内容设为当前显示内容，并记录原始内容为变体之一
-        updateMessage({
-          ...messageToAddVariant,
-          content: data.text, // 显示新生成的内容
-          alternateResponses: updatedAlternates.length > 0 ? 
-            [originalContent, ...currentAlternates] : undefined, // 确保原始内容被保存为第一个变体
-          currentResponseIndex: updatedAlternates.length, // 索引为变体数组长度，指向新内容
-          timestamp: new Date(),
-          responseTime: responseTime
-        });
       }
     } catch (error: any) {
       console.error("[生成变体] API调用失败:", error);
+      
+      // 提取并格式化错误信息
+      const errorDetails = await extractErrorDetails(error);
+      
       // 保持原始内容，显示错误
       updateMessage({
         ...messageToAddVariant,
@@ -659,6 +816,7 @@ export default function ChatPage() {
         alternateResponses: currentAlternates,
         currentResponseIndex: 0, // 重置为原始内容
         timestamp: new Date(),
+        errorDetails: errorDetails
       });
     } finally {
       setIsLoading(false);
@@ -736,19 +894,43 @@ export default function ChatPage() {
       // 调用API获取回复
       if (settings.enableStreaming) {
         // 流式响应处理
-        const response = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(params),
-        });
+        let apiResponse: Response;
+        try {
+          apiResponse = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(params),
+          });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || "API请求失败");
+          if (!apiResponse.ok) {
+            // 提取API错误详情
+            const errorDetails = await extractErrorDetails(null, apiResponse);
+            
+            // 创建带有错误信息的助手消息
+            await addMessage({
+              id: generateId(),
+              role: "assistant",
+              content: "API请求失败。",
+              timestamp: new Date(),
+              errorDetails: errorDetails
+            });
+            return;
+          }
+        } catch (fetchError) {
+          // 处理网络错误
+          const errorDetails = await extractErrorDetails(fetchError);
+          await addMessage({
+            id: generateId(),
+            role: "assistant",
+            content: "连接到API服务器失败。",
+            timestamp: new Date(),
+            errorDetails: errorDetails
+          });
+          return;
         }
 
         console.log("流式响应开始接收");
-        const reader = response.body?.getReader();
+        const reader = apiResponse.body?.getReader();
         if (!reader) throw new Error("流式响应读取失败");
 
         // 累积的响应内容
@@ -813,17 +995,22 @@ export default function ChatPage() {
 
               if (parsed.error) {
                 console.error("流式响应错误:", parsed.error);
-                // 不抛出异常，而是显示错误消息
-                const updatedContent = accumulatedContent +
-                  (accumulatedContent ? "\n\n" : "") +
-                  `[错误: ${parsed.error}]`;
-
-                // 使用updateMessage更新消息内容
+                
+                // 提取错误详情
+                const errorDetails: ErrorDetails = {
+                  code: parsed.code || 400,
+                  message: parsed.error || "API响应错误",
+                  details: parsed.details || undefined,
+                  timestamp: new Date().toISOString()
+                };
+                
+                // 更新消息，添加错误信息
                 updateMessage({
                   id: assistantMessageId,
                   role: "assistant",
-                  content: updatedContent,
+                  content: accumulatedContent || "生成回复时发生错误。",
                   timestamp: new Date(),
+                  errorDetails: errorDetails
                 });
                 continue;
               }
@@ -886,15 +1073,22 @@ export default function ChatPage() {
         const responseTime = Date.now() - responseStartTimeRef.current;
         console.log(`总响应时间: ${responseTime}ms`);
 
-        // 如果最终没有收到任何内容，显示提示信息
+        // 如果最终没有收到任何内容，显示提示信息并标记为错误
         if (!accumulatedContent) {
           console.warn("流式响应未产生任何内容");
+          const errorDetails: ErrorDetails = {
+            code: 204, // No Content
+            message: "API返回了空响应",
+            timestamp: new Date().toISOString()
+          };
+          
           updateMessage({
             id: assistantMessageId,
             role: "assistant",
-            content: "AI未能生成回复。可能是由于安全过滤或其他原因。",
+            content: "AI未能生成回复。",
             timestamp: new Date(),
-            responseTime: responseTime
+            responseTime: responseTime,
+            errorDetails: errorDetails
           });
         } else {
           // 更新最终消息，包含响应时间
@@ -908,37 +1102,64 @@ export default function ChatPage() {
         }
       } else {
         // 非流式响应
-        const response = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(params),
-        });
+        try {
+          const response = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(params),
+          });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || "API请求失败");
+          if (!response.ok) {
+            // 提取API错误详情
+            const errorDetails = await extractErrorDetails(null, response);
+            
+            // 创建带有错误信息的助手消息
+            await addMessage({
+              id: generateId(),
+              role: "assistant",
+              content: "API请求失败。",
+              timestamp: new Date(),
+              errorDetails: errorDetails
+            });
+            return;
+          }
+
+          const data = await response.json();
+          const responseTime = Date.now() - responseStartTimeRef.current;
+
+          // 添加助手回复
+          await addMessage({
+            id: generateId(),
+            role: "assistant",
+            content: data.text,
+            timestamp: new Date(),
+            responseTime: responseTime
+          });
+        } catch (fetchError) {
+          // 处理网络错误
+          const errorDetails = await extractErrorDetails(fetchError);
+          await addMessage({
+            id: generateId(),
+            role: "assistant",
+            content: "连接到API服务器失败。",
+            timestamp: new Date(),
+            errorDetails: errorDetails
+          });
         }
-
-        const data = await response.json();
-        const responseTime = Date.now() - responseStartTimeRef.current;
-
-        // 添加助手回复
-        await addMessage({
-          id: generateId(),
-          role: "assistant",
-          content: data.text,
-          timestamp: new Date(),
-          responseTime: responseTime
-        });
       }
     } catch (error: any) {
       console.error("API调用失败:", error);
-      // 添加错误消息
+      
+      // 提取并格式化错误信息
+      const errorDetails = await extractErrorDetails(error);
+      
+      // 添加带有详细错误信息的系统消息
       await addMessage({
         id: generateId(),
-        role: "system",
-        content: `消息发送失败: ${error.message || "未知错误"}。请检查网络连接和API密钥设置。`,
+        role: "assistant",
+        content: "消息发送失败。",
         timestamp: new Date(),
+        errorDetails: errorDetails
       });
     } finally {
       setIsLoading(false);
@@ -1009,19 +1230,43 @@ export default function ChatPage() {
       // 调用API获取回复
       if (settings.enableStreaming) {
         // 流式响应处理
-        const response = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(params),
-        });
+        let apiResponse: Response;
+        try {
+          apiResponse = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(params),
+          });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || "API请求失败");
+          if (!apiResponse.ok) {
+            // 提取API错误详情
+            const errorDetails = await extractErrorDetails(null, apiResponse);
+            
+            // 创建带有错误信息的助手消息
+            await addMessage({
+              id: generateId(),
+              role: "assistant",
+              content: "API请求失败。",
+              timestamp: new Date(),
+              errorDetails: errorDetails
+            });
+            return;
+          }
+        } catch (fetchError) {
+          // 处理网络错误
+          const errorDetails = await extractErrorDetails(fetchError);
+          await addMessage({
+            id: generateId(),
+            role: "assistant",
+            content: "连接API服务器失败。",
+            timestamp: new Date(),
+            errorDetails: errorDetails
+          });
+          return;
         }
 
         console.log("[直接请求回复] 流式响应开始接收");
-        const reader = response.body?.getReader();
+        const reader = apiResponse.body?.getReader();
         if (!reader) throw new Error("流式响应读取失败");
 
         // 累积的响应内容
@@ -1086,17 +1331,22 @@ export default function ChatPage() {
 
               if (parsed.error) {
                 console.error("[直接请求回复] 流式响应错误:", parsed.error);
-                // 不抛出异常，而是显示错误消息
-                const updatedContent = accumulatedContent +
-                  (accumulatedContent ? "\n\n" : "") +
-                  `[错误: ${parsed.error}]`;
-
-                // 使用updateMessage更新消息内容
+                
+                // 提取错误详情
+                const errorDetails: ErrorDetails = {
+                  code: parsed.code || 400,
+                  message: parsed.error || "API响应错误",
+                  details: parsed.details || undefined,
+                  timestamp: new Date().toISOString()
+                };
+                
+                // 更新消息，添加错误信息
                 updateMessage({
                   id: assistantMessageId,
                   role: "assistant",
-                  content: updatedContent,
+                  content: accumulatedContent || "生成回复时发生错误。",
                   timestamp: new Date(),
+                  errorDetails: errorDetails
                 });
                 continue;
               }
@@ -1161,12 +1411,19 @@ export default function ChatPage() {
         // 如果最终没有收到任何内容，显示提示信息
         if (!accumulatedContent) {
           console.warn("[直接请求回复] 流式响应未产生任何内容");
+          const errorDetails: ErrorDetails = {
+            code: 204, // No Content
+            message: "API返回了空响应",
+            timestamp: new Date().toISOString()
+          };
+          
           updateMessage({
             id: assistantMessageId,
             role: "assistant",
-            content: "AI未能生成回复。可能是由于安全过滤或其他原因。",
+            content: "AI未能生成回复。",
             timestamp: new Date(),
-            responseTime: responseTime
+            responseTime: responseTime,
+            errorDetails: errorDetails
           });
         } else {
           // 更新最终消息，包含响应时间
@@ -1175,47 +1432,151 @@ export default function ChatPage() {
             role: "assistant",
             content: accumulatedContent,
             timestamp: new Date(),
-            responseTime: responseTime
+            responseTime: responseTime,
+            errorDetails: undefined // 清除可能存在的错误信息
           });
         }
       } else {
         // 非流式响应
-        const response = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(params),
-        });
+        try {
+          const response = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(params),
+          });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || "API请求失败");
+          if (!response.ok) {
+            // 提取API错误详情
+            const errorDetails = await extractErrorDetails(null, response);
+            
+            // 创建带有错误信息的助手消息
+            await addMessage({
+              id: generateId(),
+              role: "assistant",
+              content: "API请求失败。",
+              timestamp: new Date(),
+              errorDetails: errorDetails
+            });
+            return;
+          }
+
+          const data = await response.json();
+          const responseTime = Date.now() - responseStartTimeRef.current;
+
+          // 添加助手回复
+          await addMessage({
+            id: generateId(),
+            role: "assistant",
+            content: data.text,
+            timestamp: new Date(),
+            responseTime: responseTime,
+            errorDetails: undefined // 确保没有错误信息
+          });
+        } catch (fetchError) {
+          // 处理网络错误
+          const errorDetails = await extractErrorDetails(fetchError);
+          await addMessage({
+            id: generateId(),
+            role: "assistant",
+            content: "连接到API服务器失败。",
+            timestamp: new Date(),
+            errorDetails: errorDetails
+          });
         }
-
-        const data = await response.json();
-        const responseTime = Date.now() - responseStartTimeRef.current;
-
-        // 添加助手回复
-        await addMessage({
-          id: generateId(),
-          role: "assistant",
-          content: data.text,
-          timestamp: new Date(),
-          responseTime: responseTime
-        });
       }
     } catch (error: any) {
       console.error("[直接请求回复] API调用失败:", error);
-      // 添加错误消息
+      
+      // 提取并格式化错误信息
+      const errorDetails = await extractErrorDetails(error);
+      
+      // 添加带有详细错误信息的消息
       await addMessage({
         id: generateId(),
-        role: "system",
-        content: `回复请求失败: ${error.message || "未知错误"}。请检查网络连接和API密钥设置。`,
+        role: "assistant",
+        content: "回复请求失败。",
         timestamp: new Date(),
+        errorDetails: errorDetails
       });
     } finally {
       setIsLoading(false);
       setLoadingMessageId(null);
     }
+  };
+
+  // 提取API错误详情的辅助函数
+  const extractErrorDetails = async (error: any, response?: Response): Promise<ErrorDetails> => {
+    let errorDetails: ErrorDetails = {
+      code: 500,
+      message: "未知错误",
+      timestamp: new Date().toISOString()
+    };
+    
+    try {
+      // 处理API响应错误
+      if (response) {
+        errorDetails.code = response.status;
+        
+        try {
+          // 尝试解析响应JSON
+          const errorData = await response.json();
+          errorDetails.message = errorData.error || "API请求失败";
+          
+          // 提取更多细节
+          if (errorData.details) {
+            errorDetails.details = errorData.details;
+          } else if (errorData.message) {
+            errorDetails.message = errorData.message;
+          }
+          
+        } catch (jsonError) {
+          // 响应不是JSON格式
+          errorDetails.message = response.statusText || "API请求失败";
+        }
+      } 
+      // 处理JavaScript错误对象
+      else if (error instanceof Error) {
+        // 尝试解析错误消息中可能包含的JSON
+        try {
+          const parsedError = JSON.parse(error.message);
+          if (parsedError.code) errorDetails.code = parsedError.code;
+          if (parsedError.message) errorDetails.message = parsedError.message;
+          if (parsedError.details) errorDetails.details = parsedError.details;
+        } catch (parseError) {
+          // 如果解析失败，使用原始错误消息
+          errorDetails.message = error.message;
+          
+          // 如果是网络错误，设置相应状态码
+          if (error.name === "NetworkError") {
+            errorDetails.code = 0;
+            errorDetails.message = "网络错误，请检查您的网络连接";
+          } else if (error.name === "AbortError") {
+            errorDetails.code = 499; // Client Closed Request
+            errorDetails.message = "请求被取消";
+          } else if (error.name === "TimeoutError") {
+            errorDetails.code = 408; // Request Timeout
+            errorDetails.message = "请求超时";
+          }
+        }
+      } else if (typeof error === "string") {
+        errorDetails.message = error;
+      } else if (typeof error === "object" && error !== null) {
+        if (error.error) errorDetails.message = error.error;
+        if (error.code) errorDetails.code = error.code;
+        if (error.details) errorDetails.details = error.details;
+      }
+      
+      // 确保错误消息不是空的
+      if (!errorDetails.message || errorDetails.message.trim() === "") {
+        errorDetails.message = "未知错误";
+      }
+      
+    } catch (e) {
+      console.error("提取错误详情时发生错误:", e);
+      // 使用默认错误信息
+    }
+    
+    return errorDetails;
   };
 
   return (
