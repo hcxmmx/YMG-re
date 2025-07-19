@@ -22,6 +22,12 @@ const SAFETY_THRESHOLD_OPTIONS = [
   { value: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE, label: "阻止低等及以上风险" },
 ];
 
+// 上下文控制模式选项
+const CONTEXT_CONTROL_OPTIONS = [
+  { value: "count", label: "基于消息数量" },
+  { value: "token", label: "基于Token数量" },
+];
+
 export default function SettingsPage() {
   const router = useRouter();
   const { settings, updateSettings } = useSettingsStore();
@@ -32,6 +38,8 @@ export default function SettingsPage() {
   const [topP, setTopP] = useState(0.95);
   const [model, setModel] = useState("gemini-2.5-pro");
   const [enableStreaming, setEnableStreaming] = useState(true);
+  const [contextWindow, setContextWindow] = useState(0);
+  const [contextControlMode, setContextControlMode] = useState<'count' | 'token'>('token');
   const [safetySettings, setSafetySettings] = useState({
     hateSpeech: HarmBlockThreshold.BLOCK_NONE,
     harassment: HarmBlockThreshold.BLOCK_NONE,
@@ -50,6 +58,8 @@ export default function SettingsPage() {
     setModel(settings.model);
     setEnableStreaming(settings.enableStreaming);
     setSafetySettings(settings.safetySettings);
+    setContextWindow(settings.contextWindow || 0);
+    setContextControlMode(settings.contextControlMode || 'token');
   }, [settings]);
 
   // 更新安全设置
@@ -71,6 +81,8 @@ export default function SettingsPage() {
       model,
       enableStreaming,
       safetySettings,
+      contextWindow,
+      contextControlMode,
     });
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
@@ -249,6 +261,74 @@ export default function SettingsPage() {
               </div>
               <p className="text-xs text-muted-foreground">
                 启用后，AI回复将逐字显示，提供更自然的体验。禁用后，将在完成后一次性显示整个回复。
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 上下文控制 */}
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold">上下文控制</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            控制模型在对话中保留的上下文数量。
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* 上下文窗口 */}
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <label htmlFor="contextWindow" className="text-sm font-medium">
+                  上下文窗口大小
+                </label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  id="contextWindow"
+                  type="range"
+                  min="0"
+                  max="1000000"
+                  step="1000"
+                  value={contextWindow}
+                  onChange={(e) => setContextWindow(parseInt(e.target.value))}
+                  className="w-full"
+                />
+                <input
+                  type="number"
+                  min="0"
+                  max="1000000"
+                  value={contextWindow}
+                  onChange={(e) => setContextWindow(parseInt(e.target.value) || 0)}
+                  className="w-24 h-9 px-3 py-1 border rounded-md bg-background"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                控制模型在对话中保留的上下文数量。0表示不限制。{contextControlMode === 'token' 
+                 ? '较低的值能降低API成本和提高响应速度，但可能会丢失较早的上下文。'
+                 : '较低的值会限制对话中保留的消息数量。'}
+              </p>
+            </div>
+
+            {/* 上下文控制模式 */}
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <label htmlFor="contextControlMode" className="text-sm font-medium">
+                  上下文控制模式: {contextControlMode}
+                </label>
+              </div>
+              <select
+                id="contextControlMode"
+                value={contextControlMode}
+                onChange={(e) => setContextControlMode(e.target.value as 'count' | 'token')}
+                className="w-full p-2 border rounded-md bg-background"
+              >
+                {CONTEXT_CONTROL_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                选择上下文控制是基于消息数量还是Token数量。
               </p>
             </div>
           </div>

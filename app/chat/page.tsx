@@ -10,6 +10,7 @@ import { generateId } from "@/lib/utils";
 import { useNavbar } from "@/app/layout";
 import { useSearchParams } from "next/navigation";
 import { TypingIndicator } from "@/components/chat/message";
+import { trimMessageHistory } from "@/lib/tokenUtils";
 
 // 定义加载类型
 type LoadingType = 'new' | 'regenerate' | 'variant';
@@ -232,7 +233,16 @@ export default function ChatPage() {
 
     try {
       // 构建请求消息历史（不包含当前消息和之后的消息）
-      const requestMessages = currentMessages.slice(0, messageIndex);
+      const requestMessagesOriginal = currentMessages.slice(0, messageIndex);
+      
+      // 使用trimMessageHistory裁剪消息历史
+      const requestMessages = await trimMessageHistory(
+        requestMessagesOriginal,
+        settings,
+        settings.apiKey || ''
+      );
+      
+      console.log(`[重新生成] 消息裁剪: 从${requestMessagesOriginal.length}条消息裁剪到${requestMessages.length}条`);
 
       // API调用参数
       const params = {
@@ -552,7 +562,16 @@ export default function ChatPage() {
 
     try {
       // 构建请求消息历史（不包含当前消息和之后的消息）
-      const requestMessages = currentMessages.slice(0, messageIndex);
+      const requestMessagesOriginal = currentMessages.slice(0, messageIndex);
+      
+      // 使用trimMessageHistory裁剪消息历史
+      const requestMessages = await trimMessageHistory(
+        requestMessagesOriginal,
+        settings,
+        settings.apiKey || ''
+      );
+      
+      console.log(`[生成变体] 消息裁剪: 从${requestMessagesOriginal.length}条消息裁剪到${requestMessages.length}条`);
 
       // API调用参数
       const params = {
@@ -869,12 +888,19 @@ export default function ChatPage() {
     responseStartTimeRef.current = Date.now();
 
     try {
-      // 构建请求消息历史
-      const requestMessages = [...currentMessages, userMessage];
+      // 使用 trimMessageHistory 裁剪消息历史
+      const allMessages = [...currentMessages, userMessage];
+      const trimmedMessages = await trimMessageHistory(
+        allMessages,
+        settings,
+        settings.apiKey || ''
+      );
+      
+      console.log(`消息裁剪: 从${allMessages.length}条消息裁剪到${trimmedMessages.length}条`);
 
-      // API调用参数
+      // API调用参数，使用裁剪后的消息
       const params = {
-        messages: requestMessages,
+        messages: trimmedMessages,
         systemPrompt: systemPrompt,
         apiKey: settings.apiKey,
         stream: settings.enableStreaming,
@@ -1206,7 +1232,16 @@ export default function ChatPage() {
 
     try {
       // 构建请求消息历史（使用现有消息，不添加新的用户消息）
-      const requestMessages = currentMessages;
+      const requestMessagesOriginal = currentMessages;
+      
+      // 使用trimMessageHistory裁剪消息历史
+      const requestMessages = await trimMessageHistory(
+        requestMessagesOriginal,
+        settings,
+        settings.apiKey || ''
+      );
+      
+      console.log(`[直接请求回复] 消息裁剪: 从${requestMessagesOriginal.length}条消息裁剪到${requestMessages.length}条`);
 
       // API调用参数
       const params = {
@@ -1637,4 +1672,4 @@ export default function ChatPage() {
       </div>
     </div>
   );
-} 
+}

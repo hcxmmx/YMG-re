@@ -58,6 +58,9 @@ export interface UserSettings {
     sexuallyExplicit: HarmBlockThreshold;
     dangerousContent: HarmBlockThreshold;
   };
+  // 上下文窗口相关设置
+  contextWindow: number;        // 上下文窗口大小（token数或消息数）
+  contextControlMode: 'count' | 'token';  // 上下文控制方式
 }
 
 // 对话类型

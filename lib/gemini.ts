@@ -14,7 +14,7 @@ export interface GeminiParams {
 }
 
 export class GeminiService {
-  private genAI: GoogleGenAI;
+  public genAI: GoogleGenAI;
   private defaultModel: string = "gemini-2.5-pro";
 
   constructor(apiKey: string) {
@@ -22,7 +22,7 @@ export class GeminiService {
   }
 
   // 转换消息格式，从我们应用中的格式转为Gemini API需要的格式
-  private transformMessages(messages: Message[]) {
+  public transformMessages(messages: Message[]) {
     // 提取系统消息
     const systemMessage = messages.find((msg) => msg.role === "system");
     const systemPrompt = systemMessage?.content || "";

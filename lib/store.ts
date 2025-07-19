@@ -40,6 +40,9 @@ export const useSettingsStore = create<SettingsState>()(
           sexuallyExplicit: HarmBlockThreshold.BLOCK_NONE,
           dangerousContent: HarmBlockThreshold.BLOCK_NONE,
         },
+        // 上下文窗口设置
+        contextWindow: 0, // 默认0表示不限制
+        contextControlMode: 'token', // 默认使用token计数方式
       },
       uiSettings: {
         showResponseTime: true,
