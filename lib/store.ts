@@ -1222,7 +1222,6 @@ export const usePromptPresetStore = create<PromptPresetState>()(
           };
           
           // 批量应用所有更改，确保状态更新是原子操作
-          // 创建一个Promise队列，确保所有操作按顺序执行
           await Promise.all([
             // 1. 更新聊天状态中的系统提示词
             new Promise<void>((resolve) => {
@@ -1240,6 +1239,27 @@ export const usePromptPresetStore = create<PromptPresetState>()(
               resolve();
             })
           ]);
+          
+          // 重要修复：确保当前会话的系统提示词也被保存到IndexedDB
+          const chatStore = useChatStore.getState();
+          const { currentConversationId, currentMessages, currentTitle } = chatStore;
+          
+          // 如果有当前会话，同步更新到IndexedDB
+          if (currentConversationId) {
+            // 获取当前会话的分支信息
+            const conversation = await conversationStorage.getConversation(currentConversationId);
+            if (conversation) {
+              console.log("同步更新当前会话的系统提示词到IndexedDB");
+              await conversationStorage.saveConversation(
+                currentConversationId,
+                currentTitle,
+                currentMessages,
+                systemPrompt, // 使用新的系统提示词
+                conversation.branches || [],
+                conversation.currentBranchId
+              );
+            }
+          }
           
           // 仅在所有操作完成后，更新当前预设ID
           set({ currentPresetId: id, isLoading: false });

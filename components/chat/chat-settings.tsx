@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { conversationStorage } from "@/lib/storage";
 
 // 可用的Gemini模型列表
 const AVAILABLE_MODELS = [
@@ -105,18 +106,40 @@ export function ChatSettings() {
         // 先更新系统提示词为默认值
         const chatStore = useChatStore.getState();
         chatStore.setSystemPrompt('你是一个友好、乐于助人的AI助手。');
+        const defaultSystemPrompt = '你是一个友好、乐于助人的AI助手。';
         
         // 更新设置为默认值
         const settingsStore = useSettingsStore.getState();
-        settingsStore.updateSettings({
+        const defaultSettings = {
           temperature: 0.7,
           maxTokens: 1024,
           topK: 40,
           topP: 0.95,
-        });
+        };
+        settingsStore.updateSettings(defaultSettings);
         
         // 更新预设ID
         usePromptPresetStore.getState().setCurrentPresetId(null);
+        
+        // 重要修复：确保当前会话的系统提示词也被保存到IndexedDB
+        const { currentConversationId, currentMessages, currentTitle } = chatStore;
+        
+        // 如果有当前会话，同步更新到IndexedDB
+        if (currentConversationId) {
+          // 获取当前会话的分支信息
+          const conversation = await conversationStorage.getConversation(currentConversationId);
+          if (conversation) {
+            console.log("同步更新当前会话的默认系统提示词到IndexedDB");
+            await conversationStorage.saveConversation(
+              currentConversationId,
+              currentTitle,
+              currentMessages,
+              defaultSystemPrompt, // 使用默认系统提示词
+              conversation.branches || [],
+              conversation.currentBranchId
+            );
+          }
+        }
         
         // 添加延迟，确保状态已更新
         await new Promise(resolve => setTimeout(resolve, 100));
