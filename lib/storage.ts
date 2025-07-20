@@ -1,5 +1,5 @@
 import { openDB, DBSchema } from 'idb';
-import { Message, UserSettings, Character, Branch } from './types';
+import { Message, UserSettings, Character, Branch, PromptPreset, PromptPresetItem, PlaceholderInfo } from './types';
 import { generateId, extractCharaDataFromPng } from './utils';
 
 // 定义数据库架构
@@ -47,11 +47,16 @@ interface AppDB extends DBSchema {
     };
     indexes: { 'by-name': string };
   };
+  promptPresets: {
+    key: string;
+    value: PromptPreset;
+    indexes: { 'by-name': string; 'by-updatedAt': number };
+  };
 }
 
 // 初始化数据库
 export const initDB = async () => {
-  return openDB<AppDB>('ai-roleplay-db', 3, {
+  return openDB<AppDB>('ai-roleplay-db', 4, {
     upgrade(db, oldVersion) {
       // 版本1: 创建conversations和presets表
       if (oldVersion < 1) {
@@ -81,6 +86,16 @@ export const initDB = async () => {
       if (oldVersion < 3) {
         console.log("升级数据库到版本3，添加分支支持");
         // 数据迁移将在单独的函数中进行，以避免阻塞版本升级事务
+      }
+      
+      // 版本4: 添加提示词预设表
+      if (oldVersion < 4) {
+        console.log("升级数据库到版本4，添加提示词预设表");
+        if (!db.objectStoreNames.contains('promptPresets')) {
+          const promptPresetStore = db.createObjectStore('promptPresets', { keyPath: 'id' });
+          promptPresetStore.createIndex('by-name', 'name');
+          promptPresetStore.createIndex('by-updatedAt', 'updatedAt');
+        }
       }
     }
   });
@@ -769,6 +784,207 @@ export const characterStorage = {
     }
   }
 };
+
+// 提示词预设存储接口
+export const promptPresetStorage = {
+  async savePromptPreset(preset: PromptPreset) {
+    const db = await initDB();
+    
+    // 确保有创建和更新时间
+    const now = Date.now();
+    const updatedPreset = {
+      ...preset,
+      createdAt: preset.createdAt || now,
+      updatedAt: now
+    };
+    
+    await db.put('promptPresets', updatedPreset);
+    return updatedPreset;
+  },
+  
+  async getPromptPreset(id: string) {
+    const db = await initDB();
+    return db.get('promptPresets', id);
+  },
+  
+  async listPromptPresets() {
+    const db = await initDB();
+    return db.getAllFromIndex('promptPresets', 'by-updatedAt');
+  },
+  
+  async deletePromptPreset(id: string) {
+    const db = await initDB();
+    await db.delete('promptPresets', id);
+  },
+  
+  // 导入预设函数
+  async importPromptPresetFromJSON(json: any): Promise<PromptPreset> {
+    // 预设标识符
+    const PLACEHOLDERS: Record<string, PlaceholderInfo> = {
+      'charDescription': {
+        type: 'charDescription',
+        implemented: true,
+        description: '角色描述'
+      },
+      'chatHistory': {
+        type: 'chatHistory',
+        implemented: true,
+        description: '对话历史'
+      },
+      'worldInfoBefore': {
+        type: 'worldInfo',
+        implemented: false,
+        description: '世界书信息'
+      },
+      'worldInfoAfter': {
+        type: 'worldInfo',
+        implemented: false,
+        description: '世界书信息'
+      },
+      'personaDescription': {
+        type: 'persona',
+        implemented: false,
+        description: '玩家角色信息'
+      },
+      'scenario': {
+        type: 'scenario',
+        implemented: false,
+        description: '场景描述'
+      },
+      'dialogueExamples': {
+        type: 'examples',
+        implemented: false,
+        description: '对话示例'
+      },
+      'jailbreak': {
+        type: 'jailbreak',
+        implemented: true,
+        description: '特殊指令'
+      },
+    };
+    
+    // 提取提示词和排序
+    const prompts = extractPromptItemsFromJSON(json, PLACEHOLDERS);
+    
+    // 提取模型参数
+    const modelParams = extractModelParametersFromJSON(json);
+    
+    // 创建预设对象
+    const preset: PromptPreset = {
+      id: generateId(),
+      name: json.name || "导入的预设",
+      description: json.description || "从JSON文件导入的预设",
+      ...modelParams,
+      prompts,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    
+    // 保存到数据库
+    return await this.savePromptPreset(preset);
+  },
+  
+  // 导出预设到文件
+  async exportPromptPreset(id: string): Promise<Blob> {
+    const preset = await this.getPromptPreset(id);
+    if (!preset) {
+      throw new Error('预设不存在');
+    }
+    
+    const json = JSON.stringify(preset, null, 2);
+    return new Blob([json], { type: 'application/json' });
+  }
+};
+
+// 从JSON提取提示词条目
+function extractPromptItemsFromJSON(json: any, placeholders: Record<string, PlaceholderInfo>): PromptPresetItem[] {
+  const prompts: PromptPresetItem[] = [];
+  
+  // 如果有prompt_order数组，按照其顺序处理
+  if (json.prompt_order && Array.isArray(json.prompt_order)) {
+    // 找到characterId为100001的部分（或其他合适的ID）
+    const characterOrder = json.prompt_order.find(
+      (po: any) => po.character_id === 100001
+    ) || json.prompt_order[0]; // 如果没有找到指定ID，使用第一个
+    
+    if (characterOrder?.order && Array.isArray(characterOrder.order)) {
+      // 遍历order数组
+      characterOrder.order.forEach((orderItem: any) => {
+        // 在prompts数组中查找对应的提示词
+        if (json.prompts && Array.isArray(json.prompts)) {
+          const matchingPrompt = json.prompts.find(
+            (p: any) => p.identifier === orderItem.identifier
+          );
+          
+          if (matchingPrompt) {
+            const promptItem: PromptPresetItem = {
+              identifier: orderItem.identifier,
+              name: matchingPrompt.name || "未命名提示词",
+              content: matchingPrompt.content || "",
+              enabled: orderItem.enabled || false
+            };
+            
+            // 检查是否为占位条目
+            if (matchingPrompt.marker === true) {
+              promptItem.isPlaceholder = true;
+              promptItem.placeholderType = orderItem.identifier;
+              
+              // 检查是否已实现
+              const placeholderInfo = placeholders[orderItem.identifier];
+              if (placeholderInfo) {
+                promptItem.implemented = placeholderInfo.implemented;
+              } else {
+                promptItem.implemented = false;
+              }
+            }
+            
+            prompts.push(promptItem);
+          }
+        }
+      });
+    }
+  } else if (json.prompts && Array.isArray(json.prompts)) {
+    // 没有排序信息，直接使用prompts数组
+    json.prompts.forEach((p: any) => {
+      if (p.identifier) {
+        const promptItem: PromptPresetItem = {
+          identifier: p.identifier,
+          name: p.name || "未命名提示词",
+          content: p.content || "",
+          enabled: p.enabled !== undefined ? p.enabled : true
+        };
+        
+        // 检查是否为占位条目
+        if (p.marker === true) {
+          promptItem.isPlaceholder = true;
+          promptItem.placeholderType = p.identifier;
+          
+          // 检查是否已实现
+          const placeholderInfo = placeholders[p.identifier];
+          if (placeholderInfo) {
+            promptItem.implemented = placeholderInfo.implemented;
+          } else {
+            promptItem.implemented = false;
+          }
+        }
+        
+        prompts.push(promptItem);
+      }
+    });
+  }
+  
+  return prompts;
+}
+
+// 从JSON提取模型参数
+function extractModelParametersFromJSON(json: any) {
+  return {
+    temperature: json.temperature !== undefined ? Number(json.temperature) : undefined,
+    maxTokens: json.openai_max_tokens !== undefined ? Number(json.openai_max_tokens) : undefined,
+    topK: json.top_k !== undefined ? Number(json.top_k) : undefined,
+    topP: json.top_p !== undefined ? Number(json.top_p) : undefined,
+  };
+}
 
 // 导出/导入功能
 export const dataExport = {

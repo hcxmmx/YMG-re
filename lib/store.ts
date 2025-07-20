@@ -5,6 +5,8 @@ import { HarmBlockThreshold } from './types';
 import { conversationStorage, characterStorage, initializeMainBranch } from './storage';
 import { generateId } from './utils';
 import { createJSONStorage } from 'zustand/middleware';
+import { promptPresetStorage } from './storage';
+import { PromptPreset } from './types';
 
 // 用户设置存储
 interface SettingsState {
@@ -1096,6 +1098,284 @@ export const useChatStore = create<ChatState>()(
     }
   )
 );
+
+// 提示词预设状态管理
+interface PromptPresetState {
+  presets: PromptPreset[];
+  currentPresetId: string | null;
+  isLoading: boolean;
+  error: string | null;
+  
+  // 操作方法
+  loadPresets: () => Promise<void>;
+  getPreset: (id: string) => PromptPreset | undefined;
+  savePreset: (preset: PromptPreset) => Promise<void>;
+  deletePreset: (id: string) => Promise<void>;
+  applyPreset: (id: string) => Promise<void>;
+  importPresetFromFile: (file: File) => Promise<PromptPreset | null>;
+  exportPresetToFile: (id: string) => Promise<void>;
+  setCurrentPresetId: (id: string | null) => void;
+}
+
+export const usePromptPresetStore = create<PromptPresetState>()(
+  persist(
+    (set, get) => ({
+      presets: [],
+      currentPresetId: null,
+      isLoading: false,
+      error: null,
+      
+      loadPresets: async () => {
+        try {
+          set({ isLoading: true, error: null });
+          const presets = await promptPresetStorage.listPromptPresets();
+          set({ presets, isLoading: false });
+        } catch (error) {
+          console.error("加载预设失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "加载预设失败" 
+          });
+        }
+      },
+      
+      getPreset: (id: string) => {
+        return get().presets.find(preset => preset.id === id);
+      },
+      
+      savePreset: async (preset: PromptPreset) => {
+        try {
+          set({ isLoading: true, error: null });
+          const savedPreset = await promptPresetStorage.savePromptPreset(preset);
+          
+          set(state => ({
+            presets: state.presets.some(p => p.id === preset.id)
+              ? state.presets.map(p => p.id === preset.id ? savedPreset : p)
+              : [...state.presets, savedPreset],
+            isLoading: false
+          }));
+        } catch (error) {
+          console.error("保存预设失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "保存预设失败" 
+          });
+        }
+      },
+      
+      deletePreset: async (id: string) => {
+        try {
+          set({ isLoading: true, error: null });
+          await promptPresetStorage.deletePromptPreset(id);
+          set(state => ({
+            presets: state.presets.filter(p => p.id !== id),
+            currentPresetId: state.currentPresetId === id ? null : state.currentPresetId,
+            isLoading: false
+          }));
+        } catch (error) {
+          console.error("删除预设失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "删除预设失败" 
+          });
+        }
+      },
+      
+      // 应用预设 - 更新系统提示词和模型参数
+      applyPreset: async (id: string) => {
+        const preset = get().presets.find(p => p.id === id);
+        if (!preset) return;
+        
+        try {
+          set({ isLoading: true, error: null });
+          
+          // 构建系统提示词
+          const systemPromptParts: string[] = [];
+          
+          // 处理已启用的提示词
+          for (const promptItem of preset.prompts) {
+            if (!promptItem.enabled) continue;
+            
+            if (promptItem.isPlaceholder) {
+              // 如果是占位条目且已实现，生成动态内容
+              if (promptItem.implemented) {
+                const dynamicContent = await getDynamicContent(promptItem.placeholderType || "");
+                if (dynamicContent) {
+                  systemPromptParts.push(dynamicContent);
+                }
+              }
+              // 未实现的占位条目暂时忽略
+            } else {
+              // 普通静态内容
+              systemPromptParts.push(promptItem.content);
+            }
+          }
+          
+          const systemPrompt = systemPromptParts.join('\n\n');
+          
+          // 准备所有更新的参数 - 创建完整的更新对象，而不是逐个更新
+          const modelParams = {
+            temperature: preset.temperature ?? 0.7,
+            maxTokens: preset.maxTokens ?? 1024,
+            topK: preset.topK ?? 40,
+            topP: preset.topP ?? 0.95,
+          };
+          
+          // 批量应用所有更改，确保状态更新是原子操作
+          // 创建一个Promise队列，确保所有操作按顺序执行
+          await Promise.all([
+            // 1. 更新聊天状态中的系统提示词
+            new Promise<void>((resolve) => {
+              const chatStore = useChatStore.getState();
+              chatStore.setSystemPrompt(systemPrompt);
+              console.log("系统提示词已更新:", systemPrompt.substring(0, 100) + "...");
+              resolve();
+            }),
+            
+            // 2. 更新模型参数
+            new Promise<void>((resolve) => {
+              const settingsStore = useSettingsStore.getState();
+              settingsStore.updateSettings(modelParams);
+              console.log("模型参数已更新:", modelParams);
+              resolve();
+            })
+          ]);
+          
+          // 仅在所有操作完成后，更新当前预设ID
+          set({ currentPresetId: id, isLoading: false });
+          console.log("预设应用完成，ID:", id);
+          
+          // 添加延迟，确保状态完全更新
+          return new Promise<void>((resolve) => {
+            setTimeout(() => {
+              resolve();
+            }, 100); // 添加短暂延迟，确保状态更新完全生效
+          });
+        } catch (error) {
+          console.error("应用预设失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "应用预设失败" 
+          });
+        }
+      },
+      
+      // 导入预设文件
+      importPresetFromFile: async (file: File) => {
+        try {
+          set({ isLoading: true, error: null });
+          
+          // 读取文件内容
+          const text = await file.text();
+          const json = JSON.parse(text);
+          
+          // 导入预设
+          const preset = await promptPresetStorage.importPromptPresetFromJSON(json);
+          
+          // 更新状态
+          set(state => ({
+            presets: [...state.presets, preset],
+            isLoading: false
+          }));
+          
+          return preset;
+        } catch (error) {
+          console.error("导入预设失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "导入预设失败" 
+          });
+          return null;
+        }
+      },
+      
+      // 导出预设到文件
+      exportPresetToFile: async (id: string) => {
+        try {
+          set({ isLoading: true, error: null });
+          
+          const preset = get().presets.find(p => p.id === id);
+          if (!preset) {
+            throw new Error("预设不存在");
+          }
+          
+          const blob = await promptPresetStorage.exportPromptPreset(id);
+          const url = URL.createObjectURL(blob);
+          
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${preset.name || 'preset'}.json`;
+          a.click();
+          
+          URL.revokeObjectURL(url);
+          set({ isLoading: false });
+        } catch (error) {
+          console.error("导出预设失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "导出预设失败" 
+          });
+        }
+      },
+      
+      // 设置当前预设ID
+      setCurrentPresetId: (id: string | null) => {
+        set({ currentPresetId: id });
+      },
+    }),
+    {
+      name: 'ai-roleplay-prompt-presets',
+      // 只持久化部分状态
+      partialize: (state) => ({ 
+        currentPresetId: state.currentPresetId 
+      }),
+    }
+  )
+);
+
+// 获取动态内容的辅助函数
+async function getDynamicContent(placeholderType: string): Promise<string | null> {
+  const chatStore = useChatStore.getState();
+  
+  switch (placeholderType) {
+    case 'chatHistory':
+      // 格式化对话历史
+      return formatChatHistory(chatStore.currentMessages);
+      
+    case 'charDescription':
+      // 获取角色描述
+      return chatStore.currentCharacter?.description || null;
+      
+    case 'jailbreak':
+      // 特殊指令（如果需要）
+      return null;
+      
+    // 其他类型暂不处理
+    default:
+      return null;
+  }
+}
+
+// 格式化对话历史
+function formatChatHistory(messages: Message[]): string | null {
+  if (!messages || messages.length === 0) {
+    return null;
+  }
+  
+  // 过滤掉系统消息，只保留用户和助手消息
+  const chatMessages = messages.filter(msg => msg.role !== 'system');
+  
+  // 限制对话历史长度，防止超出上下文窗口
+  const recentMessages = chatMessages.slice(-10);
+  
+  // 格式化为对话形式
+  const formattedChat = recentMessages.map(msg => {
+    const role = msg.role === 'user' ? '用户' : '助手';
+    return `${role}: ${msg.content}`;
+  }).join('\n\n');
+  
+  return formattedChat;
+}
 
 // 初始化时加载对话历史
 // 不再需要这段代码，因为persist中间件会自动处理 

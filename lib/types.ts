@@ -87,6 +87,40 @@ export interface Preset {
   updatedAt: number;
 }
 
+// 提示词预设条目
+export interface PromptPresetItem {
+  identifier: string;    // 唯一标识符
+  name: string;          // 名称
+  content: string;       // 内容
+  enabled: boolean;      // 是否启用
+  isPlaceholder?: boolean;  // 是否为动态占位条目
+  placeholderType?: string;  // 占位类型
+  implemented?: boolean;     // 占位类型是否已实现
+}
+
+// 提示词预设
+export interface PromptPreset {
+  id: string;           // 唯一ID
+  name: string;         // 预设名称
+  description: string;  // 预设描述
+  // Gemini模型参数
+  temperature?: number;
+  maxTokens?: number;
+  topK?: number;
+  topP?: number;
+  // 提示词数组
+  prompts: PromptPresetItem[];
+  createdAt?: number;   // 创建时间
+  updatedAt?: number;   // 更新时间
+}
+
+// 占位条目类型信息
+export interface PlaceholderInfo {
+  type: string;
+  implemented: boolean;
+  description: string;
+}
+
 // 角色类型
 export interface Character {
   id: string;
