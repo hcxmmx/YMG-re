@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { MoonIcon, SunIcon, MessageSquare, Users, User, BookOpen, Puzzle, Settings } from "lucide-react";
+import { MoonIcon, SunIcon, MessageSquare, Users, User, BookOpen, Puzzle, Settings, FileText } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
@@ -24,6 +24,7 @@ export function Header() {
     { href: "/characters", label: "角色", icon: Users },
     { href: "/players", label: "玩家", icon: User },
     { href: "/worldbooks", label: "世界书", icon: BookOpen },
+    { href: "/presets", label: "预设", icon: FileText },
     { href: "/extensions", label: "拓展", icon: Puzzle },
     { href: "/settings", label: "设置", icon: Settings },
   ];
