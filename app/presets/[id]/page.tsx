@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { usePromptPresetStore } from "@/lib/store";
-import { ArrowLeft, Edit, ChevronUp, ChevronDown, Trash2, Plus, Power, PowerOff, Info } from "lucide-react";
+import { ArrowLeft, Edit, Trash2, Plus, GripVertical, Info } from "lucide-react";
 import { PromptPresetItem } from "@/lib/types";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -19,6 +19,146 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+// 可排序的提示词项组件
+interface SortablePromptItemProps {
+  prompt: PromptPresetItem;
+  index: number;
+  togglePromptEnabled: (index: number) => void;
+  startEditPrompt: (index: number) => void;
+  deletePrompt: (index: number) => void;
+}
+
+function SortablePromptItem({ prompt, index, togglePromptEnabled, startEditPrompt, deletePrompt }: SortablePromptItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: prompt.identifier });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : 1
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "flex items-center p-4 hover:bg-muted/30 transition-colors border-b last:border-b-0",
+        !prompt.enabled && "opacity-60",
+        isDragging && "bg-accent shadow-lg rounded-md"
+      )}
+    >
+      {/* 拖拽手柄 */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="flex items-center mr-3 text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
+      >
+        <GripVertical className="h-5 w-5" />
+      </div>
+      
+      {/* 提示词内容 */}
+      <div className="flex-grow mr-4">
+        <div className="font-medium flex items-center gap-1">
+          {prompt.name}
+          {prompt.isPlaceholder && (
+            <Badge variant="outline" className="ml-1 bg-primary/10 text-xs">
+              {prompt.placeholderType}
+              {!prompt.implemented && " ⚠️"}
+            </Badge>
+          )}
+        </div>
+        
+        <p className="text-xs text-muted-foreground line-clamp-1">
+          {prompt.isPlaceholder 
+            ? (prompt.implemented 
+                ? "动态替换为实际内容" 
+                : "未实现的占位类型") 
+            : prompt.content.substring(0, 100) + (prompt.content.length > 100 ? "..." : "")}
+        </p>
+      </div>
+      
+      {/* 控制按钮组 */}
+      <div className="flex items-center gap-2 shrink-0">
+        {/* 编辑按钮 */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => startEditPrompt(index)}
+              >
+                <Edit className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>编辑</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        
+        {/* 删除按钮 */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 text-destructive"
+                onClick={() => deletePrompt(index)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>删除</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        
+        {/* 启用开关 */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center">
+                <Switch
+                  checked={prompt.enabled}
+                  onCheckedChange={() => togglePromptEnabled(index)}
+                  className="data-[state=unchecked]:bg-muted"
+                />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              {prompt.enabled ? "禁用" : "启用"}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+    </div>
+  );
+}
 
 interface EditPresetPageProps {
   params: {
@@ -48,6 +188,14 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
   const [editPromptIndex, setEditPromptIndex] = useState<number | null>(null);
   const [editPrompt, setEditPrompt] = useState<PromptPresetItem | null>(null);
   const [showDialog, setShowDialog] = useState(false);
+  
+  // 拖拽传感器设置
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates
+    })
+  );
   
   // 加载预设数据
   useEffect(() => {
@@ -144,22 +292,20 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
     }
   };
   
-  // 移动提示词（上移/下移）
-  const movePrompt = (index: number, direction: "up" | "down") => {
-    if (
-      (direction === "up" && index === 0) || 
-      (direction === "down" && index === prompts.length - 1)
-    ) {
-      return;
+  // 处理拖拽结束事件
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    
+    if (over && active.id !== over.id) {
+      setPrompts((items) => {
+        // 查找原始索引和目标索引
+        const oldIndex = items.findIndex(item => item.identifier === active.id);
+        const newIndex = items.findIndex(item => item.identifier === over.id);
+        
+        // 返回重新排序的数组
+        return arrayMove(items, oldIndex, newIndex);
+      });
     }
-    
-    const updatedPrompts = [...prompts];
-    const newIndex = direction === "up" ? index - 1 : index + 1;
-    
-    // 交换位置
-    [updatedPrompts[index], updatedPrompts[newIndex]] = [updatedPrompts[newIndex], updatedPrompts[index]];
-    
-    setPrompts(updatedPrompts);
   };
   
   if (isLoading) {
@@ -346,114 +492,29 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
               </div>
             ) : (
               <ScrollArea className="h-[600px]">
-                <div className="divide-y">
-                  {prompts.map((prompt, index) => (
-                    <div
-                      key={prompt.identifier}
-                      className={cn(
-                        "flex items-center justify-between p-4 hover:bg-muted/30 transition-colors",
-                        !prompt.enabled && "opacity-60"
-                      )}
-                    >
-                      <div className="flex-grow mr-4">
-                        <div className="flex items-center">
-                          <Switch
-                            checked={prompt.enabled}
-                            onCheckedChange={() => togglePromptEnabled(index)}
-                            className="mr-3"
-                          />
-                          <div>
-                            <div className="font-medium flex items-center gap-1">
-                              {prompt.name}
-                              {prompt.isPlaceholder && (
-                                <Badge variant="outline" className="ml-1 bg-primary/10 text-xs">
-                                  {prompt.placeholderType}
-                                  {!prompt.implemented && " ⚠️"}
-                                </Badge>
-                              )}
-                            </div>
-                            
-                            <p className="text-xs text-muted-foreground line-clamp-1">
-                              {prompt.isPlaceholder 
-                                ? (prompt.implemented 
-                                    ? "动态替换为实际内容" 
-                                    : "未实现的占位类型") 
-                                : prompt.content.substring(0, 100) + (prompt.content.length > 100 ? "..." : "")}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="flex gap-1 shrink-0">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0"
-                                onClick={() => movePrompt(index, "up")}
-                                disabled={index === 0}
-                              >
-                                <ChevronUp className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>上移</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                        
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0"
-                                onClick={() => movePrompt(index, "down")}
-                                disabled={index === prompts.length - 1}
-                              >
-                                <ChevronDown className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>下移</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                        
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0"
-                                onClick={() => startEditPrompt(index)}
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>编辑</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                        
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0 text-destructive"
-                                onClick={() => deletePrompt(index)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>删除</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </div>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={prompts.map(p => p.identifier)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="divide-y">
+                      {prompts.map((prompt, index) => (
+                        <SortablePromptItem
+                          key={prompt.identifier}
+                          prompt={prompt}
+                          index={index}
+                          togglePromptEnabled={togglePromptEnabled}
+                          startEditPrompt={startEditPrompt}
+                          deletePrompt={deletePrompt}
+                        />
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </SortableContext>
+                </DndContext>
               </ScrollArea>
             )}
           </Card>
