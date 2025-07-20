@@ -6,7 +6,14 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { usePromptPresetStore } from "@/lib/store";
 import { Input } from "@/components/ui/input";
-import { PlusCircle, Import, Edit, Trash2, Download, ChevronRight } from "lucide-react";
+import { 
+  PlusCircle, Import, Edit, Trash2, Download, ChevronRight, 
+  Sliders, Search, XCircle, Check
+} from "lucide-react";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export default function PresetsPage() {
   const router = useRouter();
@@ -20,6 +27,7 @@ export default function PresetsPage() {
     error
   } = usePromptPresetStore();
   const [searchTerm, setSearchTerm] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
   
   // 文件导入相关
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -33,7 +41,7 @@ export default function PresetsPage() {
     ? presets
     : presets.filter(preset => 
         preset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        preset.description.toLowerCase().includes(searchTerm.toLowerCase())
+        preset.description?.toLowerCase().includes(searchTerm.toLowerCase())
       );
   
   // 处理导入
@@ -45,7 +53,17 @@ export default function PresetsPage() {
     try {
       const preset = await importPresetFromFile(file);
       if (preset) {
-        alert(`成功导入预设: ${preset.name}`);
+        // 使用更友好的通知方式
+        const notification = document.createElement('div');
+        notification.className = 'fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded-md shadow-lg flex items-center';
+        notification.innerHTML = `<svg class="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>成功导入预设: ${preset.name}`;
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+          notification.style.opacity = '0';
+          notification.style.transition = 'opacity 0.5s ease';
+          setTimeout(() => document.body.removeChild(notification), 500);
+        }, 3000);
       }
     } catch (error) {
       console.error("导入预设失败:", error);
@@ -66,22 +84,45 @@ export default function PresetsPage() {
   };
   
   return (
-    <div className="container mx-auto py-6 px-4">
+    <div className="container max-w-screen-xl mx-auto py-6 px-4">
       {/* 标题和操作栏 */}
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
-        <h1 className="text-2xl font-bold">提示词预设管理</h1>
+        <div className="flex items-center">
+          <h1 className="text-2xl font-bold">提示词预设</h1>
+          <span className="ml-3 text-muted-foreground">
+            {presets.length} 个预设
+          </span>
+        </div>
         
-        <div className="flex gap-2">
-          <Button asChild variant="default">
-            <Link href="/presets/new">
-              <PlusCircle className="h-4 w-4 mr-1" />
-              新建预设
-            </Link>
-          </Button>
+        <div className="flex items-center gap-2">
+          {showSearch ? (
+            <div className="relative">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input 
+                placeholder="搜索预设..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-8 w-64"
+                autoFocus
+              />
+              {searchTerm && (
+                <button 
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2 top-2.5"
+                >
+                  <XCircle className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                </button>
+              )}
+            </div>
+          ) : (
+            <Button variant="ghost" size="icon" onClick={() => setShowSearch(true)}>
+              <Search className="h-4 w-4" />
+            </Button>
+          )}
           
           <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
             <Import className="h-4 w-4 mr-1" />
-            导入预设
+            导入
             <input 
               type="file" 
               ref={fileInputRef} 
@@ -90,17 +131,14 @@ export default function PresetsPage() {
               className="hidden" 
             />
           </Button>
+          
+          <Button variant="default">
+            <Link href="/presets/new" className="flex items-center">
+              <PlusCircle className="h-4 w-4 mr-1" />
+              新建预设
+            </Link>
+          </Button>
         </div>
-      </div>
-      
-      {/* 搜索栏 */}
-      <div className="mb-6">
-        <Input 
-          placeholder="搜索预设..." 
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="max-w-md"
-        />
       </div>
       
       {/* 错误信息 */}
@@ -127,69 +165,77 @@ export default function PresetsPage() {
         </div>
       )}
       
-      <div className="grid gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredPresets.map((preset) => (
-          <div key={preset.id} className="border rounded-lg p-4 bg-card">
-            <div className="flex flex-col md:flex-row md:items-center justify-between">
-              <div className="mb-2 md:mb-0">
-                <h2 className="text-xl font-semibold">{preset.name}</h2>
-                <p className="text-muted-foreground line-clamp-2">{preset.description || "无描述"}</p>
-                <div className="flex flex-wrap gap-2 mt-2 text-sm">
-                  <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                    温度: {preset.temperature?.toFixed(1) || "默认"}
-                  </span>
-                  <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                    提示词: {preset.prompts.length}项
-                  </span>
-                  <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                    已启用: {preset.prompts.filter(p => p.enabled).length}项
-                  </span>
-                </div>
+          <Card key={preset.id} className="flex flex-col overflow-hidden hover:shadow-md transition-shadow">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg font-medium">{preset.name}</CardTitle>
+              <CardDescription className="line-clamp-2 min-h-[2.5rem]">
+                {preset.description || "无描述"}
+              </CardDescription>
+            </CardHeader>
+            
+            <CardContent className="pb-3 flex-grow">
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                <Badge variant="outline" className="bg-primary/10">
+                  <Sliders className="h-3 w-3 mr-1" />
+                  温度: {preset.temperature?.toFixed(1) || "0.7"}
+                </Badge>
+                <Badge variant="outline" className="bg-primary/10">
+                  <Check className="h-3 w-3 mr-1" />
+                  已启用: {preset.prompts.filter(p => p.enabled).length}/{preset.prompts.length}
+                </Badge>
+              </div>
+            </CardContent>
+            
+            <CardFooter className="pt-2 flex justify-between border-t bg-muted/20">
+              <div className="flex gap-1">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0"
+                        onClick={() => exportPresetToFile(preset.id)}>
+                        <Download className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>导出预设</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" asChild>
+                        <Link href={`/presets/${preset.id}`}>
+                          <Edit className="h-3.5 w-3.5" />
+                        </Link>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>编辑预设</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0"
+                        onClick={() => handleDelete(preset.id, preset.name)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>删除预设</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
               
-              <div className="flex gap-2 mt-2 md:mt-0">
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => exportPresetToFile(preset.id)}
-                >
-                  <Download className="h-4 w-4 mr-1" />
-                  导出
-                </Button>
-                
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  asChild
-                >
-                  <Link href={`/presets/${preset.id}`}>
-                    <Edit className="h-4 w-4 mr-1" />
-                    编辑
-                  </Link>
-                </Button>
-                
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => handleDelete(preset.id, preset.name)}
-                >
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  删除
-                </Button>
-                
-                <Button
-                  variant="default"
-                  size="sm"
-                  asChild
-                >
-                  <Link href={`/presets/${preset.id}/detail`}>
-                    查看
-                    <ChevronRight className="h-4 w-4 ml-1" />
-                  </Link>
-                </Button>
-              </div>
-            </div>
-          </div>
+              <Button size="sm" asChild className="h-8">
+                <Link href={`/presets/${preset.id}/detail`}>
+                  查看
+                  <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
+                </Link>
+              </Button>
+            </CardFooter>
+          </Card>
         ))}
       </div>
     </div>

@@ -818,7 +818,7 @@ export const promptPresetStorage = {
   },
   
   // 导入预设函数
-  async importPromptPresetFromJSON(json: any): Promise<PromptPreset> {
+  async importPromptPresetFromJSON(json: any, fileName?: string): Promise<PromptPreset> {
     // 预设标识符
     const PLACEHOLDERS: Record<string, PlaceholderInfo> = {
       'charDescription': {
@@ -869,10 +869,17 @@ export const promptPresetStorage = {
     // 提取模型参数
     const modelParams = extractModelParametersFromJSON(json);
     
+    // 生成预设名称：优先级为 JSON内名称 > 文件名 > "导入的预设"
+    let presetName = json.name;
+    if (!presetName && fileName) {
+      // 从文件名中提取名称（移除扩展名）
+      presetName = fileName.replace(/\.json$/i, '');
+    }
+    
     // 创建预设对象
     const preset: PromptPreset = {
       id: generateId(),
-      name: json.name || "导入的预设",
+      name: presetName || "导入的预设",
       description: json.description || "从JSON文件导入的预设",
       ...modelParams,
       prompts,

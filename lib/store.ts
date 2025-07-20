@@ -1269,8 +1269,8 @@ export const usePromptPresetStore = create<PromptPresetState>()(
           const text = await file.text();
           const json = JSON.parse(text);
           
-          // 导入预设
-          const preset = await promptPresetStorage.importPromptPresetFromJSON(json);
+          // 导入预设，传递文件名
+          const preset = await promptPresetStorage.importPromptPresetFromJSON(json, file.name);
           
           // 更新状态
           set(state => ({
