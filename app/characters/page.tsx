@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useChatStore } from "@/lib/store";
 
 export default function CharactersPage() {
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -85,7 +86,7 @@ export default function CharactersPage() {
       const importedId = await characterStorage.importCharacter(file);
       
       if (importedId) {
-        alert('角色卡导入成功');
+        alert(`角色卡导入成功！每次导入的角色都是独立的，拥有自己的对话记录。`);
         await loadCharacters(); // 重新加载角色列表
       } else {
         alert('角色卡导入失败，请检查文件格式');

@@ -43,7 +43,23 @@ export function CharacterCard({ character, onEdit, onDelete }: CharacterCardProp
   const handleDelete = async () => {
     if (isDeleting) {
       try {
+        // 先获取该角色的所有对话
+        const characterChats = getCharacterConversations(id);
+        
+        // 删除角色
         await characterStorage.deleteCharacter(id);
+        
+        // 删除该角色的所有聊天记录
+        const deletePromises = characterChats.map(chat => 
+          useChatStore.getState().deleteConversation(chat.id)
+        );
+        
+        if (deletePromises.length > 0) {
+          await Promise.all(deletePromises);
+          console.log(`已删除角色 ${name} 的 ${deletePromises.length} 条聊天记录`);
+        }
+        
+        // 回调通知
         onDelete?.();
         router.refresh();
       } catch (error) {

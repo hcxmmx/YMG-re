@@ -4,6 +4,7 @@ import type { UserSettings, Message, Conversation, Character, Branch } from './t
 import { HarmBlockThreshold } from './types';
 import { conversationStorage, characterStorage, initializeMainBranch } from './storage';
 import { generateId } from './utils';
+import { openDB } from 'idb';
 import { createJSONStorage } from 'zustand/middleware';
 import { promptPresetStorage } from './storage';
 import { PromptPreset } from './types';
@@ -603,19 +604,36 @@ export const useChatStore = create<ChatState>()(
           console.log('开始角色聊天:', character.name);
           console.log('角色可选开场白数量:', character.alternateGreetings?.length || 0);
 
-          // 检查是否已有该角色的对话存在
-          const conversations = await conversationStorage.listConversations();
-          // 查找该角色的最近对话，通过标题匹配（不是最好的方式，但目前没有更好的方式关联）
-          const existingConversation = conversations.find(conv => 
-            conv.title === character.name &&
-            conv.messages.length > 0 && 
-            conv.messages.some(msg => msg.role === 'assistant')
-          );
-
-          if (existingConversation) {
-            console.log('发现该角色的已有对话:', existingConversation.id);
+          // 检查是否已有该角色的最后选择的对话
+          const lastSelectedConversationId = get().lastSelectedCharacterConversation[characterId];
+          let existingConversation = null;
+          
+          if (lastSelectedConversationId) {
+            // 先从对话列表中查找
+            const conversations = get().conversations;
+            existingConversation = conversations.find(conv => conv.id === lastSelectedConversationId);
             
-            // 如果有已有对话，恢复该对话而不是创建新对话
+            // 如果在内存中找不到，从数据库加载
+            if (!existingConversation) {
+              try {
+                const db = await openDB('ai-roleplay-app', 1);
+                existingConversation = await db.get('conversations', lastSelectedConversationId);
+              } catch (error) {
+                console.error('从数据库加载对话失败:', error);
+              }
+            }
+          }
+          
+          // 如果找不到最后选择的对话，则创建新对话
+          if (!existingConversation) {
+            // 创建新对话
+            console.log('没有找到与该角色的最后选择的对话，创建新对话');
+            const newConversationId = await get().createNewCharacterChat(characterId);
+            return newConversationId !== null;
+          } else {
+            // 使用已有对话
+            console.log('恢复角色的最后选择对话:', existingConversation.id);
+            
             // 设置当前角色
             set({
               currentCharacter: character,
@@ -627,71 +645,16 @@ export const useChatStore = create<ChatState>()(
             // 加载对话消息
             await get().setCurrentConversation(existingConversation.id);
             
+            // 更新最后选择的对话ID
+            const updatedLastSelected = { 
+              ...get().lastSelectedCharacterConversation,
+              [characterId]: existingConversation.id
+            };
+            set({ lastSelectedCharacterConversation: updatedLastSelected });
+            
             console.log('已恢复与角色的已有对话');
             return true;
           }
-          
-          // 如果没有已有对话，创建新对话
-          console.log('没有找到与该角色的已有对话，创建新对话');
-          
-          // 开始新对话
-          get().startNewConversation();
-          
-          // 设置当前角色
-          get().setCurrentCharacter(character);
-          
-          // 设置聊天标题为角色名称
-          set({ currentTitle: character.name });
-          
-          // 创建一个新的对话ID
-          const conversationId = generateId();
-          set({ currentConversationId: conversationId });
-          
-          // 注释: 系统提示词将在未来的预设模块中处理
-          
-          // 准备消息列表
-          const messages: Message[] = [];
-          
-          // 如果有开场白，添加作为助手的第一条消息
-          if (character.firstMessage) {
-            const messageId = generateId();
-            
-            const assistantMessage: Message = {
-              id: messageId,
-              role: 'assistant',
-              content: character.firstMessage,
-              timestamp: new Date(),
-              messageNumber: 1,
-              charCount: character.firstMessage.length,
-              characterId: character.id // 添加角色ID
-            };
-            
-            messages.push(assistantMessage);
-            set({
-              currentMessages: messages,
-              messageCounter: 1
-            });
-          }
-          
-          // 直接保存到IndexedDB
-          console.log('保存角色对话到IndexedDB, ID:', conversationId);
-          try {
-            await conversationStorage.saveConversation(
-              conversationId,
-              character.name,
-              messages,
-              get().systemPrompt
-            );
-            console.log('保存成功');
-          } catch (error) {
-            console.error('保存对话失败:', error);
-          }
-          
-          // 更新对话列表
-          await get().loadConversations();
-          console.log('对话列表已更新');
-          
-          return true;
         } catch (error) {
           console.error('开始角色聊天失败:', error);
           return false;
@@ -700,24 +663,15 @@ export const useChatStore = create<ChatState>()(
 
       getCharacterConversations: (characterId) => {
         const { conversations } = get();
-        // 检查所有对话，找出与指定角色相关的对话
+        // 只检查消息中的characterId，确保严格匹配
         return conversations.filter(conv => {
-          // 方法1：检查消息中的characterId
-          const hasCharacterId = conv.messages.some(msg => 
+          return conv.messages.some(msg => 
             msg.role === 'assistant' && msg.characterId === characterId
           );
-          
-          // 方法2：通过对话标题匹配（向后兼容没有characterId的旧对话）
-          const characterName = get().conversations.find(c => 
-            c.messages.some(m => m.characterId === characterId)
-          )?.title;
-          
-          const matchesTitle = characterName && conv.title === characterName;
-          
-          return hasCharacterId || matchesTitle;
         });
       },
 
+      // 创建新角色聊天
       createNewCharacterChat: async (characterId) => {
         try {
           const character = await characterStorage.getCharacter(characterId);
@@ -749,7 +703,7 @@ export const useChatStore = create<ChatState>()(
               timestamp: new Date(),
               messageNumber: 1,
               charCount: character.firstMessage.length,
-              characterId: characterId // 添加角色ID
+              characterId: characterId // 添加角色ID，确保聊天记录与角色ID严格关联
             };
             messages.push(assistantMessage);
             set({
@@ -762,60 +716,24 @@ export const useChatStore = create<ChatState>()(
           set({
             currentConversationId: conversationId
           });
+          
+          // 将该聊天设为角色的最后选择对话
+          const updatedLastSelected = { 
+            ...get().lastSelectedCharacterConversation,
+            [characterId]: conversationId
+          };
+          set({ lastSelectedCharacterConversation: updatedLastSelected });
 
-          // 保存对话到数据库，不指定分支信息
+          // 保存对话到数据库
           await conversationStorage.saveConversation(
             conversationId,
             character.name,
             messages,
             '你是一个友好、乐于助人的AI助手。'
           );
-
-          // 初始化主分支
-          try {
-            const mainBranchId = await initializeMainBranch(conversationId);
-            console.log(`角色对话已初始化主分支, ID: ${mainBranchId}`);
-            
-            // 重新获取对话信息，确保分支数据是最新的
-            const updatedConversation = await conversationStorage.getConversation(conversationId);
-            if (!updatedConversation) throw new Error('无法获取新创建的角色对话');
-            
-            // 更新消息的分支ID
-            const updatedMessages = updatedConversation.messages.map(msg => {
-              if (!msg.branchId) {
-                return { ...msg, branchId: mainBranchId };
-              }
-              return msg;
-            });
-            
-            // 保存更新后的消息
-            await conversationStorage.saveConversation(
-              conversationId,
-              character.name,
-              updatedMessages,
-              '你是一个友好、乐于助人的AI助手。',
-              updatedConversation.branches || [],
-              mainBranchId
-            );
-            
-            // 更新状态
-            set({ 
-              currentMessages: updatedMessages,
-              branches: updatedConversation.branches || [],
-              currentBranchId: mainBranchId
-            });
-          } catch (error) {
-            console.error('初始化角色对话主分支失败:', error);
-          }
-
-          // 更新对话列表和最后选择的对话
-          get().loadConversations();
-          set(state => ({
-            lastSelectedCharacterConversation: {
-              ...state.lastSelectedCharacterConversation,
-              [characterId]: conversationId
-            }
-          }));
+          
+          // 更新对话列表
+          await get().loadConversations();
 
           return conversationId;
         } catch (error) {
