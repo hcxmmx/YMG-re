@@ -8,6 +8,8 @@ import { openDB } from 'idb';
 import { createJSONStorage } from 'zustand/middleware';
 import { promptPresetStorage } from './storage';
 import { PromptPreset } from './types';
+import { playerStorage } from './storage';
+import { Player } from './types';
 
 // 用户设置存储
 interface SettingsState {
@@ -1270,9 +1272,128 @@ export const usePromptPresetStore = create<PromptPresetState>()(
   )
 );
 
+// 玩家状态管理
+interface PlayerState {
+  players: Player[];
+  currentPlayerId: string | null;
+  isLoading: boolean;
+  error: string | null;
+  
+  // 操作方法
+  loadPlayers: () => Promise<void>;
+  getPlayer: (id: string) => Player | undefined;
+  savePlayer: (player: Player) => Promise<void>;
+  deletePlayer: (id: string) => Promise<void>;
+  setCurrentPlayer: (id: string) => Promise<void>;
+  getCurrentPlayer: () => Player | null;
+}
+
+export const usePlayerStore = create<PlayerState>()(
+  persist(
+    (set, get) => ({
+      players: [],
+      currentPlayerId: null,
+      isLoading: false,
+      error: null,
+      
+      loadPlayers: async () => {
+        try {
+          set({ isLoading: true, error: null });
+          const players = await playerStorage.listPlayers();
+          set({ players, isLoading: false });
+          
+          // 如果有玩家但没有当前玩家，设置第一个为当前玩家
+          if (players.length > 0 && !get().currentPlayerId) {
+            get().setCurrentPlayer(players[0].id);
+          }
+        } catch (error) {
+          console.error("加载玩家失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "加载玩家失败" 
+          });
+        }
+      },
+      
+      getPlayer: (id: string) => {
+        return get().players.find(player => player.id === id);
+      },
+      
+      getCurrentPlayer: () => {
+        const { currentPlayerId, players } = get();
+        if (!currentPlayerId) return null;
+        return players.find(player => player.id === currentPlayerId) || null;
+      },
+      
+      savePlayer: async (player: Player) => {
+        try {
+          set({ isLoading: true, error: null });
+          await playerStorage.savePlayer(player);
+          
+          set(state => ({
+            players: state.players.some(p => p.id === player.id)
+              ? state.players.map(p => p.id === player.id ? player : p)
+              : [...state.players, player],
+            currentPlayerId: player.id, // 保存后设为当前玩家
+            isLoading: false
+          }));
+        } catch (error) {
+          console.error("保存玩家失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "保存玩家失败" 
+          });
+        }
+      },
+      
+      setCurrentPlayer: async (id: string) => {
+        const player = get().getPlayer(id);
+        if (player) {
+          // 更新时间戳使其成为最近使用的玩家
+          await playerStorage.savePlayer({
+            ...player
+          });
+          set({ currentPlayerId: id });
+        }
+      },
+      
+      deletePlayer: async (id: string) => {
+        try {
+          set({ isLoading: true, error: null });
+          await playerStorage.deletePlayer(id);
+          
+          set(state => ({
+            players: state.players.filter(p => p.id !== id),
+            // 如果删除的是当前玩家，重置当前玩家
+            currentPlayerId: state.currentPlayerId === id ? 
+              (state.players.length > 1 ? 
+                state.players.find(p => p.id !== id)?.id || null : null) : 
+              state.currentPlayerId,
+            isLoading: false
+          }));
+        } catch (error) {
+          console.error("删除玩家失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "删除玩家失败" 
+          });
+        }
+      }
+    }),
+    {
+      name: 'ai-roleplay-player-state',
+      partialize: (state) => ({ 
+        currentPlayerId: state.currentPlayerId 
+      }),
+      storage: createJSONStorage(() => localStorage)
+    }
+  )
+);
+
 // 获取动态内容的辅助函数
 async function getDynamicContent(placeholderType: string): Promise<string | null> {
   const chatStore = useChatStore.getState();
+  const playerStore = usePlayerStore.getState();
   
   switch (placeholderType) {
     case 'chatHistory':
@@ -1282,6 +1403,20 @@ async function getDynamicContent(placeholderType: string): Promise<string | null
     case 'charDescription':
       // 获取角色描述
       return chatStore.currentCharacter?.description || null;
+      
+    case 'personaDescription':
+      // 获取玩家角色信息
+      const currentPlayer = playerStore.getCurrentPlayer();
+      if (currentPlayer) {
+        // 生成格式化的玩家描述
+        let playerInfo = `玩家信息：\n`;
+        playerInfo += `名称：${currentPlayer.name}\n`;
+        if (currentPlayer.description) {
+          playerInfo += `描述：${currentPlayer.description}\n`;
+        }
+        return playerInfo;
+      }
+      return null;
       
     case 'jailbreak':
       // 特殊指令（如果需要）

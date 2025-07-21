@@ -52,11 +52,23 @@ interface AppDB extends DBSchema {
     value: PromptPreset;
     indexes: { 'by-name': string; 'by-updatedAt': number };
   };
+  players: {
+    key: string;
+    value: {
+      id: string;
+      name: string;
+      description?: string;
+      avatar?: string;
+      createdAt: number;
+      updatedAt: number;
+    };
+    indexes: { 'by-name': string; 'by-updatedAt': number };
+  };
 }
 
 // 初始化数据库
 export const initDB = async () => {
-  return openDB<AppDB>('ai-roleplay-db', 4, {
+  return openDB<AppDB>('ai-roleplay-db', 5, {
     upgrade(db, oldVersion) {
       // 版本1: 创建conversations和presets表
       if (oldVersion < 1) {
@@ -95,6 +107,16 @@ export const initDB = async () => {
           const promptPresetStore = db.createObjectStore('promptPresets', { keyPath: 'id' });
           promptPresetStore.createIndex('by-name', 'name');
           promptPresetStore.createIndex('by-updatedAt', 'updatedAt');
+        }
+      }
+
+      // 版本5: 添加玩家表
+      if (oldVersion < 5) {
+        console.log("升级数据库到版本5，添加玩家表");
+        if (!db.objectStoreNames.contains('players')) {
+          const playerStore = db.createObjectStore('players', { keyPath: 'id' });
+          playerStore.createIndex('by-name', 'name');
+          playerStore.createIndex('by-updatedAt', 'updatedAt');
         }
       }
     }
@@ -785,6 +807,46 @@ export const characterStorage = {
   }
 };
 
+// 玩家存储接口
+export const playerStorage = {
+  async savePlayer(player: {
+    id: string;
+    name: string;
+    description?: string;
+    avatar?: string;
+  }) {
+    const db = await initDB();
+    const now = Date.now();
+    await db.put('players', {
+      ...player,
+      createdAt: player.id ? (await db.get('players', player.id))?.createdAt || now : now,
+      updatedAt: now
+    });
+  },
+  
+  async getPlayer(id: string) {
+    const db = await initDB();
+    return db.get('players', id);
+  },
+  
+  async getCurrentPlayer() {
+    const db = await initDB();
+    const players = await db.getAllFromIndex('players', 'by-updatedAt');
+    // 返回最近更新的玩家作为当前玩家
+    return players.length > 0 ? players[0] : null;
+  },
+  
+  async listPlayers() {
+    const db = await initDB();
+    return db.getAllFromIndex('players', 'by-name');
+  },
+  
+  async deletePlayer(id: string) {
+    const db = await initDB();
+    await db.delete('players', id);
+  }
+};
+
 // 提示词预设存储接口
 export const promptPresetStorage = {
   async savePromptPreset(preset: PromptPreset) {
@@ -843,7 +905,7 @@ export const promptPresetStorage = {
       },
       'personaDescription': {
         type: 'persona',
-        implemented: false,
+        implemented: true,
         description: '玩家角色信息'
       },
       'scenario': {

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Message } from "@/components/chat/message";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatHeader } from "@/components/chat/chat-header";
-import { useSettingsStore, useChatStore } from "@/lib/store";
+import { useSettingsStore, useChatStore, usePlayerStore } from "@/lib/store";
 import { Message as MessageType } from "@/lib/types";
 import { generateId } from "@/lib/utils";
 import { useNavbar } from "@/app/layout";
@@ -41,6 +41,7 @@ export default function ChatPage() {
     setCurrentConversation,
     loadBranches
   } = useChatStore();
+  const { loadPlayers } = usePlayerStore();
   const { isNavbarVisible } = useNavbar();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const responseStartTimeRef = useRef<number>(0);
@@ -201,6 +202,13 @@ export default function ChatPage() {
 
     return () => clearTimeout(timer);
   }, [isNavbarVisible, isLoading]);
+
+  // 加载玩家数据
+  useEffect(() => {
+    loadPlayers().catch((error: Error) => 
+      console.error("加载玩家数据失败:", error)
+    );
+  }, [loadPlayers]);
 
   // 重新生成AI回复
   const handleRegenerateMessage = async (messageId: string) => {

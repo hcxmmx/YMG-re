@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { Message as MessageType, Character } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Copy, Check, Clock, Hash, BarChart2, Trash2, Edit, RefreshCw, User, ChevronLeft, ChevronRight, GitBranch, AlertCircle } from "lucide-react";
-import { useSettingsStore, useChatStore } from "@/lib/store";
+import { useSettingsStore, useChatStore, usePlayerStore } from "@/lib/store";
 import Image from "next/image";
 import {
   Dialog,
@@ -523,8 +523,20 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
         {/* 用户头像 - 用户消息时显示在右侧 */}
         {isUser && (
           <div className="flex flex-col items-center gap-1">
-            <div className="h-8 w-8 rounded-full overflow-hidden bg-muted flex-shrink-0 flex items-center justify-center">
-              <User size={20} className="text-muted-foreground" />
+            <div className="h-8 w-8 rounded-full overflow-hidden bg-muted flex-shrink-0">
+              {usePlayerStore.getState().getCurrentPlayer()?.avatar ? (
+                <Image
+                  src={usePlayerStore.getState().getCurrentPlayer()!.avatar!}
+                  alt="玩家头像"
+                  width={32}
+                  height={32}
+                  className="object-cover w-full h-full"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <User size={20} className="text-muted-foreground" />
+                </div>
+              )}
             </div>
             
             {/* 楼层号 - 用户消息时显示在头像下方 */}

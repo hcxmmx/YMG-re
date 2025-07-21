@@ -53,7 +53,8 @@ export default function PresetDetailPage({ params }: PresetDetailPageProps) {
             // 占位条目，添加提示
             systemPromptParts.push(`[这里将在运行时替换为${
               promptItem.placeholderType === 'chatHistory' ? '对话历史' : 
-              promptItem.placeholderType === 'charDescription' ? '角色描述' : 
+              promptItem.placeholderType === 'charDescription' ? '角色描述' :
+              promptItem.placeholderType === 'personaDescription' ? '玩家描述' : 
               '动态内容'
             }]`);
           }
