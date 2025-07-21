@@ -208,8 +208,21 @@ export const useChatStore = create<ChatState>()(
               }
             }
 
-            // 如果找到角色ID，更新该角色的最后选择对话
+            // 查找并设置当前角色
+            let updatedCharacter = null;
             if (characterId) {
+              try {
+                // 获取角色信息
+                const character = await characterStorage.getCharacter(characterId);
+                if (character) {
+                  updatedCharacter = character;
+                  console.log(`根据对话ID ${id} 设置当前角色: ${character.name}`);
+                }
+              } catch (error) {
+                console.error('加载角色信息失败:', error);
+              }
+              
+              // 无论加载角色是否成功，都更新该角色的最后选择对话
               set(state => ({
                 lastSelectedCharacterConversation: {
                   ...state.lastSelectedCharacterConversation,
@@ -257,7 +270,7 @@ export const useChatStore = create<ChatState>()(
               currentTitle: conversation.title,
               systemPrompt: conversation.systemPrompt || '你是一个友好、乐于助人的AI助手。',
               messageCounter: maxMessageNumber,
-              currentCharacter: get().currentCharacter, // 不改变当前角色状态
+              currentCharacter: updatedCharacter, // 使用从对话中确定的角色
               branches: updatedBranches,
               currentBranchId: updatedCurrentBranchId
             });
@@ -634,24 +647,10 @@ export const useChatStore = create<ChatState>()(
             // 使用已有对话
             console.log('恢复角色的最后选择对话:', existingConversation.id);
             
-            // 设置当前角色
-            set({
-              currentCharacter: character,
-              currentConversationId: existingConversation.id,
-              currentTitle: existingConversation.title,
-              systemPrompt: existingConversation.systemPrompt || '你是一个友好、乐于助人的AI助手。'
-            });
-            
-            // 加载对话消息
+            // 直接加载对话，让 setCurrentConversation 方法处理角色设置
             await get().setCurrentConversation(existingConversation.id);
             
-            // 更新最后选择的对话ID
-            const updatedLastSelected = { 
-              ...get().lastSelectedCharacterConversation,
-              [characterId]: existingConversation.id
-            };
-            set({ lastSelectedCharacterConversation: updatedLastSelected });
-            
+            // 更新最后选择的对话ID (这部分现在由 setCurrentConversation 处理)
             console.log('已恢复与角色的已有对话');
             return true;
           }
