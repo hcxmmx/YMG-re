@@ -10,6 +10,8 @@ import { promptPresetStorage } from './storage';
 import { PromptPreset } from './types';
 import { playerStorage } from './storage';
 import { Player } from './types';
+import { worldBookStorage } from './storage';
+import { WorldBook, WorldBookEntry } from './types';
 
 // 用户设置存储
 interface SettingsState {
@@ -1390,6 +1392,458 @@ export const usePlayerStore = create<PlayerState>()(
   )
 );
 
+// 世界书状态管理接口
+interface WorldBookState {
+  worldBooks: WorldBook[];
+  currentWorldBookId: string | null;
+  isLoading: boolean;
+  error: string | null;
+  
+  // 操作方法
+  loadWorldBooks: () => Promise<void>;
+  getWorldBook: (id: string) => WorldBook | undefined;
+  saveWorldBook: (worldBook: Partial<WorldBook>) => Promise<WorldBook>;
+  deleteWorldBook: (id: string) => Promise<void>;
+  importWorldBookFromFile: (file: File) => Promise<WorldBook | null>;
+  exportWorldBookToFile: (id: string) => Promise<void>;
+  setCurrentWorldBookId: (id: string | null) => void;
+  toggleWorldBookEnabled: (id: string) => Promise<void>;
+  
+  // 条目操作
+  addEntry: (worldBookId: string, entry: Partial<WorldBookEntry>) => Promise<WorldBookEntry>;
+  updateEntry: (worldBookId: string, entry: WorldBookEntry) => Promise<WorldBookEntry>;
+  deleteEntry: (worldBookId: string, entryId: string) => Promise<void>;
+  toggleEntryEnabled: (worldBookId: string, entryId: string) => Promise<void>;
+  
+  // 与角色关联
+  linkToCharacter: (worldBookId: string, characterId: string) => Promise<void>;
+  unlinkFromCharacter: (worldBookId: string, characterId: string) => Promise<void>;
+  getWorldBookForCharacter: (characterId: string) => Promise<WorldBook | undefined>;
+  getLinkedCharacters: (worldBookId: string) => Promise<Character[]>;
+}
+
+// 世界书状态管理Store
+export const useWorldBookStore = create<WorldBookState>()(
+  persist(
+    (set, get) => ({
+      worldBooks: [],
+      currentWorldBookId: null,
+      isLoading: false,
+      error: null,
+      
+      loadWorldBooks: async () => {
+        try {
+          set({ isLoading: true, error: null });
+          const worldBooks = await worldBookStorage.listWorldBooks();
+          set({ worldBooks, isLoading: false });
+        } catch (error) {
+          console.error("加载世界书失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "加载世界书失败" 
+          });
+        }
+      },
+      
+      getWorldBook: (id: string) => {
+        return get().worldBooks.find(wb => wb.id === id);
+      },
+      
+      saveWorldBook: async (worldBook: Partial<WorldBook>) => {
+        try {
+          set({ isLoading: true, error: null });
+          
+          // 准备完整的世界书对象
+          const completeWorldBook = {
+            id: worldBook.id || generateId(),
+            name: worldBook.name || '新世界书',
+            description: worldBook.description || '',
+            entries: worldBook.entries || [],
+            settings: worldBook.settings || {
+              scanDepth: 2,
+              includeNames: true,
+              maxRecursionSteps: 3,
+              minActivations: 0,
+              maxDepth: 10,
+              caseSensitive: false,
+              matchWholeWords: true
+            },
+            characterIds: worldBook.characterIds || [],
+            enabled: worldBook.enabled !== undefined ? worldBook.enabled : true,
+            createdAt: worldBook.createdAt || Date.now(),
+            updatedAt: Date.now()
+          };
+          
+          // 保存世界书
+          const savedWorldBook = await worldBookStorage.saveWorldBook(completeWorldBook);
+          
+          // 更新状态
+          set(state => ({
+            worldBooks: state.worldBooks.some(wb => wb.id === savedWorldBook.id)
+              ? state.worldBooks.map(wb => wb.id === savedWorldBook.id ? savedWorldBook : wb)
+              : [...state.worldBooks, savedWorldBook],
+            isLoading: false
+          }));
+          
+          return savedWorldBook;
+        } catch (error) {
+          console.error("保存世界书失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "保存世界书失败" 
+          });
+          throw error;
+        }
+      },
+      
+      deleteWorldBook: async (id: string) => {
+        try {
+          set({ isLoading: true, error: null });
+          await worldBookStorage.deleteWorldBook(id);
+          
+          set(state => ({
+            worldBooks: state.worldBooks.filter(wb => wb.id !== id),
+            currentWorldBookId: state.currentWorldBookId === id ? null : state.currentWorldBookId,
+            isLoading: false
+          }));
+        } catch (error) {
+          console.error("删除世界书失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "删除世界书失败" 
+          });
+        }
+      },
+      
+      toggleWorldBookEnabled: async (id: string) => {
+        try {
+          set({ isLoading: true, error: null });
+          
+          // 调用存储函数切换启用状态
+          const updatedWorldBook = await worldBookStorage.toggleWorldBookEnabled(id);
+          
+          // 更新状态
+          if (updatedWorldBook) {
+            set(state => ({
+              worldBooks: state.worldBooks.map(wb => 
+                wb.id === id ? updatedWorldBook : wb
+              ),
+              isLoading: false
+            }));
+          } else {
+            throw new Error("世界书不存在");
+          }
+        } catch (error) {
+          console.error("切换世界书启用状态失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "切换世界书启用状态失败" 
+          });
+        }
+      },
+      
+      importWorldBookFromFile: async (file: File) => {
+        try {
+          set({ isLoading: true, error: null });
+          
+          // 读取文件内容
+          const text = await file.text();
+          const json = JSON.parse(text);
+          
+          // 导入世界书
+          const worldBook = await worldBookStorage.importWorldBookFromJSON(json, file.name);
+          
+          // 更新状态
+          set(state => ({
+            worldBooks: [...state.worldBooks, worldBook],
+            isLoading: false
+          }));
+          
+          return worldBook;
+        } catch (error) {
+          console.error("导入世界书失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "导入世界书失败" 
+          });
+          return null;
+        }
+      },
+      
+      exportWorldBookToFile: async (id: string) => {
+        try {
+          set({ isLoading: true, error: null });
+          
+          // 获取世界书
+          const worldBook = get().worldBooks.find(wb => wb.id === id);
+          if (!worldBook) {
+            throw new Error('世界书不存在');
+          }
+          
+          // 导出为JSON
+          const jsonData = await worldBookStorage.exportWorldBookToJSON(id);
+          
+          // 创建并下载文件
+          const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${worldBook.name}.json`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          
+          set({ isLoading: false });
+        } catch (error) {
+          console.error("导出世界书失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "导出世界书失败" 
+          });
+        }
+      },
+      
+      setCurrentWorldBookId: (id: string | null) => {
+        set({ currentWorldBookId: id });
+      },
+      
+      // 条目操作
+      addEntry: async (worldBookId: string, entry: Partial<WorldBookEntry>) => {
+        try {
+          set({ isLoading: true, error: null });
+          
+          // 添加条目
+          const newEntry = await worldBookStorage.addEntry(worldBookId, entry);
+          
+          // 更新状态
+          set(state => {
+            const updatedWorldBooks = state.worldBooks.map(wb => {
+              if (wb.id === worldBookId) {
+                return {
+                  ...wb,
+                  entries: [...wb.entries, newEntry]
+                };
+              }
+              return wb;
+            });
+            
+            return {
+              worldBooks: updatedWorldBooks,
+              isLoading: false
+            };
+          });
+          
+          return newEntry;
+        } catch (error) {
+          console.error("添加条目失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "添加条目失败" 
+          });
+          throw error;
+        }
+      },
+      
+      updateEntry: async (worldBookId: string, entry: WorldBookEntry) => {
+        try {
+          set({ isLoading: true, error: null });
+          
+          // 更新条目
+          const updatedEntry = await worldBookStorage.updateEntry(worldBookId, entry);
+          
+          // 更新状态
+          set(state => {
+            const updatedWorldBooks = state.worldBooks.map(wb => {
+              if (wb.id === worldBookId) {
+                return {
+                  ...wb,
+                  entries: wb.entries.map(e => e.id === entry.id ? updatedEntry : e)
+                };
+              }
+              return wb;
+            });
+            
+            return {
+              worldBooks: updatedWorldBooks,
+              isLoading: false
+            };
+          });
+          
+          return updatedEntry;
+        } catch (error) {
+          console.error("更新条目失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "更新条目失败" 
+          });
+          throw error;
+        }
+      },
+      
+      toggleEntryEnabled: async (worldBookId: string, entryId: string) => {
+        try {
+          set({ isLoading: true, error: null });
+          
+          // 切换条目启用状态
+          const updatedEntry = await worldBookStorage.toggleEntryEnabled(worldBookId, entryId);
+          
+          // 更新状态
+          if (updatedEntry) {
+            set(state => {
+              const updatedWorldBooks = state.worldBooks.map(wb => {
+                if (wb.id === worldBookId) {
+                  return {
+                    ...wb,
+                    entries: wb.entries.map(e => e.id === entryId ? updatedEntry : e)
+                  };
+                }
+                return wb;
+              });
+              
+              return {
+                worldBooks: updatedWorldBooks,
+                isLoading: false
+              };
+            });
+          }
+        } catch (error) {
+          console.error("切换条目启用状态失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "切换条目启用状态失败" 
+          });
+        }
+      },
+      
+      deleteEntry: async (worldBookId: string, entryId: string) => {
+        try {
+          set({ isLoading: true, error: null });
+          
+          // 删除条目
+          await worldBookStorage.deleteEntry(worldBookId, entryId);
+          
+          // 更新状态
+          set(state => {
+            const updatedWorldBooks = state.worldBooks.map(wb => {
+              if (wb.id === worldBookId) {
+                return {
+                  ...wb,
+                  entries: wb.entries.filter(e => e.id !== entryId)
+                };
+              }
+              return wb;
+            });
+            
+            return {
+              worldBooks: updatedWorldBooks,
+              isLoading: false
+            };
+          });
+        } catch (error) {
+          console.error("删除条目失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "删除条目失败" 
+          });
+        }
+      },
+      
+      // 与角色关联
+      linkToCharacter: async (worldBookId: string, characterId: string) => {
+        try {
+          set({ isLoading: true, error: null });
+          
+          // 关联到角色
+          await worldBookStorage.linkToCharacter(worldBookId, characterId);
+          
+          // 重新加载世界书以获取最新状态
+          const updatedWorldBook = await worldBookStorage.getWorldBook(worldBookId);
+          if (updatedWorldBook) {
+            set(state => ({
+              worldBooks: state.worldBooks.map(wb => wb.id === worldBookId ? updatedWorldBook : wb),
+              isLoading: false
+            }));
+          }
+        } catch (error) {
+          console.error("关联世界书到角色失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "关联世界书到角色失败" 
+          });
+        }
+      },
+      
+      unlinkFromCharacter: async (worldBookId: string, characterId: string) => {
+        try {
+          set({ isLoading: true, error: null });
+          
+          // 解除关联
+          await worldBookStorage.unlinkFromCharacter(worldBookId, characterId);
+          
+          // 重新加载世界书以获取最新状态
+          const updatedWorldBook = await worldBookStorage.getWorldBook(worldBookId);
+          if (updatedWorldBook) {
+            set(state => ({
+              worldBooks: state.worldBooks.map(wb => wb.id === worldBookId ? updatedWorldBook : wb),
+              isLoading: false
+            }));
+          }
+        } catch (error) {
+          console.error("解除世界书与角色的关联失败:", error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : "解除世界书与角色的关联失败" 
+          });
+        }
+      },
+      
+      getWorldBookForCharacter: async (characterId: string) => {
+        try {
+          return await worldBookStorage.getWorldBookForCharacter(characterId);
+        } catch (error) {
+          console.error("获取角色关联的世界书失败:", error);
+          return undefined;
+        }
+      },
+      
+      getLinkedCharacters: async (worldBookId: string) => {
+        try {
+          const worldBook = get().worldBooks.find(wb => wb.id === worldBookId);
+          if (!worldBook || !worldBook.characterIds || worldBook.characterIds.length === 0) {
+            return [];
+          }
+          
+          // 使用characterStorage获取关联的角色
+          const characters: Character[] = [];
+          for (const characterId of worldBook.characterIds) {
+            try {
+              const character = await characterStorage.getCharacter(characterId);
+              if (character) {
+                characters.push(character);
+              }
+            } catch (error) {
+              console.error(`获取角色 ${characterId} 失败:`, error);
+            }
+          }
+          
+          return characters;
+        } catch (error) {
+          console.error("获取关联角色失败:", error);
+          return [];
+        }
+      }
+    }),
+    {
+      name: 'ai-roleplay-worldbook-state',
+      partialize: (state) => ({ 
+        currentWorldBookId: state.currentWorldBookId 
+      }),
+      storage: createJSONStorage(() => localStorage)
+    }
+  )
+);
+
 // 获取动态内容的辅助函数
 async function getDynamicContent(placeholderType: string): Promise<string | null> {
   const chatStore = useChatStore.getState();
@@ -1417,6 +1871,64 @@ async function getDynamicContent(placeholderType: string): Promise<string | null
         return playerInfo;
       }
       return null;
+    
+    case 'worldInfo': {
+      // 根据位置获取世界书内容
+      const currentCharacter = chatStore.currentCharacter;
+      if (!currentCharacter) return null;
+      
+      // 导入世界书工具函数
+      const { generateWorldInfoBefore, generateWorldInfoAfter } = await import('./worldBookUtils');
+      
+      // 获取当前消息以扩展类型
+      const extendedMessages = chatStore.currentMessages.map(msg => ({
+        ...msg,
+        name: msg.role === 'user' 
+          ? playerStore.getCurrentPlayer()?.name || '用户' 
+          : currentCharacter.name
+      }));
+      
+      // 获取worldInfoBefore内容
+      const beforeContent = await generateWorldInfoBefore(currentCharacter.id, extendedMessages);
+      // 获取worldInfoAfter内容
+      const afterContent = await generateWorldInfoAfter(currentCharacter.id, extendedMessages);
+      
+      // 合并内容（如果调用方未指定位置，则返回所有内容）
+      return [beforeContent, afterContent].filter(Boolean).join('\n\n') || null;
+    }
+    
+    // 特定位置的世界书内容
+    case 'worldInfoBefore': {
+      const currentCharacter = chatStore.currentCharacter;
+      if (!currentCharacter) return null;
+      
+      const { generateWorldInfoBefore } = await import('./worldBookUtils');
+      
+      const extendedMessages = chatStore.currentMessages.map(msg => ({
+        ...msg,
+        name: msg.role === 'user' 
+          ? playerStore.getCurrentPlayer()?.name || '用户' 
+          : currentCharacter.name
+      }));
+      
+      return await generateWorldInfoBefore(currentCharacter.id, extendedMessages);
+    }
+    
+    case 'worldInfoAfter': {
+      const currentCharacter = chatStore.currentCharacter;
+      if (!currentCharacter) return null;
+      
+      const { generateWorldInfoAfter } = await import('./worldBookUtils');
+      
+      const extendedMessages = chatStore.currentMessages.map(msg => ({
+        ...msg,
+        name: msg.role === 'user' 
+          ? playerStore.getCurrentPlayer()?.name || '用户' 
+          : currentCharacter.name
+      }));
+      
+      return await generateWorldInfoAfter(currentCharacter.id, extendedMessages);
+    }
       
     case 'jailbreak':
       // 特殊指令（如果需要）

@@ -1,5 +1,5 @@
 import { openDB, DBSchema } from 'idb';
-import { Message, UserSettings, Character, Branch, PromptPreset, PromptPresetItem, PlaceholderInfo } from './types';
+import { Message, UserSettings, Character, Branch, PromptPreset, PromptPresetItem, PlaceholderInfo, WorldBook, WorldBookEntry, WorldBookSettings } from './types';
 import { generateId, extractCharaDataFromPng } from './utils';
 
 // 定义数据库架构
@@ -64,11 +64,17 @@ interface AppDB extends DBSchema {
     };
     indexes: { 'by-name': string; 'by-updatedAt': number };
   };
+  worldBooks: {
+    key: string;
+    value: WorldBook;
+    indexes: { 'by-name': string };
+  };
 }
+
 
 // 初始化数据库
 export const initDB = async () => {
-  return openDB<AppDB>('ai-roleplay-db', 5, {
+  return openDB<AppDB>('ai-roleplay-db', 6, {
     upgrade(db, oldVersion) {
       // 版本1: 创建conversations和presets表
       if (oldVersion < 1) {
@@ -117,6 +123,15 @@ export const initDB = async () => {
           const playerStore = db.createObjectStore('players', { keyPath: 'id' });
           playerStore.createIndex('by-name', 'name');
           playerStore.createIndex('by-updatedAt', 'updatedAt');
+        }
+      }
+
+      // 版本6: 添加世界书表
+      if (oldVersion < 6) {
+        console.log("升级数据库到版本6，添加世界书表");
+        if (!db.objectStoreNames.contains('worldBooks')) {
+          const worldBookStore = db.createObjectStore('worldBooks', { keyPath: 'id' });
+          worldBookStore.createIndex('by-name', 'name');
         }
       }
     }
@@ -895,12 +910,12 @@ export const promptPresetStorage = {
       },
       'worldInfoBefore': {
         type: 'worldInfo',
-        implemented: false,
+        implemented: true,
         description: '世界书信息'
       },
       'worldInfoAfter': {
         type: 'worldInfo',
-        implemented: false,
+        implemented: true,
         description: '世界书信息'
       },
       'personaDescription': {
@@ -962,6 +977,436 @@ export const promptPresetStorage = {
     
     const json = JSON.stringify(preset, null, 2);
     return new Blob([json], { type: 'application/json' });
+  }
+};
+
+// 世界书存储接口
+export const worldBookStorage = {
+  /**
+   * 保存世界书
+   */
+  async saveWorldBook(worldBook: {
+    id: string;
+    name: string;
+    description?: string;
+    entries: WorldBookEntry[];
+    settings: WorldBookSettings;
+    characterIds?: string[];
+    enabled?: boolean;
+  }): Promise<WorldBook> {
+    const db = await initDB();
+    const now = Date.now();
+    
+    // 生成新ID或使用现有ID
+    const id = worldBook.id || generateId();
+    
+    // 获取现有数据或设置默认时间和状态
+    let createdAt = now;
+    let existingWorldBook: WorldBook | undefined;
+    
+    if (worldBook.id) {
+      try {
+        existingWorldBook = await db.get('worldBooks', worldBook.id);
+        createdAt = existingWorldBook?.createdAt || now;
+      } catch (error) {
+        // 如果不存在，使用当前时间作为创建时间
+      }
+    }
+    
+    // 构建完整的世界书对象
+    const completeWorldBook: WorldBook = {
+      ...worldBook,
+      id,
+      characterIds: worldBook.characterIds || [],
+      enabled: worldBook.enabled !== undefined ? worldBook.enabled : true,
+      createdAt,
+      updatedAt: now,
+    };
+    
+    // 保存到数据库
+    await db.put('worldBooks', completeWorldBook);
+    
+    // 处理角色关联
+    if (worldBook.characterIds && worldBook.characterIds.length > 0) {
+      await this.updateCharacterLinks(id, worldBook.characterIds);
+    }
+    
+    return completeWorldBook;
+  },
+
+  /**
+   * 获取单个世界书
+   */
+  async getWorldBook(id: string): Promise<WorldBook | undefined> {
+    const db = await initDB();
+    try {
+      return await db.get('worldBooks', id);
+    } catch (error) {
+      console.error('获取世界书失败:', error);
+      return undefined;
+    }
+  },
+
+  /**
+   * 列出所有世界书
+   */
+  async listWorldBooks(): Promise<WorldBook[]> {
+    const db = await initDB();
+    return await db.getAllFromIndex('worldBooks', 'by-name');
+  },
+
+  /**
+   * 删除世界书
+   */
+  async deleteWorldBook(id: string): Promise<void> {
+    const db = await initDB();
+    
+    // 先检查是否有角色引用此世界书
+    const worldBook = await this.getWorldBook(id);
+    if (worldBook?.characterIds && worldBook.characterIds.length > 0) {
+      // 解除与所有角色的关联
+      await this.updateCharacterLinks(id, []);
+    }
+    
+    // 删除世界书
+    await db.delete('worldBooks', id);
+  },
+
+  /**
+   * 切换世界书启用状态
+   */
+  async toggleWorldBookEnabled(id: string): Promise<WorldBook | undefined> {
+    const worldBook = await this.getWorldBook(id);
+    if (!worldBook) return undefined;
+
+    worldBook.enabled = !worldBook.enabled;
+    return await this.saveWorldBook(worldBook);
+  },
+
+  /**
+   * 从JSON导入世界书
+   */
+  async importWorldBookFromJSON(json: any, fileName?: string): Promise<WorldBook> {
+    // 检查并提取世界书数据
+    if (!json) {
+      throw new Error('无效的JSON数据');
+    }
+
+    // 提取世界书名称
+    let name = json.name;
+    if (!name && fileName) {
+      name = fileName.replace(/\.json$/i, '');
+    }
+    if (!name) {
+      name = '导入的世界书';
+    }
+
+    // 提取描述
+    const description = json.description || '';
+
+    // 提取条目
+    let entries: WorldBookEntry[] = [];
+    if (json.entries && typeof json.entries === 'object') {
+      entries = Object.values(json.entries).map((entry: any) => {
+        return {
+          id: entry.uid || generateId(),
+          title: entry.comment || entry.title || '',
+          content: entry.content || '',
+          strategy: entry.constant ? 'constant' : 
+                   entry.vectorized ? 'vectorized' : 'selective',
+          enabled: entry.disable === undefined ? true : !entry.disable,
+          order: entry.order || 100,
+          position: entry.position === 0 ? 'before' : 'after',
+          primaryKeys: Array.isArray(entry.key) ? entry.key : 
+                      (entry.key ? [entry.key] : []),
+          secondaryKeys: Array.isArray(entry.keysecondary) ? entry.keysecondary : 
+                        (entry.keysecondary ? [entry.keysecondary] : []),
+          selectiveLogic: entry.selectiveLogic || 'andAny',
+          caseSensitive: entry.caseSensitive === undefined ? false : entry.caseSensitive,
+          matchWholeWords: entry.matchWholeWords === undefined ? true : entry.matchWholeWords,
+          excludeRecursion: entry.excludeRecursion || false,
+          preventRecursion: entry.preventRecursion || false,
+          delayUntilRecursion: entry.delayUntilRecursion || false,
+          recursionLevel: entry.recursionLevel || 0,
+          probability: entry.probability || 100,
+          sticky: entry.sticky || 0,
+          cooldown: entry.cooldown || 0,
+          delay: entry.delay || 0,
+          scanDepth: entry.scanDepth
+        };
+      });
+    }
+
+    // 提取设置
+    const settings: WorldBookSettings = {
+      scanDepth: json.settings?.scanDepth || 2,
+      includeNames: json.settings?.includeNames === undefined ? true : json.settings.includeNames,
+      maxRecursionSteps: json.settings?.maxRecursionSteps || 0,
+      minActivations: json.settings?.minActivations || 0,
+      maxDepth: json.settings?.maxDepth || 10,
+      caseSensitive: json.settings?.caseSensitive || false,
+      matchWholeWords: json.settings?.matchWholeWords || true
+    };
+
+    // 创建并保存世界书
+    return await this.saveWorldBook({
+      id: generateId(),
+      name,
+      description,
+      entries,
+      settings,
+      characterIds: [],
+      enabled: true
+    });
+  },
+
+  /**
+   * 导出世界书到JSON
+   */
+  async exportWorldBookToJSON(id: string): Promise<Record<string, any>> {
+    const worldBook = await this.getWorldBook(id);
+    if (!worldBook) {
+      throw new Error('世界书不存在');
+    }
+
+    // 转换为兼容格式
+    const entriesObj: Record<string, any> = {};
+    worldBook.entries.forEach((entry, index) => {
+      entriesObj[index] = {
+        uid: entry.id,
+        key: entry.primaryKeys,
+        keysecondary: entry.secondaryKeys,
+        comment: entry.title,
+        content: entry.content,
+        constant: entry.strategy === 'constant',
+        vectorized: entry.strategy === 'vectorized',
+        selective: entry.strategy === 'selective',
+        selectiveLogic: entry.selectiveLogic,
+        order: entry.order,
+        position: entry.position === 'before' ? 0 : 4,
+        disable: !entry.enabled,
+        excludeRecursion: entry.excludeRecursion,
+        preventRecursion: entry.preventRecursion,
+        delayUntilRecursion: entry.delayUntilRecursion,
+        probability: entry.probability,
+        depth: 0,
+        sticky: entry.sticky,
+        cooldown: entry.cooldown,
+        delay: entry.delay,
+        scanDepth: entry.scanDepth,
+        caseSensitive: entry.caseSensitive,
+        matchWholeWords: entry.matchWholeWords
+      };
+    });
+
+    return {
+      name: worldBook.name,
+      description: worldBook.description,
+      entries: entriesObj,
+      settings: worldBook.settings
+    };
+  },
+
+  /**
+   * 添加条目到世界书
+   */
+  async addEntry(worldBookId: string, entry: Partial<WorldBookEntry>): Promise<WorldBookEntry> {
+    const worldBook = await this.getWorldBook(worldBookId);
+    if (!worldBook) {
+      throw new Error('世界书不存在');
+    }
+
+    // 生成唯一ID
+    const entryId = generateId();
+    console.log("生成新条目ID:", entryId);
+
+    // 创建新条目
+    const newEntry: WorldBookEntry = {
+      id: entryId,
+      title: entry.title || '新条目',
+      content: entry.content || '',
+      strategy: entry.strategy || 'selective',
+      enabled: entry.enabled !== undefined ? entry.enabled : true,
+      order: entry.order || 100,
+      position: entry.position || 'after',
+      primaryKeys: entry.primaryKeys || [],
+      secondaryKeys: entry.secondaryKeys || [],
+      selectiveLogic: entry.selectiveLogic || 'andAny',
+      caseSensitive: entry.caseSensitive || false,
+      matchWholeWords: entry.matchWholeWords !== undefined ? entry.matchWholeWords : true,
+      excludeRecursion: entry.excludeRecursion || false,
+      preventRecursion: entry.preventRecursion || false,
+      delayUntilRecursion: entry.delayUntilRecursion || false,
+      recursionLevel: entry.recursionLevel || 0,
+      probability: entry.probability || 100,
+      sticky: entry.sticky || 0,
+      cooldown: entry.cooldown || 0,
+      delay: entry.delay || 0,
+      scanDepth: entry.scanDepth
+    };
+
+    // 添加到世界书
+    worldBook.entries.push(newEntry);
+    await this.saveWorldBook(worldBook);
+    console.log("条目已添加到世界书，ID:", entryId);
+
+    return newEntry;
+  },
+
+  /**
+   * 更新世界书条目
+   */
+  async updateEntry(worldBookId: string, entry: WorldBookEntry): Promise<WorldBookEntry> {
+    const worldBook = await this.getWorldBook(worldBookId);
+    if (!worldBook) {
+      throw new Error('世界书不存在');
+    }
+
+    // 查找并更新条目
+    const entryIndex = worldBook.entries.findIndex(e => e.id === entry.id);
+    if (entryIndex === -1) {
+      throw new Error('条目不存在');
+    }
+
+    // 更新条目
+    worldBook.entries[entryIndex] = entry;
+    await this.saveWorldBook(worldBook);
+
+    return entry;
+  },
+
+  /**
+   * 切换条目启用状态
+   */
+  async toggleEntryEnabled(worldBookId: string, entryId: string): Promise<WorldBookEntry | undefined> {
+    const worldBook = await this.getWorldBook(worldBookId);
+    if (!worldBook) {
+      throw new Error('世界书不存在');
+    }
+
+    // 查找条目
+    const entryIndex = worldBook.entries.findIndex(e => e.id === entryId);
+    if (entryIndex === -1) {
+      throw new Error('条目不存在');
+    }
+
+    // 切换启用状态
+    worldBook.entries[entryIndex].enabled = !worldBook.entries[entryIndex].enabled;
+    await this.saveWorldBook(worldBook);
+
+    return worldBook.entries[entryIndex];
+  },
+
+  /**
+   * 删除世界书条目
+   */
+  async deleteEntry(worldBookId: string, entryId: string): Promise<void> {
+    const worldBook = await this.getWorldBook(worldBookId);
+    if (!worldBook) {
+      throw new Error('世界书不存在');
+    }
+
+    // 过滤掉要删除的条目
+    worldBook.entries = worldBook.entries.filter(entry => entry.id !== entryId);
+    await this.saveWorldBook(worldBook);
+  },
+
+  /**
+   * 更新世界书与角色的关联
+   * 一个世界书可以关联多个角色，但一个角色最多关联一个世界书
+   */
+  async updateCharacterLinks(worldBookId: string, characterIds: string[]): Promise<void> {
+    const db = await initDB();
+    
+    // 获取世界书
+    const worldBook = await this.getWorldBook(worldBookId);
+    if (!worldBook) {
+      throw new Error('世界书不存在');
+    }
+    
+    // 获取当前世界书的旧角色关联
+    const oldCharacterIds = worldBook.characterIds || [];
+    
+    // 需要移除关联的角色IDs（在旧列表中但不在新列表中）
+    const idsToRemove = oldCharacterIds.filter(id => !characterIds.includes(id));
+    
+    // 需要添加关联的角色IDs（在新列表中但不在旧列表中）
+    const idsToAdd = characterIds.filter(id => !oldCharacterIds.includes(id));
+    
+    // 所有需要查找的其他世界书（关联到同一角色的）
+    const allRelatedWorldBooks = await db.getAllFromIndex('worldBooks', 'by-name');
+    
+    // 对于每个要添加关联的角色，确保没有其他世界书与之关联
+    for (const characterId of idsToAdd) {
+      const otherWorldBooks = allRelatedWorldBooks.filter(wb => 
+        wb.id !== worldBookId && 
+        wb.characterIds && 
+        wb.characterIds.includes(characterId)
+      );
+      
+      // 从其他世界书中移除该角色关联
+      for (const otherWorldBook of otherWorldBooks) {
+        otherWorldBook.characterIds = otherWorldBook.characterIds.filter(id => id !== characterId);
+        await db.put('worldBooks', otherWorldBook);
+      }
+    }
+    
+    // 更新当前世界书的角色关联
+    worldBook.characterIds = characterIds;
+    await db.put('worldBooks', worldBook);
+  },
+
+  /**
+   * 将世界书关联到角色
+   */
+  async linkToCharacter(worldBookId: string, characterId: string): Promise<void> {
+    const worldBook = await this.getWorldBook(worldBookId);
+    if (!worldBook) {
+      throw new Error('世界书不存在');
+    }
+
+    // 确保characterIds是数组
+    const characterIds = worldBook.characterIds || [];
+    
+    // 如果已经关联，不做任何更改
+    if (characterIds.includes(characterId)) {
+      return;
+    }
+
+    // 添加角色ID到关联列表
+    await this.updateCharacterLinks(worldBookId, [...characterIds, characterId]);
+  },
+
+  /**
+   * 解除世界书与角色的关联
+   */
+  async unlinkFromCharacter(worldBookId: string, characterId: string): Promise<void> {
+    const worldBook = await this.getWorldBook(worldBookId);
+    if (!worldBook || !worldBook.characterIds) {
+      return;
+    }
+
+    // 从关联列表中移除角色ID
+    const characterIds = worldBook.characterIds.filter(id => id !== characterId);
+    await this.updateCharacterLinks(worldBookId, characterIds);
+  },
+
+  /**
+   * 获取与角色关联的世界书
+   */
+  async getWorldBookForCharacter(characterId: string): Promise<WorldBook | undefined> {
+    const db = await initDB();
+    
+    // 查找与角色关联的世界书
+    const allWorldBooks = await db.getAllFromIndex('worldBooks', 'by-name');
+    const linkedWorldBooks = allWorldBooks.filter(worldBook => 
+      worldBook.characterIds && 
+      worldBook.characterIds.includes(characterId) &&
+      worldBook.enabled
+    );
+    
+    // 返回第一个关联的世界书（应该只有一个）
+    return linkedWorldBooks.length > 0 ? linkedWorldBooks[0] : undefined;
   }
 };
 

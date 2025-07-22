@@ -147,13 +147,66 @@ export interface Player {
 
 // 世界书类型
 export interface WorldBook {
-  id: string;
-  name: string;
-  description?: string;
-  content: string;
-  tags?: string[];
-  createdAt: number;
-  updatedAt: number;
+  id: string;                 // 唯一ID
+  name: string;               // 世界书名称
+  description?: string;       // 世界书描述
+  entries: WorldBookEntry[];  // 世界书条目
+  settings: WorldBookSettings; // 世界书全局设置
+  createdAt: number;          // 创建时间
+  updatedAt: number;          // 更新时间
+  characterIds: string[];     // 关联的角色ID列表（修改为多对多关系）
+  enabled: boolean;           // 是否启用
+}
+
+export interface WorldBookEntry {
+  id: string;                 // 条目ID
+  title: string;              // 条目标题/备注
+  content: string;            // 条目内容（将插入提示词）
+  
+  // 激活设置
+  strategy: 'constant' | 'selective' | 'vectorized';  // 激活策略（常量/选择性/向量化）
+  enabled: boolean;           // 是否启用
+  order: number;              // 插入顺序（优先级）
+  position: 'before' | 'after'; // 插入位置（角色描述前/后）
+  
+  // 选择性激活的关键字
+  primaryKeys: string[];      // 主要关键字
+  secondaryKeys: string[];    // 次要关键字（可选过滤器）
+  selectiveLogic: 'andAny' | 'andAll' | 'notAny' | 'notAll';  // 选择逻辑
+  
+  // 正则选项
+  caseSensitive?: boolean;    // 区分大小写
+  matchWholeWords?: boolean;  // 全词匹配
+  
+  // 递归设置
+  excludeRecursion: boolean;  // 不可递归（不被其他条目激活）
+  preventRecursion: boolean;  // 防止进一步递归
+  delayUntilRecursion: boolean; // 延迟到递归
+  recursionLevel: number;     // 递归等级
+  
+  // 时效功能
+  probability: number;        // 激活概率（0-100）
+  sticky: number;             // 黏性（保持激活的消息数）
+  cooldown: number;           // 冷却（不能激活的消息数）
+  delay: number;              // 延迟（要求最少消息数才能激活）
+  
+  // 扫描设置
+  scanDepth?: number;         // 条目级扫描深度（覆盖全局设置）
+
+  // 状态追踪（不存储，运行时使用）
+  _activated?: boolean;       // 是否被激活
+  _stickyRemaining?: number;  // 剩余黏性时间
+  _cooldownRemaining?: number; // 剩余冷却时间
+}
+
+export interface WorldBookSettings {
+  scanDepth: number;          // 默认扫描深度
+  includeNames: boolean;      // 是否包含角色名称
+  maxRecursionSteps: number;  // 最大递归步骤
+  minActivations: number;     // 最小激活数量
+  maxDepth: number;           // 最大深度
+  caseSensitive: boolean;     // 默认区分大小写
+  matchWholeWords: boolean;   // 默认全词匹配
 }
 
 // 从gemini.ts导出GeminiParams类型

@@ -1,13 +1,16 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Character } from "@/lib/types";
+import { Character, WorldBook } from "@/lib/types";
 import { characterStorage } from "@/lib/storage";
 import { generateId } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useWorldBookStore } from "@/lib/store";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 
 interface CharacterFormProps {
   initialCharacter?: Character;
@@ -33,6 +36,47 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
+  // 世界书相关状态
+  const { worldBooks, loadWorldBooks, linkToCharacter, unlinkFromCharacter, getWorldBookForCharacter } = useWorldBookStore();
+  const [availableWorldBooks, setAvailableWorldBooks] = useState<WorldBook[]>([]);
+  const [selectedWorldBookId, setSelectedWorldBookId] = useState<string>("none");
+  const [currentWorldBook, setCurrentWorldBook] = useState<WorldBook | null>(null);
+  const [isLoadingWorldBooks, setIsLoadingWorldBooks] = useState(false);
+  
+  // 加载世界书数据
+  useEffect(() => {
+    const loadWorldBookData = async () => {
+      try {
+        setIsLoadingWorldBooks(true);
+        
+        // 加载所有世界书
+        await loadWorldBooks();
+        
+        // 过滤出启用的世界书
+        const enabledWorldBooks = worldBooks.filter(wb => wb.enabled);
+        setAvailableWorldBooks(enabledWorldBooks);
+        
+        // 如果是编辑模式，获取当前关联的世界书
+        if (initialCharacter?.id) {
+          const linkedWorldBook = await getWorldBookForCharacter(initialCharacter.id);
+          if (linkedWorldBook) {
+            setCurrentWorldBook(linkedWorldBook);
+            setSelectedWorldBookId(linkedWorldBook.id);
+          } else {
+            setSelectedWorldBookId("none");
+          }
+        }
+        
+        setIsLoadingWorldBooks(false);
+      } catch (error) {
+        console.error("加载世界书数据失败:", error);
+        setIsLoadingWorldBooks(false);
+      }
+    };
+    
+    loadWorldBookData();
+  }, [loadWorldBooks, worldBooks, initialCharacter, getWorldBookForCharacter]);
+  
   // 处理输入变化
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -86,6 +130,11 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
     setCharacter(prev => ({ ...prev, alternateGreetings: filteredGreetings }));
   };
 
+  // 处理世界书选择变更
+  const handleWorldBookChange = (value: string) => {
+    setSelectedWorldBookId(value);
+  };
+
   // 保存角色
   const handleSave = async () => {
     if (!character.name) {
@@ -99,22 +148,39 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
     const id = character.id || generateId();
     const characterToSave = {
       ...character,
-      alternateGreetings: filteredGreetings,
       id,
+      alternateGreetings: filteredGreetings,
     } as Character;
 
-    await characterStorage.saveCharacter(characterToSave);
-    
-    if (onSave) {
-      onSave(characterToSave);
-    } else {
-      router.push('/characters');
-      router.refresh();
+    try {
+      // 保存角色
+      await characterStorage.saveCharacter(characterToSave);
+      
+      // 处理世界书关联
+      if (selectedWorldBookId && selectedWorldBookId !== "none") {
+        // 如果选择了不同的世界书，先解除旧关联再建立新关联
+        if (currentWorldBook && currentWorldBook.id !== selectedWorldBookId) {
+          await unlinkFromCharacter(currentWorldBook.id, id);
+        }
+        await linkToCharacter(selectedWorldBookId, id);
+      } else if (currentWorldBook) {
+        // 如果清除了世界书选择，解除关联
+        await unlinkFromCharacter(currentWorldBook.id, id);
+      }
+      
+      if (onSave) {
+        onSave(characterToSave);
+      } else {
+        router.push('/characters');
+      }
+    } catch (error) {
+      console.error('保存角色失败:', error);
+      alert('保存角色失败');
     }
   };
 
   return (
-    <div className="space-y-4 mt-4">
+    <div className="space-y-6">
       <div className="grid md:grid-cols-[1fr_250px] gap-6">
         {/* 左侧表单 */}
         <div className="space-y-4">
@@ -192,14 +258,47 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
             </p>
           </div>
 
-          <div className="space-y-2">
-            <label className="block text-sm font-medium">标签（用逗号分隔）</label>
+          {/* 标签 */}
+          <div>
+            <Label htmlFor="tags">标签</Label>
             <Input
+              id="tags"
               name="tags"
-              value={character.tags?.join(', ') || ""}
+              placeholder="以逗号分隔标签"
+              value={character.tags?.join(', ') || ''}
               onChange={handleTagsChange}
-              placeholder="例如：科幻, 冒险, 友善"
             />
+            <p className="text-sm text-muted-foreground mt-1">用逗号分隔多个标签</p>
+          </div>
+
+          {/* 世界书选择 */}
+          <div>
+            <Label htmlFor="worldBook">关联世界书</Label>
+            <Select 
+              value={selectedWorldBookId} 
+              onValueChange={handleWorldBookChange}
+              disabled={isLoadingWorldBooks}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="选择世界书" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">无</SelectItem>
+                {availableWorldBooks.map((wb) => (
+                  <SelectItem key={wb.id} value={wb.id}>
+                    {wb.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground mt-1">
+              {isLoadingWorldBooks ? "加载中..." : "关联世界书将在聊天中自动使用"}
+            </p>
+            {currentWorldBook && (
+              <p className="text-sm text-blue-500 mt-1">
+                当前关联: {currentWorldBook.name}
+              </p>
+            )}
           </div>
         </div>
 
@@ -240,7 +339,8 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
         </div>
       </div>
 
-      <div className="flex justify-end space-x-2 pt-6">
+      {/* 按钮组 */}
+      <div className="flex justify-end gap-2">
         <Button
           type="button"
           variant="outline"
