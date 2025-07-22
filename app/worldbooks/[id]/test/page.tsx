@@ -37,6 +37,7 @@ export default function TestPage({ params }: TestPageProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState<{
     activatedEntries: WorldBookEntryWithActivationInfo[];
+    notActivatedEntries: WorldBookEntryWithActivationInfo[];
     beforeContent: string | null;
     afterContent: string | null;
     log: string[];
@@ -95,6 +96,15 @@ export default function TestPage({ params }: TestPageProps) {
         }
       });
       
+      // 获取未激活的条目信息（仅选择性条目）
+      const notActivatedEntries = worldBook.entries
+        .filter(entry => entry.enabled && entry.strategy === 'selective')
+        .filter(entry => !activatedEntries.some(a => a.id === entry.id))
+        .map(entry => ({
+          ...entry,
+          _notActivatedReason: "未匹配关键字"
+        }));
+      
       // 生成世界信息
       const beforeContent = await generateWorldInfoBefore({
         worldBook,
@@ -108,6 +118,7 @@ export default function TestPage({ params }: TestPageProps) {
       
       setResult({
         activatedEntries,
+        notActivatedEntries,
         beforeContent,
         afterContent,
         log
@@ -206,6 +217,38 @@ export default function TestPage({ params }: TestPageProps) {
         
         {result && (
           <>
+            <Card className="md:col-span-2 mb-4">
+              <CardHeader>
+                <CardTitle>测试状态信息</CardTitle>
+                <CardDescription>测试参数和关键信息</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">世界书设置</h4>
+                    <div className="bg-secondary p-3 rounded-md space-y-1">
+                      <p className="text-sm">启用状态: {worldBook?.enabled ? "已启用" : "已禁用"}</p>
+                      <p className="text-sm">扫描深度: {worldBook?.settings?.scanDepth || 5}</p>
+                      <p className="text-sm">最大递归步骤: {worldBook?.settings?.maxRecursionSteps || 0}</p>
+                      <p className="text-sm">包含角色名称: {worldBook?.settings?.includeNames ? "是" : "否"}</p>
+                      <p className="text-sm">默认区分大小写: {worldBook?.settings?.caseSensitive ? "是" : "否"}</p>
+                      <p className="text-sm">默认全词匹配: {worldBook?.settings?.matchWholeWords ? "是" : "否"}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">条目统计</h4>
+                    <div className="bg-secondary p-3 rounded-md space-y-1">
+                      <p className="text-sm">总条目数量: {worldBook?.entries?.length || 0}</p>
+                      <p className="text-sm">启用条目数量: {worldBook?.entries?.filter(e => e.enabled)?.length || 0}</p>
+                      <p className="text-sm">常量条目数量: {worldBook?.entries?.filter(e => e.enabled && e.strategy === 'constant')?.length || 0}</p>
+                      <p className="text-sm">选择性条目数量: {worldBook?.entries?.filter(e => e.enabled && e.strategy === 'selective')?.length || 0}</p>
+                      <p className="text-sm">向量条目数量: {worldBook?.entries?.filter(e => e.enabled && e.strategy === 'vectorized')?.length || 0}</p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            
             <Card>
               <CardHeader>
                 <CardTitle>激活条目 ({result.activatedEntries.length})</CardTitle>
@@ -235,12 +278,52 @@ export default function TestPage({ params }: TestPageProps) {
                           </span>
                         )}
                       </div>
+                      <div className="text-sm mb-2">
+                        <strong>主要关键字:</strong> {entry.primaryKeys?.join(', ') || '无'}
+                        {entry.secondaryKeys?.length > 0 && (
+                          <><br/><strong>次要关键字:</strong> {entry.secondaryKeys?.join(', ')}</>
+                        )}
+                      </div>
                       <p className="text-sm whitespace-pre-wrap">{entry.content}</p>
                     </div>
                   ))
                 )}
               </CardContent>
             </Card>
+            
+            {result.notActivatedEntries?.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>未激活条目 ({result.notActivatedEntries.length})</CardTitle>
+                  <CardDescription>
+                    以下选择性条目没有被激活
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4 max-h-[500px] overflow-y-auto">
+                  {result.notActivatedEntries.map((entry) => (
+                    <div key={entry.id} className="p-3 border border-gray-200 rounded-md opacity-70">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-3 h-3 rounded-full bg-gray-400" />
+                        <h4 className="font-medium">{entry.title}</h4>
+                        <span className="text-xs bg-secondary px-2 py-0.5 rounded">
+                          {entry.position === 'before' ? '前置' : '后置'}
+                        </span>
+                      </div>
+                      <div className="text-sm mb-2">
+                        <strong>主要关键字:</strong> {entry.primaryKeys?.join(', ') || '无'}
+                        {entry.secondaryKeys?.length > 0 && (
+                          <><br/><strong>次要关键字:</strong> {entry.secondaryKeys?.join(', ')}</>
+                        )}
+                        <br/>
+                        <strong>匹配设置:</strong> 
+                        {entry.caseSensitive ? "区分大小写" : "不区分大小写"}, 
+                        {entry.matchWholeWords ? "全词匹配" : "部分匹配"}
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
             
             <Card>
               <CardHeader>

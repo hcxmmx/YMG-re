@@ -340,6 +340,7 @@ export async function activateEntries(params: {
   
   // 日志函数
   const log = (message: string) => {
+    console.log(message); // 添加控制台日志
     onDebug?.(message);
   };
   
@@ -365,6 +366,7 @@ export async function activateEntries(params: {
   const scanText = composeScanText(chatMessages, worldBook.settings.scanDepth || 5);
   
   log(`扫描文本长度: ${scanText.length} 字符`);
+  log(`扫描文本内容: "${scanText}"`);
   
   // 处理常量条目 (常量总是被激活)
   const constantEntries = enabledEntries.filter(entry => entry.strategy === 'constant');
@@ -377,7 +379,14 @@ export async function activateEntries(params: {
   
   // 处理选择性条目 (需要关键字匹配)
   const selectiveEntries = enabledEntries.filter(entry => entry.strategy === 'selective');
+  log(`选择性条目数量: ${selectiveEntries.length}`);
+  
   for (const entry of selectiveEntries) {
+    log(`检查选择性条目: ${entry.title}`);
+    log(`主要关键字: ${entry.primaryKeys?.join(', ') || '无'}`);
+    log(`次要关键字: ${entry.secondaryKeys?.join(', ') || '无'}`);
+    log(`匹配选项: caseSensitive=${entry.caseSensitive}, matchWholeWords=${entry.matchWholeWords}`);
+    
     const activationResult = testSelectiveActivation(entry, scanText);
     if (activationResult.activated) {
       entry._activated = true;
@@ -499,18 +508,89 @@ function testSelectiveActivation(entry: WorldBookEntryWithActivationInfo, scanTe
  * 关键字是否匹配
  */
 function keywordMatches(text: string, keyword: string, options: { caseSensitive: boolean, wholeWord: boolean }): boolean {
-  // 处理正则特殊字符
-  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // 将空字符串或无效关键字视为不匹配
+  if (!keyword || keyword.trim() === '') {
+    console.log('关键字为空，忽略匹配');
+    return false;
+  }
+
+  // 处理正则表达式关键字
+  if (keyword.startsWith('/') && keyword.lastIndexOf('/') > 0) {
+    try {
+      const lastSlashIndex = keyword.lastIndexOf('/');
+      const pattern = keyword.substring(1, lastSlashIndex);
+      const regexFlags = keyword.substring(lastSlashIndex + 1) || (options.caseSensitive ? 'g' : 'gi');
+      
+      const regex = new RegExp(pattern, regexFlags);
+      const isMatch = regex.test(text);
+      
+      console.log(`正则表达式匹配检查:
+        - 正则: "${pattern}" 
+        - 标志: "${regexFlags}"
+        - 是否匹配: ${isMatch}
+      `);
+      
+      return isMatch;
+    } catch (e) {
+      console.error('无效的正则表达式:', keyword, e);
+      return false;
+    }
+  }
   
-  // 构建正则表达式
-  const pattern = options.wholeWord 
-    ? `\\b${escaped}\\b` 
-    : escaped;
+  // 普通文本匹配
+  let isMatch;
   
-  const flags = options.caseSensitive ? 'g' : 'gi';
-  const regex = new RegExp(pattern, flags);
+  if (options.wholeWord) {
+    // 全词匹配
+    try {
+      const compareText = options.caseSensitive ? text : text.toLowerCase();
+      const compareKeyword = options.caseSensitive ? keyword : keyword.toLowerCase();
+      
+      // 特殊处理中文和其他非ASCII字符
+      // 对于中文，我们检查关键字是否作为完整词出现，其前后可以是空格、标点符号或文本开始/结束
+      const escapedKeyword = escapeRegExp(compareKeyword);
+      
+      // 构建适用于多语言的全词匹配模式
+      // 词边界可以是：文本开始/结束、空格、标点符号、冒号等
+      const boundaries = '\\s:：.,!?;\'"/\\\\(){}\\[\\]<>-';
+      const pattern = `(^|[${boundaries}])${escapedKeyword}([${boundaries}]|$)`;
+      const regex = new RegExp(pattern, 'g');
+      isMatch = regex.test(compareText);
+      
+      // 同时也检查完全匹配的情况
+      if (!isMatch && compareText === compareKeyword) {
+        isMatch = true;
+      }
+      
+      // 如果文本本身就等于关键字，也视为匹配
+      if (!isMatch && compareText === compareKeyword) {
+        isMatch = true;
+      }
+      
+    } catch (e) {
+      console.error('匹配过程错误:', e);
+      // 出错时退回到简单包含匹配
+      isMatch = options.caseSensitive 
+        ? text.includes(keyword) 
+        : text.toLowerCase().includes(keyword.toLowerCase());
+    }
+  } else {
+    // 简单包含匹配
+    isMatch = options.caseSensitive 
+      ? text.includes(keyword) 
+      : text.toLowerCase().includes(keyword.toLowerCase());
+  }
   
-  return regex.test(text);
+  // 调试日志
+  console.log(`关键字匹配检查:
+    - 关键字: "${keyword}"
+    - 区分大小写: ${options.caseSensitive}
+    - 全词匹配: ${options.wholeWord}
+    - 是否匹配: ${isMatch}
+    - 文本预览: "${text.length > 50 ? text.substring(0, 50) + '...' : text}"
+  `);
+  
+  return isMatch;
 }
 
 /**
