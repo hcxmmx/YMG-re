@@ -1481,6 +1481,164 @@ export const worldBookStorage = {
   }
 };
 
+// 玩家存储接口
+export const playerStorage = {
+  async savePlayer(player: {
+    id: string;
+    name: string;
+    description?: string;
+    avatar?: string;
+  }) {
+    const db = await initDB();
+    const now = Date.now();
+    await db.put('players', {
+      ...player,
+      createdAt: player.id ? (await db.get('players', player.id))?.createdAt || now : now,
+      updatedAt: now
+    });
+  },
+  
+  async getPlayer(id: string) {
+    const db = await initDB();
+    return db.get('players', id);
+  },
+  
+  async getCurrentPlayer() {
+    const db = await initDB();
+    const players = await db.getAllFromIndex('players', 'by-updatedAt');
+    // 返回最近更新的玩家作为当前玩家
+    return players.length > 0 ? players[0] : null;
+  },
+  
+  async listPlayers() {
+    const db = await initDB();
+    return db.getAllFromIndex('players', 'by-name');
+  },
+  
+  async deletePlayer(id: string) {
+    const db = await initDB();
+    await db.delete('players', id);
+  }
+};
+
+// 提示词预设存储接口
+export const promptPresetStorage = {
+  async savePromptPreset(preset: PromptPreset) {
+    const db = await initDB();
+    
+    // 确保有创建和更新时间
+    const now = Date.now();
+    const updatedPreset = {
+      ...preset,
+      createdAt: preset.createdAt || now,
+      updatedAt: now
+    };
+    
+    await db.put('promptPresets', updatedPreset);
+    return updatedPreset;
+  },
+  
+  async getPromptPreset(id: string) {
+    const db = await initDB();
+    return db.get('promptPresets', id);
+  },
+  
+  async listPromptPresets() {
+    const db = await initDB();
+    return db.getAllFromIndex('promptPresets', 'by-updatedAt');
+  },
+  
+  async deletePromptPreset(id: string) {
+    const db = await initDB();
+    await db.delete('promptPresets', id);
+  },
+  
+  // 导入预设函数
+  async importPromptPresetFromJSON(json: any, fileName?: string): Promise<PromptPreset> {
+    // 预设标识符
+    const PLACEHOLDERS: Record<string, PlaceholderInfo> = {
+      'charDescription': {
+        type: 'charDescription',
+        implemented: true,
+        description: '角色描述'
+      },
+      'chatHistory': {
+        type: 'chatHistory',
+        implemented: true,
+        description: '对话历史'
+      },
+      'worldInfoBefore': {
+        type: 'worldInfo',
+        implemented: true,
+        description: '世界书信息'
+      },
+      'worldInfoAfter': {
+        type: 'worldInfo',
+        implemented: true,
+        description: '世界书信息'
+      },
+      'personaDescription': {
+        type: 'persona',
+        implemented: true,
+        description: '玩家角色信息'
+      },
+      'scenario': {
+        type: 'scenario',
+        implemented: false,
+        description: '场景描述'
+      },
+      'dialogueExamples': {
+        type: 'examples',
+        implemented: false,
+        description: '对话示例'
+      },
+      'jailbreak': {
+        type: 'jailbreak',
+        implemented: true,
+        description: '特殊指令'
+      },
+    };
+    
+    // 提取提示词和排序
+    const prompts = extractPromptItemsFromJSON(json, PLACEHOLDERS);
+    
+    // 提取模型参数
+    const modelParams = extractModelParametersFromJSON(json);
+    
+    // 生成预设名称：优先级为 JSON内名称 > 文件名 > "导入的预设"
+    let presetName = json.name;
+    if (!presetName && fileName) {
+      // 从文件名中提取名称（移除扩展名）
+      presetName = fileName.replace(/\.json$/i, '');
+    }
+    
+    // 创建预设对象
+    const preset: PromptPreset = {
+      id: generateId(),
+      name: presetName || "导入的预设",
+      description: json.description || "从JSON文件导入的预设",
+      ...modelParams,
+      prompts,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    
+    // 保存到数据库
+    return await this.savePromptPreset(preset);
+  },
+  
+  // 导出预设到文件
+  async exportPromptPreset(id: string): Promise<Blob> {
+    const preset = await this.getPromptPreset(id);
+    if (!preset) {
+      throw new Error('预设不存在');
+    }
+    
+    const json = JSON.stringify(preset, null, 2);
+    return new Blob([json], { type: 'application/json' });
+  }
+};
+
 // 从JSON提取提示词条目
 function extractPromptItemsFromJSON(json: any, placeholders: Record<string, PlaceholderInfo>): PromptPresetItem[] {
   const prompts: PromptPresetItem[] = [];
