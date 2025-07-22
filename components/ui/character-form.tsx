@@ -75,7 +75,7 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
     };
     
     loadWorldBookData();
-  }, [loadWorldBooks, worldBooks, initialCharacter, getWorldBookForCharacter]);
+  }, [loadWorldBooks, initialCharacter, getWorldBookForCharacter]);
   
   // 处理输入变化
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {

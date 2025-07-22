@@ -88,8 +88,14 @@ export default function EntryPage({ params }: EntryPageProps) {
         console.log("找到世界书:", worldBook.name, "条目数量:", worldBook.entries.length);
         setWorldBookName(worldBook.name);
         
-        // 查找条目
-        const foundEntry = worldBook.entries.find(e => e.id === entryId);
+        // 查找条目 - 支持字符串和数字类型的ID比较
+        const foundEntry = worldBook.entries.find(e => {
+          // 处理不同类型ID的情况
+          const entryIdStr = String(entryId);
+          const currentIdStr = String(e.id);
+          return currentIdStr === entryIdStr;
+        });
+        
         console.log("条目查找结果:", foundEntry ? foundEntry.title : "未找到");
         
         if (foundEntry) {
