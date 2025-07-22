@@ -130,10 +130,16 @@ export interface Character {
   alternateGreetings?: string[];  // 角色的可选开场白
   avatar?: string;        // 角色头像
   tags?: string[];        // 角色标签
-  createdAt: number;
-  updatedAt: number;
+  createdAt?: number;
+  updatedAt?: number;
   worldBookIds?: string[]; // 关联的世界书ID列表
   // 注意: 系统提示词(systemPrompt)将在未来的预设模块中处理，而不是直接存储在角色信息中
+}
+
+export interface CharacterImportResult {
+  characterId: string | null;
+  importedWorldBooks?: string[] | null;
+  error?: string;
 }
 
 // 玩家类型

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { Character } from "@/lib/types";
+import { Character, CharacterImportResult } from "@/lib/types";
 import { characterStorage } from "@/lib/storage";
 import { CharacterCard } from "@/components/ui/character-card";
 import { CharacterForm } from "@/components/ui/character-form";
@@ -66,16 +66,13 @@ export default function CharactersPage() {
 
   // 处理角色卡导入
   const handleImportCharacter = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) {
+      return;
+    }
 
-    // 检查文件类型是否为支持的格式
-    const lowerFileName = file.name.toLowerCase();
-    if (!lowerFileName.endsWith('.json') && !lowerFileName.endsWith('.png')) {
-      alert('请选择JSON或PNG格式的角色卡文件');
-      if (importFileRef.current) {
-        importFileRef.current.value = '';
-      }
+    const file = files[0];
+    if (!file) {
       return;
     }
 
@@ -83,13 +80,20 @@ export default function CharactersPage() {
       setIsImporting(true);
       
       // 导入角色卡
-      const importedId = await characterStorage.importCharacter(file);
+      const result = await characterStorage.importCharacter(file);
       
-      if (importedId) {
-        alert(`角色卡导入成功！每次导入的角色都是独立的，拥有自己的对话记录。`);
+      if (result?.characterId) {
+        let successMessage = `角色卡导入成功！每次导入的角色都是独立的，拥有自己的对话记录。`;
+        
+        // 如果有导入的世界书，添加相关信息
+        if (result.importedWorldBooks && result.importedWorldBooks.length > 0) {
+          successMessage += `\n\n同时导入了以下世界书并自动关联到角色：\n- ${result.importedWorldBooks.join('\n- ')}`;
+        }
+        
+        alert(successMessage);
         await loadCharacters(); // 重新加载角色列表
       } else {
-        alert('角色卡导入失败，请检查文件格式');
+        alert(`角色卡导入失败：${result?.error || '未知错误'}`);
       }
     } catch (error) {
       console.error('导入角色卡失败:', error);

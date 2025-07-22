@@ -1,5 +1,5 @@
 import { openDB, DBSchema } from 'idb';
-import { Message, UserSettings, Character, Branch, PromptPreset, PromptPresetItem, PlaceholderInfo, WorldBook, WorldBookEntry, WorldBookSettings } from './types';
+import { Message, UserSettings, Character, Branch, PromptPreset, PromptPresetItem, PlaceholderInfo, WorldBook, WorldBookEntry, WorldBookSettings, CharacterImportResult } from './types';
 import { generateId, extractCharaDataFromPng } from './utils';
 
 // 定义数据库架构
@@ -563,7 +563,7 @@ export const characterStorage = {
     await db.delete('characters', id);
   },
   
-  async importCharacter(file: File) {
+  async importCharacter(file: File): Promise<CharacterImportResult> {
     try {
       if (file.name.toLowerCase().endsWith('.json')) {
         return await this.importJsonCharacter(file);
@@ -574,11 +574,14 @@ export const characterStorage = {
       }
     } catch (error) {
       console.error('导入角色卡失败:', error);
-      return null;
+      return {
+        characterId: null,
+        error: error instanceof Error ? error.message : '未知错误'
+      };
     }
   },
 
-  async importJsonCharacter(file: File) {
+  async importJsonCharacter(file: File): Promise<CharacterImportResult> {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
@@ -589,7 +592,8 @@ export const characterStorage = {
         description: "",
         firstMessage: "",
         alternateGreetings: [],
-        tags: []
+        tags: [],
+        worldBookIds: [] // 添加世界书ID字段
       };
       
       // 处理角色名称
@@ -692,19 +696,110 @@ export const characterStorage = {
       
       // 生成新ID避免覆盖
       const newId = generateId();
+      
+      // 导入角色卡附带的世界书
+      let worldBookIds: string[] = [];
+      let importedWorldBookNames: string[] = [];
+      
+      // 检查角色卡中是否包含世界书数据（character_book字段）
+      const characterBook = data.character_book || data.data?.character_book;
+      
+      if (characterBook && characterBook.entries && Array.isArray(characterBook.entries) && characterBook.entries.length > 0) {
+        console.log('发现角色卡中的世界书数据，开始导入...');
+        
+        // 创建世界书数据
+        const worldBookName = `${characterData.name}的世界书`;
+        
+        // 提取条目
+        const entries = characterBook.entries.map((entry: any, index: number) => {
+          return {
+            id: generateId(),
+            title: entry.comment || `条目 ${index + 1}`,
+            content: entry.content || '',
+            strategy: entry.constant ? 'constant' : 
+                     (entry.selective ? 'selective' : 'constant'),
+            enabled: !entry.disabled,
+            order: entry.insertion_order || 100,
+            position: entry.position === 'before_char' ? 'before' : 'after',
+            primaryKeys: Array.isArray(entry.keys) ? entry.keys : 
+                        (entry.keys ? [entry.keys] : []),
+            secondaryKeys: Array.isArray(entry.secondary_keys) ? entry.secondary_keys : 
+                          (entry.secondary_keys ? [entry.secondary_keys] : []),
+            selectiveLogic: entry.extensions?.selectiveLogic === 1 ? 'andAll' :
+                           entry.extensions?.selectiveLogic === 2 ? 'notAny' :
+                           entry.extensions?.selectiveLogic === 3 ? 'notAll' : 'andAny',
+            caseSensitive: entry.extensions?.case_sensitive || false,
+            matchWholeWords: entry.extensions?.match_whole_words || true,
+            excludeRecursion: entry.extensions?.exclude_recursion || false,
+            preventRecursion: entry.extensions?.prevent_recursion || false,
+            delayUntilRecursion: entry.extensions?.delay_until_recursion || false,
+            recursionLevel: entry.extensions?.recursion_level || 0,
+            probability: entry.extensions?.probability || 100,
+            sticky: entry.extensions?.sticky || 0,
+            cooldown: entry.extensions?.cooldown || 0,
+            delay: entry.extensions?.delay || 0,
+            scanDepth: entry.extensions?.scan_depth
+          };
+        });
+        
+        // 提取设置
+        const settings: WorldBookSettings = {
+          scanDepth: characterBook.scan_depth || 5,
+          includeNames: characterBook.include_usernames !== undefined ? characterBook.include_usernames : true,
+          maxRecursionSteps: characterBook.max_recursion_depth || 0,
+          minActivations: 0,
+          maxDepth: 10,
+          caseSensitive: false,
+          matchWholeWords: true
+        };
+        
+        try {
+          // 创建新的世界书
+          const worldBook = await worldBookStorage.saveWorldBook({
+            id: generateId(),
+            name: worldBookName,
+            description: `自动从${characterData.name}角色卡导入的世界书`,
+            entries,
+            settings,
+            characterIds: [newId], // 直接关联到新角色
+            enabled: true
+          });
+          
+          // 保存世界书ID，稍后关联到角色
+          worldBookIds.push(worldBook.id);
+          importedWorldBookNames.push(worldBookName);
+          console.log(`成功导入角色卡世界书: ${worldBookName}, ID: ${worldBook.id}`);
+        } catch (error) {
+          console.error('导入角色卡世界书失败:', error);
+        }
+      }
+      
+      // 如果成功导入世界书，添加到角色的世界书ID列表中
+      if (worldBookIds.length > 0) {
+        characterData.worldBookIds = worldBookIds;
+      }
+      
+      // 保存角色数据
       await this.saveCharacter({
         ...characterData,
         id: newId
       });
       
-      return newId;
+      // 返回导入结果，包括角色ID和导入的世界书信息
+      return {
+        characterId: newId,
+        importedWorldBooks: importedWorldBookNames.length > 0 ? importedWorldBookNames : null
+      };
     } catch (error) {
       console.error('导入JSON角色卡失败:', error);
-      return null;
+      return {
+        characterId: null,
+        error: error instanceof Error ? error.message : '未知错误'
+      };
     }
   },
 
-  async importPngCharacter(file: File) {
+  async importPngCharacter(file: File): Promise<CharacterImportResult> {
     try {
       // 读取文件内容为ArrayBuffer
       const buffer = await file.arrayBuffer();
@@ -724,7 +819,8 @@ export const characterStorage = {
         description: "",
         firstMessage: "",
         alternateGreetings: [],
-        tags: []
+        tags: [],
+        worldBookIds: [] // 添加世界书ID字段
       };
       
       // 处理角色名称
@@ -808,6 +904,88 @@ export const characterStorage = {
         console.error('处理角色头像失败:', error);
       }
       
+      // 导入角色卡附带的世界书
+      let worldBookIds: string[] = [];
+      let importedWorldBookNames: string[] = [];
+      
+      // 检查角色卡中是否包含世界书数据（character_book字段）
+      const characterBook = data.character_book || data.data?.character_book;
+      
+      if (characterBook && characterBook.entries && Array.isArray(characterBook.entries) && characterBook.entries.length > 0) {
+        console.log('发现角色卡中的世界书数据，开始导入...');
+        
+        // 创建世界书数据
+        const worldBookName = `${characterData.name}的世界书`;
+        
+        // 提取条目
+        const entries = characterBook.entries.map((entry: any, index: number) => {
+          return {
+            id: generateId(),
+            title: entry.comment || `条目 ${index + 1}`,
+            content: entry.content || '',
+            strategy: entry.constant ? 'constant' : 
+                     (entry.selective ? 'selective' : 'constant'),
+            enabled: !entry.disabled,
+            order: entry.insertion_order || 100,
+            position: entry.position === 'before_char' ? 'before' : 'after',
+            primaryKeys: Array.isArray(entry.keys) ? entry.keys : 
+                        (entry.keys ? [entry.keys] : []),
+            secondaryKeys: Array.isArray(entry.secondary_keys) ? entry.secondary_keys : 
+                          (entry.secondary_keys ? [entry.secondary_keys] : []),
+            selectiveLogic: entry.extensions?.selectiveLogic === 1 ? 'andAll' :
+                           entry.extensions?.selectiveLogic === 2 ? 'notAny' :
+                           entry.extensions?.selectiveLogic === 3 ? 'notAll' : 'andAny',
+            caseSensitive: entry.extensions?.case_sensitive || false,
+            matchWholeWords: entry.extensions?.match_whole_words || true,
+            excludeRecursion: entry.extensions?.exclude_recursion || false,
+            preventRecursion: entry.extensions?.prevent_recursion || false,
+            delayUntilRecursion: entry.extensions?.delay_until_recursion || false,
+            recursionLevel: entry.extensions?.recursion_level || 0,
+            probability: entry.extensions?.probability || 100,
+            sticky: entry.extensions?.sticky || 0,
+            cooldown: entry.extensions?.cooldown || 0,
+            delay: entry.extensions?.delay || 0,
+            scanDepth: entry.extensions?.scan_depth
+          };
+        });
+        
+        // 提取设置
+        const settings: WorldBookSettings = {
+          scanDepth: characterBook.scan_depth || 5,
+          includeNames: characterBook.include_usernames !== undefined ? characterBook.include_usernames : true,
+          maxRecursionSteps: characterBook.max_recursion_depth || 0,
+          minActivations: 0,
+          maxDepth: 10,
+          caseSensitive: false,
+          matchWholeWords: true
+        };
+        
+        try {
+          // 创建新的世界书
+          const worldBook = await worldBookStorage.saveWorldBook({
+            id: generateId(),
+            name: worldBookName,
+            description: `自动从${characterData.name}角色卡导入的世界书`,
+            entries,
+            settings,
+            characterIds: [], // 稍后会更新
+            enabled: true
+          });
+          
+          // 保存世界书ID，稍后关联到角色
+          worldBookIds.push(worldBook.id);
+          importedWorldBookNames.push(worldBookName);
+          console.log(`成功导入角色卡世界书: ${worldBookName}, ID: ${worldBook.id}`);
+        } catch (error) {
+          console.error('导入角色卡世界书失败:', error);
+        }
+      }
+      
+      // 如果成功导入世界书，添加到角色的世界书ID列表中
+      if (worldBookIds.length > 0) {
+        characterData.worldBookIds = worldBookIds;
+      }
+      
       // 生成新ID并保存角色
       const newId = generateId();
       await this.saveCharacter({
@@ -815,169 +993,25 @@ export const characterStorage = {
         id: newId
       });
       
-      return newId;
+      // 如果有世界书，更新世界书的角色关联
+      if (worldBookIds.length > 0) {
+        for (const worldBookId of worldBookIds) {
+          await worldBookStorage.linkToCharacter(worldBookId, newId);
+        }
+      }
+      
+      // 返回导入结果
+      return {
+        characterId: newId,
+        importedWorldBooks: importedWorldBookNames.length > 0 ? importedWorldBookNames : null
+      };
     } catch (error) {
       console.error('导入PNG角色卡失败:', error);
-      return null;
+      return {
+        characterId: null,
+        error: error instanceof Error ? error.message : '未知错误'
+      };
     }
-  }
-};
-
-// 玩家存储接口
-export const playerStorage = {
-  async savePlayer(player: {
-    id: string;
-    name: string;
-    description?: string;
-    avatar?: string;
-  }) {
-    const db = await initDB();
-    const now = Date.now();
-    await db.put('players', {
-      ...player,
-      createdAt: player.id ? (await db.get('players', player.id))?.createdAt || now : now,
-      updatedAt: now
-    });
-  },
-  
-  async getPlayer(id: string) {
-    const db = await initDB();
-    return db.get('players', id);
-  },
-  
-  async getCurrentPlayer() {
-    const db = await initDB();
-    const players = await db.getAllFromIndex('players', 'by-updatedAt');
-    // 返回最近更新的玩家作为当前玩家
-    return players.length > 0 ? players[0] : null;
-  },
-  
-  async listPlayers() {
-    const db = await initDB();
-    return db.getAllFromIndex('players', 'by-name');
-  },
-  
-  async deletePlayer(id: string) {
-    const db = await initDB();
-    await db.delete('players', id);
-  }
-};
-
-// 提示词预设存储接口
-export const promptPresetStorage = {
-  async savePromptPreset(preset: PromptPreset) {
-    const db = await initDB();
-    
-    // 确保有创建和更新时间
-    const now = Date.now();
-    const updatedPreset = {
-      ...preset,
-      createdAt: preset.createdAt || now,
-      updatedAt: now
-    };
-    
-    await db.put('promptPresets', updatedPreset);
-    return updatedPreset;
-  },
-  
-  async getPromptPreset(id: string) {
-    const db = await initDB();
-    return db.get('promptPresets', id);
-  },
-  
-  async listPromptPresets() {
-    const db = await initDB();
-    return db.getAllFromIndex('promptPresets', 'by-updatedAt');
-  },
-  
-  async deletePromptPreset(id: string) {
-    const db = await initDB();
-    await db.delete('promptPresets', id);
-  },
-  
-  // 导入预设函数
-  async importPromptPresetFromJSON(json: any, fileName?: string): Promise<PromptPreset> {
-    // 预设标识符
-    const PLACEHOLDERS: Record<string, PlaceholderInfo> = {
-      'charDescription': {
-        type: 'charDescription',
-        implemented: true,
-        description: '角色描述'
-      },
-      'chatHistory': {
-        type: 'chatHistory',
-        implemented: true,
-        description: '对话历史'
-      },
-      'worldInfoBefore': {
-        type: 'worldInfo',
-        implemented: true,
-        description: '世界书信息'
-      },
-      'worldInfoAfter': {
-        type: 'worldInfo',
-        implemented: true,
-        description: '世界书信息'
-      },
-      'personaDescription': {
-        type: 'persona',
-        implemented: true,
-        description: '玩家角色信息'
-      },
-      'scenario': {
-        type: 'scenario',
-        implemented: false,
-        description: '场景描述'
-      },
-      'dialogueExamples': {
-        type: 'examples',
-        implemented: false,
-        description: '对话示例'
-      },
-      'jailbreak': {
-        type: 'jailbreak',
-        implemented: true,
-        description: '特殊指令'
-      },
-    };
-    
-    // 提取提示词和排序
-    const prompts = extractPromptItemsFromJSON(json, PLACEHOLDERS);
-    
-    // 提取模型参数
-    const modelParams = extractModelParametersFromJSON(json);
-    
-    // 生成预设名称：优先级为 JSON内名称 > 文件名 > "导入的预设"
-    let presetName = json.name;
-    if (!presetName && fileName) {
-      // 从文件名中提取名称（移除扩展名）
-      presetName = fileName.replace(/\.json$/i, '');
-    }
-    
-    // 创建预设对象
-    const preset: PromptPreset = {
-      id: generateId(),
-      name: presetName || "导入的预设",
-      description: json.description || "从JSON文件导入的预设",
-      ...modelParams,
-      prompts,
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    };
-    
-    // 保存到数据库
-    return await this.savePromptPreset(preset);
-  },
-  
-  // 导出预设到文件
-  async exportPromptPreset(id: string): Promise<Blob> {
-    const preset = await this.getPromptPreset(id);
-    if (!preset) {
-      throw new Error('预设不存在');
-    }
-    
-    const json = JSON.stringify(preset, null, 2);
-    return new Blob([json], { type: 'application/json' });
   }
 };
 
