@@ -10,10 +10,11 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, Save, Plus, Trash, Users, Settings as SettingsIcon, X, Check } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash, Users, Settings as SettingsIcon, X, Check, Play } from "lucide-react";
 import { useWorldBookStore } from "@/lib/store";
 import { WorldBook, WorldBookEntry, Character } from "@/lib/types";
 import { characterStorage } from "@/lib/storage";
+import Image from "next/image";
 
 interface WorldBookPageProps {
   params: {
@@ -258,6 +259,22 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
     }
   };
   
+  // 保存设置
+  const handleSaveSettings = async () => {
+    if (!worldBook) return;
+    
+    try {
+      await saveWorldBook({
+        ...worldBook
+      });
+      
+      alert("设置已保存");
+    } catch (error) {
+      console.error("保存设置失败:", error);
+      alert("保存设置失败");
+    }
+  };
+  
   if (isLoading) {
     return (
       <div className="container mx-auto p-4">
@@ -287,23 +304,34 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
         <Button variant="ghost" className="mb-2" asChild>
           <Link href="/worldbooks">
             <ArrowLeft className="mr-2 h-4 w-4" />
-            返回
+            返回列表
           </Link>
         </Button>
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">编辑世界书</h1>
-          <div className="flex items-center gap-2">
+          <div>
+            <h1 className="text-3xl font-bold">世界书详情</h1>
             <div className="flex items-center gap-2">
-              <Switch 
-                checked={enabled} 
-                onCheckedChange={handleToggleEnabled}
-                aria-label={enabled ? "禁用世界书" : "启用世界书"}
-              />
-              <span className="text-sm text-muted-foreground mr-4">
-                {enabled ? "已启用" : "已禁用"}
-              </span>
+              <p className="text-muted-foreground">管理世界书内容和设置</p>
+              <div className="flex items-center gap-2 ml-4">
+                <Switch 
+                  checked={enabled} 
+                  onCheckedChange={handleToggleEnabled}
+                  aria-label={enabled ? "禁用世界书" : "启用世界书"}
+                />
+                <span className="text-sm text-muted-foreground">
+                  {enabled ? "已启用" : "已禁用"}
+                </span>
+              </div>
             </div>
-            <Button onClick={handleSave}>
+          </div>
+          <div className="flex gap-2">
+            <Button asChild variant="outline">
+              <Link href={`/worldbooks/${id}/test`}>
+                <Play className="mr-2 h-4 w-4" />
+                测试
+              </Link>
+            </Button>
+            <Button onClick={handleSave} disabled={!name}>
               <Save className="mr-2 h-4 w-4" />
               保存
             </Button>
@@ -315,6 +343,7 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
         <TabsList className="mb-4">
           <TabsTrigger value="info">基本信息</TabsTrigger>
           <TabsTrigger value="entries">条目 ({worldBook?.entries.length || 0})</TabsTrigger>
+          <TabsTrigger value="characters">关联角色</TabsTrigger>
           <TabsTrigger value="settings">设置</TabsTrigger>
         </TabsList>
         
@@ -453,14 +482,260 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
           )}
         </TabsContent>
         
+        {/* 关联角色 */}
+        <TabsContent value="characters">
+          <Card>
+            <CardHeader>
+              <CardTitle>关联角色</CardTitle>
+              <CardDescription>管理此世界书关联的角色</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-4">
+                <h3 className="font-medium">已关联角色</h3>
+                {isLoading ? (
+                  <p className="text-muted-foreground">加载中...</p>
+                ) : linkedCharacters.length === 0 ? (
+                  <p className="text-muted-foreground">暂无关联的角色</p>
+                ) : (
+                  <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                    {linkedCharacters.map(character => (
+                      <div key={character.id} className="flex items-center justify-between p-3 border rounded-md">
+                        <div className="flex items-center">
+                          {character.avatar && (
+                            <div className="w-10 h-10 rounded-full overflow-hidden mr-3">
+                              <Image
+                                src={character.avatar}
+                                alt={character.name}
+                                width={40}
+                                height={40}
+                                className="object-cover"
+                              />
+                            </div>
+                          )}
+                          <div>
+                            <p className="font-medium">{character.name}</p>
+                          </div>
+                        </div>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          className="text-destructive"
+                          onClick={() => handleUnlinkCharacter(character.id)}
+                          disabled={isLinkingCharacter}
+                        >
+                          <X className="h-4 w-4 mr-1" />
+                          解除
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              <div className="space-y-4">
+                <h3 className="font-medium">可关联角色</h3>
+                {isLoading ? (
+                  <p className="text-muted-foreground">加载中...</p>
+                ) : availableCharacters.length === 0 ? (
+                  <p className="text-muted-foreground">没有可关联的角色</p>
+                ) : (
+                  <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                    {availableCharacters.map(character => (
+                      <div key={character.id} className="flex items-center justify-between p-3 border rounded-md">
+                        <div className="flex items-center">
+                          {character.avatar && (
+                            <div className="w-10 h-10 rounded-full overflow-hidden mr-3">
+                              <Image
+                                src={character.avatar}
+                                alt={character.name}
+                                width={40}
+                                height={40}
+                                className="object-cover"
+                              />
+                            </div>
+                          )}
+                          <div>
+                            <p className="font-medium">{character.name}</p>
+                          </div>
+                        </div>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          className="text-green-600"
+                          onClick={() => handleLinkCharacter(character.id)}
+                          disabled={isLinkingCharacter}
+                        >
+                          <Check className="h-4 w-4 mr-1" />
+                          关联
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              <p className="text-sm text-muted-foreground mt-4">
+                提示: 你也可以在角色编辑页面关联多个世界书
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        {/* 全局设置 */}
         <TabsContent value="settings">
           <Card>
             <CardHeader>
-              <CardTitle>全局设置</CardTitle>
-              <CardDescription>世界书激活设置</CardDescription>
+              <CardTitle>世界书设置</CardTitle>
+              <CardDescription>管理世界书的全局设置</CardDescription>
             </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">世界书设置功能将在未来版本中添加</p>
+            <CardContent className="space-y-6">
+              {worldBook && (
+                <form className="space-y-4">
+                  <div>
+                    <Label htmlFor="scanDepth">扫描深度</Label>
+                    <div className="flex items-center gap-4">
+                      <Input 
+                        id="scanDepth" 
+                        type="number" 
+                        value={worldBook.settings.scanDepth} 
+                        onChange={e => setWorldBook({
+                          ...worldBook,
+                          settings: {
+                            ...worldBook.settings,
+                            scanDepth: parseInt(e.target.value)
+                          }
+                        })}
+                        min={1}
+                        max={20}
+                        className="w-20"
+                      />
+                      <span className="text-sm text-muted-foreground">
+                        扫描的最近消息数量
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="maxRecursionSteps">最大递归步骤</Label>
+                    <div className="flex items-center gap-4">
+                      <Input 
+                        id="maxRecursionSteps" 
+                        type="number" 
+                        value={worldBook.settings.maxRecursionSteps} 
+                        onChange={e => setWorldBook({
+                          ...worldBook,
+                          settings: {
+                            ...worldBook.settings,
+                            maxRecursionSteps: parseInt(e.target.value)
+                          }
+                        })}
+                        min={0}
+                        max={10}
+                        className="w-20"
+                      />
+                      <span className="text-sm text-muted-foreground">
+                        递归激活的最大步数 (0 表示无递归)
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="minActivations">最小激活数量</Label>
+                    <div className="flex items-center gap-4">
+                      <Input 
+                        id="minActivations" 
+                        type="number" 
+                        value={worldBook.settings.minActivations} 
+                        onChange={e => setWorldBook({
+                          ...worldBook,
+                          settings: {
+                            ...worldBook.settings,
+                            minActivations: parseInt(e.target.value)
+                          }
+                        })}
+                        min={0}
+                        className="w-20"
+                      />
+                      <span className="text-sm text-muted-foreground">
+                        处理的最少条目数量 (0 表示不限制)
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="maxDepth">最大深度</Label>
+                    <div className="flex items-center gap-4">
+                      <Input 
+                        id="maxDepth" 
+                        type="number" 
+                        value={worldBook.settings.maxDepth} 
+                        onChange={e => setWorldBook({
+                          ...worldBook,
+                          settings: {
+                            ...worldBook.settings,
+                            maxDepth: parseInt(e.target.value)
+                          }
+                        })}
+                        min={1}
+                        max={100}
+                        className="w-20"
+                      />
+                      <span className="text-sm text-muted-foreground">
+                        最大处理深度 (考虑的条目总数)
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="includeNames"
+                      checked={worldBook.settings.includeNames}
+                      onCheckedChange={checked => setWorldBook({
+                        ...worldBook,
+                        settings: {
+                          ...worldBook.settings,
+                          includeNames: checked
+                        }
+                      })}
+                    />
+                    <Label htmlFor="includeNames">包含角色名称</Label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="caseSensitive"
+                      checked={worldBook.settings.caseSensitive}
+                      onCheckedChange={checked => setWorldBook({
+                        ...worldBook,
+                        settings: {
+                          ...worldBook.settings,
+                          caseSensitive: checked
+                        }
+                      })}
+                    />
+                    <Label htmlFor="caseSensitive">默认区分大小写</Label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="matchWholeWords"
+                      checked={worldBook.settings.matchWholeWords}
+                      onCheckedChange={checked => setWorldBook({
+                        ...worldBook,
+                        settings: {
+                          ...worldBook.settings,
+                          matchWholeWords: checked
+                        }
+                      })}
+                    />
+                    <Label htmlFor="matchWholeWords">默认全词匹配</Label>
+                  </div>
+                  
+                  <Button type="button" onClick={handleSaveSettings}>
+                    保存设置
+                  </Button>
+                </form>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

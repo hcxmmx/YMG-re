@@ -1420,6 +1420,7 @@ interface WorldBookState {
   unlinkFromCharacter: (worldBookId: string, characterId: string) => Promise<void>;
   getWorldBookForCharacter: (characterId: string) => Promise<WorldBook | undefined>;
   getLinkedCharacters: (worldBookId: string) => Promise<Character[]>;
+  getWorldBooksForCharacter: (characterId: string) => Promise<WorldBook[]>;
 }
 
 // 世界书状态管理Store
@@ -1807,6 +1808,15 @@ export const useWorldBookStore = create<WorldBookState>()(
         }
       },
       
+      getWorldBooksForCharacter: async (characterId: string) => {
+        try {
+          return await worldBookStorage.getWorldBooksForCharacter(characterId);
+        } catch (error) {
+          console.error("获取角色关联的所有世界书失败:", error);
+          return [];
+        }
+      },
+      
       getLinkedCharacters: async (worldBookId: string) => {
         try {
           const worldBook = get().worldBooks.find(wb => wb.id === worldBookId);
@@ -1888,10 +1898,24 @@ async function getDynamicContent(placeholderType: string): Promise<string | null
           : currentCharacter.name
       }));
       
+      // 获取世界书
+      const worldBooks = await worldBookStorage.getWorldBooksForCharacter(currentCharacter.id);
+      if (worldBooks.length === 0) return null;
+      
+      // 使用第一个关联的世界书
+      const worldBook = worldBooks[0];
+      
       // 获取worldInfoBefore内容
-      const beforeContent = await generateWorldInfoBefore(currentCharacter.id, extendedMessages);
+      const beforeContent = await generateWorldInfoBefore({
+        worldBook,
+        chatMessages: extendedMessages
+      });
+      
       // 获取worldInfoAfter内容
-      const afterContent = await generateWorldInfoAfter(currentCharacter.id, extendedMessages);
+      const afterContent = await generateWorldInfoAfter({
+        worldBook,
+        chatMessages: extendedMessages
+      });
       
       // 合并内容（如果调用方未指定位置，则返回所有内容）
       return [beforeContent, afterContent].filter(Boolean).join('\n\n') || null;
@@ -1911,7 +1935,17 @@ async function getDynamicContent(placeholderType: string): Promise<string | null
           : currentCharacter.name
       }));
       
-      return await generateWorldInfoBefore(currentCharacter.id, extendedMessages);
+      // 获取世界书
+      const worldBooks = await worldBookStorage.getWorldBooksForCharacter(currentCharacter.id);
+      if (worldBooks.length === 0) return null;
+      
+      // 使用第一个关联的世界书
+      const worldBook = worldBooks[0];
+      
+      return await generateWorldInfoBefore({
+        worldBook,
+        chatMessages: extendedMessages
+      });
     }
     
     case 'worldInfoAfter': {
@@ -1927,7 +1961,17 @@ async function getDynamicContent(placeholderType: string): Promise<string | null
           : currentCharacter.name
       }));
       
-      return await generateWorldInfoAfter(currentCharacter.id, extendedMessages);
+      // 获取世界书
+      const worldBooks = await worldBookStorage.getWorldBooksForCharacter(currentCharacter.id);
+      if (worldBooks.length === 0) return null;
+      
+      // 使用第一个关联的世界书
+      const worldBook = worldBooks[0];
+      
+      return await generateWorldInfoAfter({
+        worldBook,
+        chatMessages: extendedMessages
+      });
     }
       
     case 'jailbreak':

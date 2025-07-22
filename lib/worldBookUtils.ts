@@ -6,6 +6,20 @@ interface ExtendedMessage extends Message {
   name?: string;
 }
 
+// 添加激活信息字段的条目类型
+export interface WorldBookEntryWithActivationInfo extends WorldBookEntry {
+  _activationInfo?: string;
+  _activationDetails?: {
+    activationReason?: string;
+    matchedKeys?: string[];
+    matchedPrimary?: boolean;
+    matchedSecondary?: boolean;
+    recursion?: boolean;
+    recursionLevel?: number;
+    probability?: number;
+  };
+}
+
 /**
  * 对文本进行扫描，查找匹配的世界书条目
  */
@@ -309,59 +323,337 @@ function escapeRegExp(string: string) {
 }
 
 /**
- * 生成世界书前置内容
+ * 测试条目激活
+ * @param params 参数对象
  */
-export async function generateWorldInfoBefore(characterId: string, messages: ExtendedMessage[]): Promise<string | null> {
-  // 获取与角色关联的世界书
-  const worldBook = await worldBookStorage.getWorldBookForCharacter(characterId);
-  if (!worldBook || !worldBook.enabled) return null;
+export async function activateEntries(params: {
+  worldBook: WorldBook;
+  chatMessages: ExtendedMessage[];
+  onDebug?: (message: string) => void;
+}): Promise<WorldBookEntryWithActivationInfo[]> {
+  const { worldBook, chatMessages, onDebug } = params;
   
-  // 准备扫描文本（整个对话历史）
-  const scanText = messages.map(msg => msg.content).join('\n\n');
+  if (!worldBook.enabled) {
+    onDebug?.("世界书已禁用，跳过激活");
+    return [];
+  }
   
-  // 激活世界书条目
-  const character = messages.find(msg => msg.role === 'assistant')?.name || '';
-  const player = messages.find(msg => msg.role === 'user')?.name || '';
+  // 日志函数
+  const log = (message: string) => {
+    onDebug?.(message);
+  };
   
-  const { beforeEntries } = await activateWorldBookEntries(worldBook, scanText, {
-    chatMessages: messages,
-    characterName: character,
-    playerName: player
+  log(`开始处理世界书: ${worldBook.name}`);
+  log(`共有 ${worldBook.entries.length} 条条目`);
+  
+  // 拷贝条目，添加运行时状态
+  const entries = worldBook.entries.map(entry => ({
+    ...entry,
+    _activated: false,
+    _stickyRemaining: 0,
+    _cooldownRemaining: 0
+  })) as WorldBookEntryWithActivationInfo[];
+  
+  // 按顺序排序条目
+  entries.sort((a, b) => a.order - b.order);
+  
+  // 过滤禁用的条目
+  const enabledEntries = entries.filter(entry => entry.enabled);
+  log(`启用的条目: ${enabledEntries.length} 条`);
+  
+  const activatedEntries: WorldBookEntryWithActivationInfo[] = [];
+  const scanText = composeScanText(chatMessages, worldBook.settings.scanDepth || 5);
+  
+  log(`扫描文本长度: ${scanText.length} 字符`);
+  
+  // 处理常量条目 (常量总是被激活)
+  const constantEntries = enabledEntries.filter(entry => entry.strategy === 'constant');
+  constantEntries.forEach(entry => {
+    entry._activated = true;
+    entry._activationInfo = "常量条目自动激活";
+    activatedEntries.push(entry);
+    log(`激活常量条目: ${entry.title}`);
   });
   
-  // 如果没有激活的条目，返回null
-  if (beforeEntries.length === 0) return null;
+  // 处理选择性条目 (需要关键字匹配)
+  const selectiveEntries = enabledEntries.filter(entry => entry.strategy === 'selective');
+  for (const entry of selectiveEntries) {
+    const activationResult = testSelectiveActivation(entry, scanText);
+    if (activationResult.activated) {
+      entry._activated = true;
+      entry._activationInfo = activationResult.reason;
+      activatedEntries.push(entry);
+      log(`激活选择性条目: ${entry.title} - ${activationResult.reason}`);
+    } else {
+      log(`未激活条目: ${entry.title} - ${activationResult.reason}`);
+    }
+  }
   
-  // 合并条目内容
-  const content = beforeEntries.map(entry => entry.content).join('\n\n');
-  return content;
+  // 处理向量化条目 (需要语义匹配)
+  const vectorEntries = enabledEntries.filter(entry => entry.strategy === 'vectorized');
+  if (vectorEntries.length > 0) {
+    log(`注意: 向量化条目需要额外实现，当前版本不支持`);
+  }
+  
+  // 递归处理
+  if (worldBook.settings.maxRecursionSteps > 0) {
+    log(`开始递归处理, 最大步数: ${worldBook.settings.maxRecursionSteps}`);
+    await processRecursion({
+      worldBook,
+      activatedEntries,
+      allEntries: enabledEntries,
+      maxSteps: worldBook.settings.maxRecursionSteps,
+      log
+    });
+  }
+  
+  log(`总激活条目: ${activatedEntries.length} 条`);
+  
+  // 过滤并排序激活的条目
+  const sortedActivatedEntries = [...activatedEntries].sort((a, b) => a.order - b.order);
+  
+  return sortedActivatedEntries;
 }
 
 /**
- * 生成世界书后置内容
+ * 测试选择性条目激活
  */
-export async function generateWorldInfoAfter(characterId: string, messages: ExtendedMessage[]): Promise<string | null> {
-  // 获取与角色关联的世界书
-  const worldBook = await worldBookStorage.getWorldBookForCharacter(characterId);
-  if (!worldBook || !worldBook.enabled) return null;
+function testSelectiveActivation(entry: WorldBookEntryWithActivationInfo, scanText: string): { 
+  activated: boolean;
+  reason: string;
+  matchedKeys?: string[];
+} {
+  // 如果没有主要关键字，无法激活
+  if (!entry.primaryKeys || entry.primaryKeys.length === 0) {
+    return { activated: false, reason: "没有主要关键字" };
+  }
   
-  // 准备扫描文本（整个对话历史）
-  const scanText = messages.map(msg => msg.content).join('\n\n');
+  // 准备匹配选项
+  const matchOptions = {
+    caseSensitive: entry.caseSensitive ?? false,
+    wholeWord: entry.matchWholeWords ?? true
+  };
   
-  // 激活世界书条目
-  const character = messages.find(msg => msg.role === 'assistant')?.name || '';
-  const player = messages.find(msg => msg.role === 'user')?.name || '';
+  // 尝试匹配主要关键字
+  const matchedPrimaryKeys = entry.primaryKeys.filter(key => 
+    keywordMatches(scanText, key, matchOptions)
+  );
   
-  const { afterEntries } = await activateWorldBookEntries(worldBook, scanText, {
-    chatMessages: messages,
-    characterName: character,
-    playerName: player
+  if (matchedPrimaryKeys.length === 0) {
+    return { activated: false, reason: "没有匹配的主要关键字" };
+  }
+  
+  // 如果没有次要关键字，直接激活
+  if (!entry.secondaryKeys || entry.secondaryKeys.length === 0) {
+    return { 
+      activated: true, 
+      reason: `匹配主要关键字: ${matchedPrimaryKeys.join(', ')}`,
+      matchedKeys: matchedPrimaryKeys
+    };
+  }
+  
+  // 匹配次要关键字
+  const matchedSecondaryKeys = entry.secondaryKeys.filter(key => 
+    keywordMatches(scanText, key, matchOptions)
+  );
+  
+  // 根据逻辑判断是否激活
+  let activated = false;
+  let reason = '';
+  
+  switch (entry.selectiveLogic) {
+    case 'andAny':
+      activated = matchedSecondaryKeys.length > 0;
+      reason = activated 
+        ? `匹配主要关键字(${matchedPrimaryKeys.join(', ')})且至少一个次要关键字(${matchedSecondaryKeys.join(', ')})`
+        : "没有匹配的次要关键字(需要至少一个)";
+      break;
+    case 'andAll':
+      activated = matchedSecondaryKeys.length === entry.secondaryKeys.length;
+      reason = activated
+        ? `匹配主要关键字(${matchedPrimaryKeys.join(', ')})且所有次要关键字`
+        : "未匹配所有次要关键字(需要全部匹配)";
+      break;
+    case 'notAny':
+      activated = matchedSecondaryKeys.length === 0;
+      reason = activated
+        ? `匹配主要关键字(${matchedPrimaryKeys.join(', ')})且不包含任何次要关键字`
+        : `包含了排除的次要关键字(${matchedSecondaryKeys.join(', ')})`;
+      break;
+    case 'notAll':
+      activated = matchedSecondaryKeys.length < entry.secondaryKeys.length;
+      reason = activated
+        ? `匹配主要关键字(${matchedPrimaryKeys.join(', ')})且不包含所有次要关键字`
+        : "包含了所有排除的次要关键字";
+      break;
+  }
+  
+  return {
+    activated,
+    reason,
+    matchedKeys: matchedPrimaryKeys
+  };
+}
+
+/**
+ * 关键字是否匹配
+ */
+function keywordMatches(text: string, keyword: string, options: { caseSensitive: boolean, wholeWord: boolean }): boolean {
+  // 处理正则特殊字符
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  
+  // 构建正则表达式
+  const pattern = options.wholeWord 
+    ? `\\b${escaped}\\b` 
+    : escaped;
+  
+  const flags = options.caseSensitive ? 'g' : 'gi';
+  const regex = new RegExp(pattern, flags);
+  
+  return regex.test(text);
+}
+
+/**
+ * 组合扫描文本
+ */
+function composeScanText(messages: ExtendedMessage[], scanDepth: number): string {
+  // 取最近的N条消息
+  const recentMessages = messages.slice(-scanDepth);
+  
+  // 合并消息内容
+  return recentMessages.map(msg => {
+    const prefix = msg.name ? `${msg.name}: ` : '';
+    return `${prefix}${msg.content}`;
+  }).join('\n\n');
+}
+
+/**
+ * 处理递归激活
+ */
+async function processRecursion(params: {
+  worldBook: WorldBook;
+  activatedEntries: WorldBookEntryWithActivationInfo[];
+  allEntries: WorldBookEntryWithActivationInfo[];
+  maxSteps: number;
+  log: (message: string) => void;
+}): Promise<void> {
+  const { worldBook, activatedEntries, allEntries, maxSteps, log } = params;
+  
+  // 追踪已处理的条目
+  const processedIds = new Set(activatedEntries.map(e => e.id));
+  let newActivations = true;
+  let step = 0;
+  
+  // 递归激活，直到没有新激活或达到最大步数
+  while (newActivations && step < maxSteps) {
+    step++;
+    newActivations = false;
+    log(`开始递归步骤 ${step}`);
+    
+    // 创建当前激活条目的文本
+    const recursionText = activatedEntries
+      .filter(e => !e.preventRecursion) // 排除防止递归的条目
+      .map(e => e.content)
+      .join('\n\n');
+    
+    // 查找可能被递归激活的条目
+    const recursionCandidates = allEntries.filter(e => 
+      // 排除已激活的条目
+      !processedIds.has(e.id) && 
+      // 排除不可递归的条目
+      !e.excludeRecursion && 
+      // 包括延迟递归的条目
+      (e.delayUntilRecursion || e.strategy === 'selective')
+    );
+    
+    log(`候选递归条目数量: ${recursionCandidates.length}`);
+    
+    // 尝试激活每个候选条目
+    for (const entry of recursionCandidates) {
+      // 检查递归等级
+      if (entry.recursionLevel > step) {
+        log(`条目 ${entry.title} 的递归等级(${entry.recursionLevel})高于当前步骤(${step}), 跳过`);
+        continue;
+      }
+      
+      // 检查是否符合递归激活条件
+      const activationResult = testSelectiveActivation(entry, recursionText);
+      if (activationResult.activated) {
+        entry._activated = true;
+        entry._activationInfo = `递归激活(步骤${step}): ${activationResult.reason}`;
+        activatedEntries.push(entry);
+        processedIds.add(entry.id);
+        newActivations = true;
+        log(`递归激活条目: ${entry.title}`);
+      }
+    }
+    
+    if (!newActivations) {
+      log(`递归步骤 ${step}: 没有新的激活`);
+    }
+  }
+}
+
+/**
+ * 生成世界信息（角色描述前）
+ * @param params 参数对象
+ */
+export async function generateWorldInfoBefore(params: {
+  worldBook: WorldBook;
+  chatMessages: Message[];
+}): Promise<string> {
+  const { worldBook, chatMessages } = params;
+  
+  // 如果世界书被禁用，返回空字符串
+  if (!worldBook.enabled) {
+    return '';
+  }
+  
+  // 获取激活的条目
+  const activatedEntries = await activateEntries({
+    worldBook,
+    chatMessages: chatMessages as ExtendedMessage[]
   });
   
-  // 如果没有激活的条目，返回null
-  if (afterEntries.length === 0) return null;
+  // 过滤出前置条目并按顺序排序
+  const beforeEntries = activatedEntries
+    .filter(entry => entry.position === 'before')
+    .sort((a, b) => a.order - b.order);
   
-  // 合并条目内容
-  const content = afterEntries.map(entry => entry.content).join('\n\n');
-  return content;
-} 
+  // 将条目内容合并为字符串
+  return beforeEntries
+    .map(entry => entry.content)
+    .join('\n\n');
+}
+
+/**
+ * 生成世界信息（角色描述后）
+ * @param params 参数对象
+ */
+export async function generateWorldInfoAfter(params: {
+  worldBook: WorldBook;
+  chatMessages: Message[];
+}): Promise<string> {
+  const { worldBook, chatMessages } = params;
+  
+  // 如果世界书被禁用，返回空字符串
+  if (!worldBook.enabled) {
+    return '';
+  }
+  
+  // 获取激活的条目
+  const activatedEntries = await activateEntries({
+    worldBook,
+    chatMessages: chatMessages as ExtendedMessage[]
+  });
+  
+  // 过滤出后置条目并按顺序排序
+  const afterEntries = activatedEntries
+    .filter(entry => entry.position === 'after')
+    .sort((a, b) => a.order - b.order);
+  
+  // 将条目内容合并为字符串
+  return afterEntries
+    .map(entry => entry.content)
+    .join('\n\n');
+}

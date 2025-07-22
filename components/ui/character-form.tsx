@@ -6,10 +6,11 @@ import { characterStorage } from "@/lib/storage";
 import { generateId } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useWorldBookStore } from "@/lib/store";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 
 interface CharacterFormProps {
@@ -37,10 +38,9 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
   const router = useRouter();
 
   // 世界书相关状态
-  const { worldBooks, loadWorldBooks, linkToCharacter, unlinkFromCharacter, getWorldBookForCharacter } = useWorldBookStore();
+  const { worldBooks, loadWorldBooks, getWorldBooksForCharacter } = useWorldBookStore();
   const [availableWorldBooks, setAvailableWorldBooks] = useState<WorldBook[]>([]);
-  const [selectedWorldBookId, setSelectedWorldBookId] = useState<string>("none");
-  const [currentWorldBook, setCurrentWorldBook] = useState<WorldBook | null>(null);
+  const [selectedWorldBookIds, setSelectedWorldBookIds] = useState<string[]>([]);
   const [isLoadingWorldBooks, setIsLoadingWorldBooks] = useState(false);
   
   // 加载世界书数据
@@ -58,12 +58,10 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
         
         // 如果是编辑模式，获取当前关联的世界书
         if (initialCharacter?.id) {
-          const linkedWorldBook = await getWorldBookForCharacter(initialCharacter.id);
-          if (linkedWorldBook) {
-            setCurrentWorldBook(linkedWorldBook);
-            setSelectedWorldBookId(linkedWorldBook.id);
-          } else {
-            setSelectedWorldBookId("none");
+          // 使用characterStorage直接获取角色的worldBookIds
+          const character = await characterStorage.getCharacter(initialCharacter.id);
+          if (character && character.worldBookIds && character.worldBookIds.length > 0) {
+            setSelectedWorldBookIds(character.worldBookIds);
           }
         }
         
@@ -75,7 +73,7 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
     };
     
     loadWorldBookData();
-  }, [loadWorldBooks, initialCharacter, getWorldBookForCharacter]);
+  }, [loadWorldBooks, initialCharacter]);
   
   // 处理输入变化
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -131,8 +129,14 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
   };
 
   // 处理世界书选择变更
-  const handleWorldBookChange = (value: string) => {
-    setSelectedWorldBookId(value);
+  const handleWorldBookChange = (worldBookId: string, checked: boolean) => {
+    setSelectedWorldBookIds(prev => {
+      if (checked) {
+        return [...prev, worldBookId];
+      } else {
+        return prev.filter(id => id !== worldBookId);
+      }
+    });
   };
 
   // 保存角色
@@ -150,23 +154,12 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
       ...character,
       id,
       alternateGreetings: filteredGreetings,
+      worldBookIds: selectedWorldBookIds, // 保存选中的世界书ID列表
     } as Character;
 
     try {
       // 保存角色
       await characterStorage.saveCharacter(characterToSave);
-      
-      // 处理世界书关联
-      if (selectedWorldBookId && selectedWorldBookId !== "none") {
-        // 如果选择了不同的世界书，先解除旧关联再建立新关联
-        if (currentWorldBook && currentWorldBook.id !== selectedWorldBookId) {
-          await unlinkFromCharacter(currentWorldBook.id, id);
-        }
-        await linkToCharacter(selectedWorldBookId, id);
-      } else if (currentWorldBook) {
-        // 如果清除了世界书选择，解除关联
-        await unlinkFromCharacter(currentWorldBook.id, id);
-      }
       
       if (onSave) {
         onSave(characterToSave);
@@ -271,32 +264,53 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
             <p className="text-sm text-muted-foreground mt-1">用逗号分隔多个标签</p>
           </div>
 
-          {/* 世界书选择 */}
-          <div>
-            <Label htmlFor="worldBook">关联世界书</Label>
-            <Select 
-              value={selectedWorldBookId} 
-              onValueChange={handleWorldBookChange}
-              disabled={isLoadingWorldBooks}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="选择世界书" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">无</SelectItem>
-                {availableWorldBooks.map((wb) => (
-                  <SelectItem key={wb.id} value={wb.id}>
-                    {wb.name}
-                  </SelectItem>
+          {/* 世界书多选 */}
+          <div className="space-y-4">
+            <div>
+              <Label className="text-base">关联世界书</Label>
+              <p className="text-sm text-muted-foreground mt-1 mb-4">
+                {isLoadingWorldBooks ? "加载中..." : "选择要关联的世界书（可多选）"}
+              </p>
+            </div>
+            
+            {isLoadingWorldBooks ? (
+              <div className="flex items-center justify-center h-20">
+                <p>加载世界书中...</p>
+              </div>
+            ) : availableWorldBooks.length === 0 ? (
+              <div className="text-sm text-muted-foreground p-4 border rounded-md">
+                没有可用的世界书。请先创建并启用世界书。
+              </div>
+            ) : (
+              <div className="space-y-2 border rounded-md p-4">
+                {availableWorldBooks.map(worldBook => (
+                  <div key={worldBook.id} className="flex items-center space-x-2">
+                    <Checkbox 
+                      id={`worldbook-${worldBook.id}`}
+                      checked={selectedWorldBookIds.includes(worldBook.id)}
+                      onCheckedChange={(checked) => handleWorldBookChange(worldBook.id, !!checked)}
+                    />
+                    <Label 
+                      htmlFor={`worldbook-${worldBook.id}`}
+                      className="flex items-center"
+                    >
+                      {worldBook.name}
+                      {worldBook.description && (
+                        <span className="ml-2 text-sm text-muted-foreground">
+                          - {worldBook.description.length > 30 ? 
+                             worldBook.description.substring(0, 30) + '...' : 
+                             worldBook.description}
+                        </span>
+                      )}
+                    </Label>
+                  </div>
                 ))}
-              </SelectContent>
-            </Select>
-            <p className="text-sm text-muted-foreground mt-1">
-              {isLoadingWorldBooks ? "加载中..." : "关联世界书将在聊天中自动使用"}
-            </p>
-            {currentWorldBook && (
-              <p className="text-sm text-blue-500 mt-1">
-                当前关联: {currentWorldBook.name}
+              </div>
+            )}
+            
+            {selectedWorldBookIds.length > 0 && (
+              <p className="text-sm text-blue-500">
+                已选择 {selectedWorldBookIds.length} 个世界书
               </p>
             )}
           </div>

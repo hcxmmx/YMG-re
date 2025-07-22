@@ -44,6 +44,7 @@ interface AppDB extends DBSchema {
       tags?: string[];
       createdAt: number;
       updatedAt: number;
+      worldBookIds?: string[]; // 新增：角色关联的世界书ID列表
     };
     indexes: { 'by-name': string };
   };
@@ -1313,7 +1314,7 @@ export const worldBookStorage = {
 
   /**
    * 更新世界书与角色的关联
-   * 一个世界书可以关联多个角色，但一个角色最多关联一个世界书
+   * 多对多关系：一个世界书可以关联多个角色，一个角色也可以关联多个世界书
    */
   async updateCharacterLinks(worldBookId: string, characterIds: string[]): Promise<void> {
     const db = await initDB();
@@ -1333,80 +1334,116 @@ export const worldBookStorage = {
     // 需要添加关联的角色IDs（在新列表中但不在旧列表中）
     const idsToAdd = characterIds.filter(id => !oldCharacterIds.includes(id));
     
-    // 所有需要查找的其他世界书（关联到同一角色的）
-    const allRelatedWorldBooks = await db.getAllFromIndex('worldBooks', 'by-name');
+    // 更新世界书的角色关联
+    worldBook.characterIds = characterIds;
+    await db.put('worldBooks', worldBook);
     
-    // 对于每个要添加关联的角色，确保没有其他世界书与之关联
+    // 更新角色的世界书关联
+    // 1. 对于需要添加的角色，添加世界书ID到其worldBookIds
     for (const characterId of idsToAdd) {
-      const otherWorldBooks = allRelatedWorldBooks.filter(wb => 
-        wb.id !== worldBookId && 
-        wb.characterIds && 
-        wb.characterIds.includes(characterId)
-      );
-      
-      // 从其他世界书中移除该角色关联
-      for (const otherWorldBook of otherWorldBooks) {
-        otherWorldBook.characterIds = otherWorldBook.characterIds.filter(id => id !== characterId);
-        await db.put('worldBooks', otherWorldBook);
+      const character = await characterStorage.getCharacter(characterId);
+      if (character) {
+        character.worldBookIds = [...(character.worldBookIds || []), worldBookId];
+        await db.put('characters', character);
       }
     }
     
-    // 更新当前世界书的角色关联
-    worldBook.characterIds = characterIds;
-    await db.put('worldBooks', worldBook);
+    // 2. 对于需要移除的角色，从其worldBookIds中移除世界书ID
+    for (const characterId of idsToRemove) {
+      const character = await characterStorage.getCharacter(characterId);
+      if (character && character.worldBookIds) {
+        character.worldBookIds = character.worldBookIds.filter(id => id !== worldBookId);
+        await db.put('characters', character);
+      }
+    }
   },
 
   /**
    * 将世界书关联到角色
    */
   async linkToCharacter(worldBookId: string, characterId: string): Promise<void> {
-    const worldBook = await this.getWorldBook(worldBookId);
-    if (!worldBook) {
-      throw new Error('世界书不存在');
-    }
-
-    // 确保characterIds是数组
-    const characterIds = worldBook.characterIds || [];
+    const db = await initDB();
     
-    // 如果已经关联，不做任何更改
-    if (characterIds.includes(characterId)) {
-      return;
+    // 获取世界书和角色
+    const worldBook = await this.getWorldBook(worldBookId);
+    const character = await characterStorage.getCharacter(characterId);
+    
+    if (!worldBook || !character) {
+      throw new Error('世界书或角色不存在');
     }
 
-    // 添加角色ID到关联列表
-    await this.updateCharacterLinks(worldBookId, [...characterIds, characterId]);
+    // 更新世界书的角色关联
+    const characterIds = worldBook.characterIds || [];
+    if (!characterIds.includes(characterId)) {
+      worldBook.characterIds = [...characterIds, characterId];
+      await db.put('worldBooks', worldBook);
+    }
+    
+    // 更新角色的世界书关联
+    const worldBookIds = character.worldBookIds || [];
+    if (!worldBookIds.includes(worldBookId)) {
+      character.worldBookIds = [...worldBookIds, worldBookId];
+      await db.put('characters', character);
+    }
   },
 
   /**
    * 解除世界书与角色的关联
    */
   async unlinkFromCharacter(worldBookId: string, characterId: string): Promise<void> {
+    const db = await initDB();
+    
+    // 获取世界书和角色
     const worldBook = await this.getWorldBook(worldBookId);
-    if (!worldBook || !worldBook.characterIds) {
+    const character = await characterStorage.getCharacter(characterId);
+    
+    // 如果世界书或角色不存在，直接返回
+    if (!worldBook && !character) {
       return;
     }
 
-    // 从关联列表中移除角色ID
-    const characterIds = worldBook.characterIds.filter(id => id !== characterId);
-    await this.updateCharacterLinks(worldBookId, characterIds);
+    // 更新世界书的角色关联
+    if (worldBook && worldBook.characterIds) {
+      worldBook.characterIds = worldBook.characterIds.filter(id => id !== characterId);
+      await db.put('worldBooks', worldBook);
+    }
+    
+    // 更新角色的世界书关联
+    if (character && character.worldBookIds) {
+      character.worldBookIds = character.worldBookIds.filter(id => id !== worldBookId);
+      await db.put('characters', character);
+    }
   },
 
   /**
-   * 获取与角色关联的世界书
+   * 获取与角色关联的所有世界书
    */
-  async getWorldBookForCharacter(characterId: string): Promise<WorldBook | undefined> {
+  async getWorldBooksForCharacter(characterId: string): Promise<WorldBook[]> {
     const db = await initDB();
     
-    // 查找与角色关联的世界书
-    const allWorldBooks = await db.getAllFromIndex('worldBooks', 'by-name');
-    const linkedWorldBooks = allWorldBooks.filter(worldBook => 
-      worldBook.characterIds && 
-      worldBook.characterIds.includes(characterId) &&
-      worldBook.enabled
-    );
+    // 获取角色信息
+    const character = await characterStorage.getCharacter(characterId);
+    if (!character || !character.worldBookIds || character.worldBookIds.length === 0) {
+      return [];
+    }
     
-    // 返回第一个关联的世界书（应该只有一个）
-    return linkedWorldBooks.length > 0 ? linkedWorldBooks[0] : undefined;
+    // 获取所有世界书
+    const allWorldBooks = await db.getAllFromIndex('worldBooks', 'by-name');
+    
+    // 过滤出与角色关联的启用的世界书
+    return allWorldBooks.filter(worldBook => 
+      worldBook.enabled && 
+      character.worldBookIds?.includes(worldBook.id)
+    );
+  },
+  
+  /**
+   * 获取与角色关联的世界书 (原有方法，保留向后兼容性)
+   * 现在返回所有关联的启用世界书中的第一个
+   */
+  async getWorldBookForCharacter(characterId: string): Promise<WorldBook | undefined> {
+    const worldBooks = await this.getWorldBooksForCharacter(characterId);
+    return worldBooks.length > 0 ? worldBooks[0] : undefined;
   }
 };
 

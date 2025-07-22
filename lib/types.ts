@@ -132,6 +132,7 @@ export interface Character {
   tags?: string[];        // 角色标签
   createdAt: number;
   updatedAt: number;
+  worldBookIds?: string[]; // 关联的世界书ID列表
   // 注意: 系统提示词(systemPrompt)将在未来的预设模块中处理，而不是直接存储在角色信息中
 }
 
