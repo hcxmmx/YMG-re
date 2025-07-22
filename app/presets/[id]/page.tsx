@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { usePromptPresetStore } from "@/lib/store";
 import { ArrowLeft, Edit, Trash2, Plus, GripVertical, Info } from "lucide-react";
 import { PromptPresetItem } from "@/lib/types";
@@ -530,6 +530,11 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
                 ? "编辑占位条目"
                 : "编辑提示词"}
             </DialogTitle>
+            <DialogDescription>
+              {editPromptIndex !== null && editPromptIndex < prompts.length && prompts[editPromptIndex].isPlaceholder
+                ? "编辑一个动态占位条目，它将在运行时被实际内容替换。"
+                : "编辑一个提示词条目，它将用于生成AI回复。"}
+            </DialogDescription>
           </DialogHeader>
           
           {editPrompt && (

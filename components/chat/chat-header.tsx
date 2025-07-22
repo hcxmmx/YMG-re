@@ -664,7 +664,7 @@ export function ChatHeader({ character }: ChatHeaderProps) {
           <DialogHeader>
             <DialogTitle>删除分支</DialogTitle>
             <DialogDescription>
-              确定要删除分支"{selectedBranch?.name || ''}"吗？此操作不可撤销，该分支的所有消息将被删除。
+              确定要删除分支"{selectedBranch?.name || ''}"吗？此操作不可撤销。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { Message as MessageType, Character } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { replaceMacros } from "@/lib/macroUtils";
 
 // 添加一个打字动画指示器组件
 function TypingIndicator({ 
@@ -342,7 +343,12 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                     </button>
                     <button
                       onClick={handleSubmitEdit}
-                      className="px-2 py-1 bg-primary text-primary-foreground hover:bg-primary/90 rounded-md text-xs"
+                      className={cn(
+                        "px-2 py-1 rounded-md text-xs",
+                        isUser 
+                          ? "bg-primary text-primary-foreground hover:bg-primary/90" // 用户消息中使用主色按钮
+                          : "bg-primary text-primary-foreground hover:bg-primary/90" // AI消息中使用主色按钮
+                      )}
                     >
                       保存
                     </button>
@@ -351,7 +357,25 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
               ) : showRaw ? (
                 <pre className="whitespace-pre-wrap text-sm">{message.content}</pre>
               ) : (
-                <ReactMarkdown className="break-words">{message.content}</ReactMarkdown>
+                <>
+                  {/* 应用宏替换后显示消息内容 */}
+                  {(() => {
+                    // 获取当前玩家和角色名称用于宏替换
+                    const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
+                    const playerName = currentPlayer?.name || "玩家";
+                    const characterName = character?.name || "AI";
+                    
+                    // 应用宏替换到消息内容
+                    const processedContent = replaceMacros(
+                      message.content, 
+                      playerName, 
+                      characterName
+                    );
+                    
+                    // 使用ReactMarkdown渲染处理后的内容
+                    return <ReactMarkdown className="break-words">{processedContent}</ReactMarkdown>;
+                  })()}
+                </>
               )}
             </div>
 

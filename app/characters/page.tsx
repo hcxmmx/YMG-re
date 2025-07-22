@@ -11,6 +11,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { useChatStore } from "@/lib/store";
 
@@ -139,6 +140,9 @@ export default function CharactersPage() {
         <DialogContent className="sm:max-w-[850px] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{dialogTitle}</DialogTitle>
+            <DialogDescription>
+              {editingCharacter ? "编辑角色信息，包括名称、描述、开场白和头像" : "创建一个新的角色，填写基本信息"}
+            </DialogDescription>
           </DialogHeader>
           <CharacterForm
             initialCharacter={editingCharacter || undefined}

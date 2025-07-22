@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { Player } from "@/lib/types";
-import { Button } from "@/components/ui/button";
-import { PlayerForm } from "@/components/ui/player-form";
-import { PlayerCard } from "@/components/ui/player-card";
 import { usePlayerStore } from "@/lib/store";
+import { PlayerCard } from "@/components/ui/player-card";
+import { PlayerForm } from "@/components/ui/player-form";
+import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { generateId } from "@/lib/utils";
 
@@ -97,6 +98,9 @@ export default function PlayersPage() {
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>{dialogTitle}</DialogTitle>
+            <DialogDescription>
+              {editingPlayer ? "编辑玩家信息，包括名称、描述和头像" : "创建一个新的玩家，填写基本信息"}
+            </DialogDescription>
           </DialogHeader>
           <PlayerForm
             initialPlayer={editingPlayer || undefined}

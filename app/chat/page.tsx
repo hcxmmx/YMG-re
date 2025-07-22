@@ -11,6 +11,7 @@ import { useNavbar } from "@/app/layout";
 import { useSearchParams } from "next/navigation";
 import { TypingIndicator } from "@/components/chat/message";
 import { trimMessageHistory } from "@/lib/tokenUtils";
+import { replaceMacros } from "@/lib/macroUtils";
 
 // 定义加载类型
 type LoadingType = 'new' | 'regenerate' | 'variant';
@@ -252,10 +253,18 @@ export default function ChatPage() {
       
       console.log(`[重新生成] 消息裁剪: 从${requestMessagesOriginal.length}条消息裁剪到${requestMessages.length}条`);
 
+      // 获取当前玩家和角色名称用于宏替换
+      const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
+      const playerName = currentPlayer?.name || "玩家";
+      const characterName = currentCharacter?.name || "AI";
+
+      // 应用宏替换到系统提示词
+      const processedSystemPrompt = replaceMacros(systemPrompt, playerName, characterName);
+
       // API调用参数
       const params = {
         messages: requestMessages,
-        systemPrompt: systemPrompt,
+        systemPrompt: processedSystemPrompt,
         apiKey: settings.apiKey,
         stream: settings.enableStreaming,
         temperature: settings.temperature,
@@ -581,10 +590,18 @@ export default function ChatPage() {
       
       console.log(`[生成变体] 消息裁剪: 从${requestMessagesOriginal.length}条消息裁剪到${requestMessages.length}条`);
 
+      // 获取当前玩家和角色名称用于宏替换
+      const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
+      const playerName = currentPlayer?.name || "玩家";
+      const characterName = currentCharacter?.name || "AI";
+
+      // 应用宏替换到系统提示词
+      const processedSystemPrompt = replaceMacros(systemPrompt, playerName, characterName);
+
       // API调用参数
       const params = {
         messages: requestMessages,
-        systemPrompt: systemPrompt,
+        systemPrompt: processedSystemPrompt,
         apiKey: settings.apiKey,
         stream: settings.enableStreaming,
         temperature: settings.temperature,
@@ -876,11 +893,19 @@ export default function ChatPage() {
       return;
     }
 
+    // 获取当前玩家和角色名称用于宏替换
+    const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
+    const playerName = currentPlayer?.name || "玩家";
+    const characterName = currentCharacter?.name || "AI";
+
+    // 应用宏替换到用户消息内容
+    const processedContent = replaceMacros(content, playerName, characterName);
+
     // 添加用户消息
     const userMessage: MessageType = {
       id: generateId(),
       role: "user",
-      content,
+      content: processedContent,
       images,
       timestamp: new Date(),
     };
@@ -906,10 +931,13 @@ export default function ChatPage() {
       
       console.log(`消息裁剪: 从${allMessages.length}条消息裁剪到${trimmedMessages.length}条`);
 
+      // 应用宏替换到系统提示词
+      const processedSystemPrompt = replaceMacros(systemPrompt, playerName, characterName);
+
       // API调用参数，使用裁剪后的消息
       const params = {
         messages: trimmedMessages,
-        systemPrompt: systemPrompt,
+        systemPrompt: processedSystemPrompt,
         apiKey: settings.apiKey,
         stream: settings.enableStreaming,
         temperature: settings.temperature,
@@ -1251,10 +1279,18 @@ export default function ChatPage() {
       
       console.log(`[直接请求回复] 消息裁剪: 从${requestMessagesOriginal.length}条消息裁剪到${requestMessages.length}条`);
 
+      // 获取当前玩家和角色名称用于宏替换
+      const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
+      const playerName = currentPlayer?.name || "玩家";
+      const characterName = currentCharacter?.name || "AI";
+
+      // 应用宏替换到系统提示词
+      const processedSystemPrompt = replaceMacros(systemPrompt, playerName, characterName);
+
       // API调用参数
       const params = {
         messages: requestMessages,
-        systemPrompt: systemPrompt,
+        systemPrompt: processedSystemPrompt,
         apiKey: settings.apiKey,
         stream: settings.enableStreaming,
         temperature: settings.temperature,
