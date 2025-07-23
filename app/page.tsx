@@ -10,14 +10,14 @@ export default function Home() {
       <div className="z-10 max-w-5xl w-full items-center justify-center font-mono text-sm lg:flex">
         <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
           <div className="flex items-center justify-center lg:pointer-events-auto">
-            由 Gemini API 提供支持
+            
           </div>
         </div>
       </div>
 
       <div className="flex flex-col items-center justify-center text-center">
-        <h1 className="text-5xl sm:text-6xl font-bold tracking-tighter mb-4">AI对话平台</h1>
-        <p className="text-xl mb-8 max-w-2xl">基于Gemini API的智能对话体验</p>
+        <h1 className="text-5xl sm:text-6xl font-bold tracking-tighter mb-4">云边有个妙妙馆</h1>
+        <p className="text-xl mb-8 max-w-2xl"></p>
         
         <div className="flex flex-wrap gap-4 justify-center mb-12">
           <Button size="lg">
@@ -39,7 +39,7 @@ export default function Home() {
           <div className="flex flex-col items-center p-6 bg-card rounded-lg border shadow-sm">
             <Sparkles className="h-10 w-10 mb-4 text-primary" />
             <h2 className="text-xl font-bold mb-2">强大AI能力</h2>
-            <p className="text-center">基于Google Gemini模型，提供准确、智能的回答</p>
+            <p className="text-center">提供准确、智能的回答和交互体验</p>
           </div>
           <div className="flex flex-col items-center p-6 bg-card rounded-lg border shadow-sm">
             <MessageSquare className="h-10 w-10 mb-4 text-primary" />

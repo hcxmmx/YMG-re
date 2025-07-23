@@ -34,7 +34,7 @@ export function Header() {
       <div className="container mx-auto flex items-center justify-between p-2 md:p-4">
         {/* 标志和标题 */}
         <Link href="/" className="font-bold text-lg md:text-xl">
-          AI角色扮演
+          云妙馆
         </Link>
 
         {/* 导航链接 */}
