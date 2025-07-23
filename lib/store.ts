@@ -12,6 +12,7 @@ import { playerStorage } from './storage';
 import { Player } from './types';
 import { worldBookStorage } from './storage';
 import { WorldBook, WorldBookEntry } from './types';
+import { RegexScript, importRegexScript, exportRegexScript } from './regexUtils';
 
 // 用户设置存储
 interface SettingsState {
@@ -1132,7 +1133,21 @@ export const usePromptPresetStore = create<PromptPresetState>()(
             }
           }
           
-          const systemPrompt = systemPromptParts.join('\n\n');
+          let systemPrompt = systemPromptParts.join('\n\n');
+          
+          // 应用正则表达式处理提示词 (类型4=提示词)
+          try {
+            const { applyRegexToMessage } = useRegexStore.getState();
+            const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
+            const playerName = currentPlayer?.name || "玩家";
+            // 尝试获取当前角色，如果没有则使用默认名称
+            const chatStore = useChatStore.getState();
+            const characterName = chatStore.currentCharacter?.name || "AI";
+            
+            systemPrompt = applyRegexToMessage(systemPrompt, playerName, characterName, 0, 4);
+          } catch (error) {
+            console.error("应用正则表达式处理提示词时出错:", error);
+          }
           
           // 准备所有更新的参数 - 创建完整的更新对象，而不是逐个更新
           const modelParams = {
@@ -2007,3 +2022,158 @@ function formatChatHistory(messages: Message[]): string | null {
 
 // 初始化时加载对话历史
 // 不再需要这段代码，因为persist中间件会自动处理 
+
+// 正则表达式脚本管理
+interface RegexState {
+  scripts: RegexScript[];
+  isLoading: boolean;
+  error: string | null;
+  
+  // 操作方法
+  loadScripts: () => void;
+  getScript: (id: string) => RegexScript | undefined;
+  addScript: (script: RegexScript) => void;
+  updateScript: (id: string, script: Partial<RegexScript>) => void;
+  deleteScript: (id: string) => void;
+  importScriptFromFile: (file: File) => Promise<RegexScript | null>;
+  exportScriptToFile: (id: string) => void;
+  toggleScriptEnabled: (id: string) => void;
+  
+  // 应用正则表达式
+  applyRegexToMessage: (text: string, playerName: string, characterName: string, depth?: number, type?: number) => string;
+}
+
+export const useRegexStore = create<RegexState>()(
+  persist(
+    (set, get) => ({
+      scripts: [],
+      isLoading: false,
+      error: null,
+      
+      // 加载脚本
+      loadScripts: () => {
+        // 从本地存储中加载，不需要异步操作
+        // 脚本已通过 persist 中间件自动加载
+      },
+      
+      // 获取指定脚本
+      getScript: (id: string) => {
+        const { scripts } = get();
+        return scripts.find(script => script.id === id);
+      },
+      
+      // 添加脚本
+      addScript: (script: RegexScript) => {
+        set(state => ({
+          scripts: [...state.scripts, script]
+        }));
+      },
+      
+      // 更新脚本
+      updateScript: (id: string, scriptUpdate: Partial<RegexScript>) => {
+        set(state => ({
+          scripts: state.scripts.map(script => 
+            script.id === id 
+              ? { ...script, ...scriptUpdate } 
+              : script
+          )
+        }));
+      },
+      
+      // 删除脚本
+      deleteScript: (id: string) => {
+        set(state => ({
+          scripts: state.scripts.filter(script => script.id !== id)
+        }));
+      },
+      
+      // 导入脚本
+      importScriptFromFile: async (file: File): Promise<RegexScript | null> => {
+        try {
+          const content = await file.text();
+          const script = importRegexScript(content);
+          
+          if (script) {
+            // 检查是否已存在相同ID的脚本
+            const { scripts } = get();
+            const existingScript = scripts.find(s => s.id === script.id);
+            
+            if (existingScript) {
+              // 生成新ID以避免冲突
+              script.id = generateId();
+            }
+            
+            // 添加脚本
+            set(state => ({
+              scripts: [...state.scripts, script]
+            }));
+          }
+          
+          return script;
+        } catch (error) {
+          console.error('导入正则表达式脚本失败:', error);
+          set({ error: '导入脚本失败' });
+          return null;
+        }
+      },
+      
+      // 导出脚本
+      exportScriptToFile: (id: string) => {
+        const { scripts } = get();
+        const script = scripts.find(s => s.id === id);
+        
+        if (!script) {
+          set({ error: '脚本不存在' });
+          return;
+        }
+        
+        try {
+          const json = exportRegexScript(script);
+          const blob = new Blob([json], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          
+          // 创建下载链接并点击
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${script.scriptName}.json`;
+          document.body.appendChild(a);
+          a.click();
+          
+          // 清理
+          setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }, 100);
+        } catch (error) {
+          console.error('导出正则表达式脚本失败:', error);
+          set({ error: '导出脚本失败' });
+        }
+      },
+      
+      // 切换脚本启用状态
+      toggleScriptEnabled: (id: string) => {
+        set(state => ({
+          scripts: state.scripts.map(script => 
+            script.id === id 
+              ? { ...script, disabled: !script.disabled } 
+              : script
+          )
+        }));
+      },
+      
+      // 应用正则表达式处理
+      applyRegexToMessage: (text: string, playerName: string, characterName: string, depth = 0, type = 2) => {
+        const { scripts } = get();
+        
+        // 导入处理函数
+        const { processWithRegex } = require('./regexUtils');
+        
+        return processWithRegex(text, scripts, playerName, characterName, depth, type);
+      }
+    }),
+    {
+      name: 'regex-store',
+      storage: createJSONStorage(() => localStorage)
+    }
+  )
+); 

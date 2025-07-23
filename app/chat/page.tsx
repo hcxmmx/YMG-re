@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Message } from "@/components/chat/message";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatHeader } from "@/components/chat/chat-header";
-import { useSettingsStore, useChatStore, usePlayerStore } from "@/lib/store";
+import { useSettingsStore, useChatStore, usePlayerStore, useRegexStore } from "@/lib/store";
 import { Message as MessageType } from "@/lib/types";
 import { generateId } from "@/lib/utils";
 import { useNavbar } from "@/app/layout";
@@ -899,7 +899,15 @@ export default function ChatPage() {
     const characterName = currentCharacter?.name || "AI";
 
     // 应用宏替换到用户消息内容
-    const processedContent = replaceMacros(content, playerName, characterName);
+    let processedContent = replaceMacros(content, playerName, characterName);
+    
+    // 应用正则表达式处理用户输入
+    try {
+      const { applyRegexToMessage } = useRegexStore.getState();
+      processedContent = applyRegexToMessage(processedContent, playerName, characterName, 0, 1); // 类型1=用户输入
+    } catch (error) {
+      console.error("应用正则表达式处理用户输入时出错:", error);
+    }
 
     // 添加用户消息
     const userMessage: MessageType = {
@@ -1153,11 +1161,25 @@ export default function ChatPage() {
             errorDetails: errorDetails
           });
         } else {
+          // 获取当前玩家和角色名称
+          const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
+          const playerName = currentPlayer?.name || "玩家";
+          const characterName = currentCharacter?.name || "AI";
+          
+          // 应用正则表达式处理AI响应
+          let processedResponse = accumulatedContent;
+          try {
+            const { applyRegexToMessage } = useRegexStore.getState();
+            processedResponse = applyRegexToMessage(accumulatedContent, playerName, characterName, 0, 2); // 类型2=AI响应
+          } catch (error) {
+            console.error("应用正则表达式处理AI响应时出错:", error);
+          }
+          
           // 更新最终消息，包含响应时间
           updateMessage({
             id: assistantMessageId,
             role: "assistant",
-            content: accumulatedContent,
+            content: processedResponse,
             timestamp: new Date(),
             responseTime: responseTime
           });
@@ -1189,11 +1211,25 @@ export default function ChatPage() {
           const data = await response.json();
           const responseTime = Date.now() - responseStartTimeRef.current;
 
+          // 获取当前玩家和角色名称
+          const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
+          const playerName = currentPlayer?.name || "玩家";
+          const characterName = currentCharacter?.name || "AI";
+          
+          // 应用正则表达式处理AI响应
+          let processedResponse = data.text;
+          try {
+            const { applyRegexToMessage } = useRegexStore.getState();
+            processedResponse = applyRegexToMessage(data.text, playerName, characterName, 0, 2); // 类型2=AI响应
+          } catch (error) {
+            console.error("应用正则表达式处理AI响应时出错:", error);
+          }
+          
           // 添加助手回复
           await addMessage({
             id: generateId(),
             role: "assistant",
-            content: data.text,
+            content: processedResponse,
             timestamp: new Date(),
             responseTime: responseTime
           });
