@@ -51,9 +51,17 @@ export default function ChatPage() {
   // 标记是否已处理URL参数
   const urlParamsProcessedRef = useRef(false);
   
+  // 加载正则表达式脚本
+  const { loadScripts } = useRegexStore();
+  
   // 添加状态来跟踪当前加载的类型和消息ID
   const [loadingType, setLoadingType] = useState<LoadingType>('new');
   const [loadingMessageId, setLoadingMessageId] = useState<string | null>(null);
+
+  // 加载正则表达式脚本
+  useEffect(() => {
+    loadScripts();
+  }, [loadScripts]);
 
   // 处理URL参数，加载角色和对话，但只在首次加载时处理
   useEffect(() => {

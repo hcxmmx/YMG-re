@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { Message as MessageType, Character } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Copy, Check, Clock, Hash, BarChart2, Trash2, Edit, RefreshCw, User, ChevronLeft, ChevronRight, GitBranch, AlertCircle } from "lucide-react";
-import { useSettingsStore, useChatStore, usePlayerStore } from "@/lib/store";
+import { useSettingsStore, useChatStore, usePlayerStore, useRegexStore } from "@/lib/store";
 import Image from "next/image";
 import {
   Dialog,
@@ -93,6 +93,10 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
   
   // 获取UI设置
   const { showResponseTime, showCharCount, showMessageNumber } = uiSettings;
+  
+  // 订阅正则脚本变化，确保脚本变更时消息能够重新渲染
+  // 注意：只使用scripts.length作为依赖，因为我们只关心脚本的启用/禁用状态变化
+  const { scripts } = useRegexStore();
 
   // 根据角色确定消息的样式
   const isUser = message.role === "user";
@@ -110,8 +114,8 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
   const currentResponseIndex = message.currentResponseIndex || 0;
   const responseCount = hasAlternateResponses ? message.alternateResponses!.length + 1 : 1; // +1 表示原始回复
   
-  // 检查消息是否包含API错误信息
-  const hasError = message.errorDetails !== undefined;
+  // 提取错误信息
+  const hasError = !!message.errorDetails;
   
   // 复制消息内容
   const copyToClipboard = () => {
@@ -358,7 +362,7 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                 <pre className="whitespace-pre-wrap text-sm">{message.content}</pre>
               ) : (
                 <>
-                  {/* 应用宏替换后显示消息内容 */}
+                  {/* 应用宏替换和正则处理后显示消息内容 */}
                   {(() => {
                     // 获取当前玩家和角色名称用于宏替换
                     const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
@@ -366,11 +370,21 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                     const characterName = character?.name || "AI";
                     
                     // 应用宏替换到消息内容
-                    const processedContent = replaceMacros(
+                    let processedContent = replaceMacros(
                       message.content, 
                       playerName, 
                       characterName
                     );
+                    
+                    // 应用正则表达式处理
+                    try {
+                      const { applyRegexToMessage } = useRegexStore.getState();
+                      // 根据消息角色选择处理类型：1=用户输入, 2=AI响应
+                      const type = isUser ? 1 : 2;
+                      processedContent = applyRegexToMessage(processedContent, playerName, characterName, 0, type);
+                    } catch (error) {
+                      console.error("应用正则表达式处理失败:", error);
+                    }
                     
                     // 使用ReactMarkdown渲染处理后的内容
                     return <ReactMarkdown className="break-words">{processedContent}</ReactMarkdown>;
