@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { Message as MessageType, Character } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Copy, Check, Clock, Hash, BarChart2, Trash2, Edit, RefreshCw, User, ChevronLeft, ChevronRight, GitBranch, AlertCircle } from "lucide-react";
+import { Copy, Check, Clock, Hash, BarChart2, Trash2, Edit, RefreshCw, User, ChevronLeft, ChevronRight, GitBranch, AlertCircle, FileText } from "lucide-react";
 import { useSettingsStore, useChatStore, usePlayerStore, useRegexStore } from "@/lib/store";
 import Image from "next/image";
 import {
@@ -310,6 +310,55 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                       }}
                     />
                     <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity cursor-pointer" />
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {/* 渲染附加文件 */}
+            {message.files && message.files.length > 0 && (
+              <div className="flex flex-wrap gap-2 my-2">
+                {message.files.map((file, index) => (
+                  <div key={index} className="relative group">
+                    {file.type.startsWith('image/') ? (
+                      // 图片文件
+                      <img
+                        src={file.data}
+                        alt={file.name || `图片 ${index + 1}`}
+                        className="rounded-md max-h-[300px] max-w-full object-contain"
+                        onClick={() => {
+                          // 点击图片时在新窗口打开
+                          window.open(file.data, '_blank');
+                        }}
+                      />
+                    ) : (
+                      // 文本文件或其他类型
+                      <div 
+                        className="flex items-center gap-2 p-2 rounded-md bg-muted/30 hover:bg-muted/50 cursor-pointer"
+                        onClick={() => {
+                          // 点击时下载或打开文件
+                          if (file.type === 'text/plain' || file.type === 'application/json' || file.type === 'text/markdown') {
+                            // 创建Blob对象
+                            const blob = new Blob([file.data], { type: file.type });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = file.name || `file-${index}.${file.type.split('/')[1] || 'txt'}`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          } else {
+                            // 其他类型尝试直接打开
+                            window.open(file.data, '_blank');
+                          }
+                        }}
+                      >
+                        <FileText className="w-5 h-5" />
+                        <span className="text-sm overflow-hidden text-ellipsis max-w-[200px]">
+                          {file.name || `文件 ${index + 1}`}
+                        </span>
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-5 transition-opacity" />
                   </div>
                 ))}
               </div>
