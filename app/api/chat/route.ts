@@ -2,6 +2,47 @@ import { NextRequest, NextResponse } from "next/server";
 import { GeminiService, GeminiParams } from "@/lib/gemini";
 import type { Message } from "@/lib/types";
 
+// 用于存储活动请求的AbortController
+const activeRequests = new Map<string, AbortController>();
+
+// 添加DELETE方法用于取消请求
+export async function DELETE(req: NextRequest) {
+  // 从URL获取requestId
+  const url = new URL(req.url);
+  const requestId = url.searchParams.get("requestId");
+  
+  if (!requestId) {
+    return NextResponse.json(
+      { error: "未提供请求ID" },
+      { status: 400 }
+    );
+  }
+  
+  // 查找并取消请求
+  if (activeRequests.has(requestId)) {
+    console.log(`手动取消请求: ${requestId}`);
+    const controller = activeRequests.get(requestId);
+    
+    // 使用try-catch以避免潜在的错误
+    try {
+      controller?.abort();
+      activeRequests.delete(requestId);
+      return NextResponse.json({ success: true, message: "请求已取消" });
+    } catch (error) {
+      console.error(`取消请求时出错: ${requestId}`, error);
+      return NextResponse.json(
+        { success: false, message: "取消请求时出错" },
+        { status: 500 }
+      );
+    }
+  } else {
+    return NextResponse.json(
+      { success: false, message: "未找到指定ID的活动请求" },
+      { status: 404 }
+    );
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { 
@@ -9,8 +50,18 @@ export async function POST(req: NextRequest) {
       systemPrompt, 
       stream = false, 
       apiKey,
+      requestId, // 添加requestId参数
       ...params 
     } = await req.json();
+
+    // 创建AbortController，但目前不实现取消逻辑
+    const abortController = new AbortController();
+    
+    // 如果有requestId，保存AbortController
+    if (requestId) {
+      console.log(`收到请求: ${requestId}`); 
+      activeRequests.set(requestId, abortController);
+    }
 
     if (!apiKey) {
       return NextResponse.json(
@@ -38,7 +89,10 @@ export async function POST(req: NextRequest) {
             const streamGenerator = geminiService.generateResponseStream(
               messages as Message[],
               systemPrompt || "",
-              params as GeminiParams
+              { 
+                ...params as GeminiParams,
+                abortSignal: abortController.signal // 传递AbortSignal
+              }
             );
 
             let chunkCount = 0;
@@ -57,11 +111,7 @@ export async function POST(req: NextRequest) {
               // 确保每个chunk都被正确编码和发送，即使是空字符串也发送
               if (chunk !== undefined) {
                 hasContent = true;
-                // 立即发送数据，不等待其他操作
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk })}\n\n`));
-                
-                // 添加一个小延迟，确保客户端有时间处理
-                await new Promise(resolve => setTimeout(resolve, 0));
               }
             }
             
@@ -86,6 +136,11 @@ export async function POST(req: NextRequest) {
               console.error("发送错误消息失败:", e);
             } finally {
               controller.close();
+              
+              // 请求完成后从活动请求中移除
+              if (requestId) {
+                activeRequests.delete(requestId);
+              }
             }
           }
         },
@@ -106,12 +161,27 @@ export async function POST(req: NextRequest) {
       const response = await geminiService.generateResponse(
         messages as Message[],
         systemPrompt || "",
-        params as GeminiParams
+        { 
+          ...params as GeminiParams,
+          abortSignal: abortController.signal // 传递AbortSignal
+        }
       );
-
+      
+      // 如果有requestId，记录请求完成
+      if (requestId) {
+        console.log(`请求完成: ${requestId}`);
+        activeRequests.delete(requestId); // 请求完成后从活动请求中移除
+      }
+      
       return NextResponse.json({ text: response });
     } catch (error: any) {
       console.error("非流式响应生成错误:", error);
+      
+      // 请求完成后从活动请求中移除
+      if (requestId) {
+        activeRequests.delete(requestId);
+      }
+      
       return NextResponse.json(
         { error: error.message || "生成响应时出错" },
         { status: 500 }

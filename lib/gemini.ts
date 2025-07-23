@@ -11,6 +11,7 @@ export interface GeminiParams {
     category: string;
     threshold: string;
   }>;
+  abortSignal?: AbortSignal; // 添加AbortSignal支持
 }
 
 export class GeminiService {
@@ -108,6 +109,7 @@ export class GeminiService {
             category: setting.category as HarmCategory,
             threshold: setting.threshold as HarmBlockThreshold,
           })),
+          abortSignal: params.abortSignal, // 添加AbortSignal支持
         }
       });
 
@@ -148,6 +150,7 @@ export class GeminiService {
             category: setting.category as HarmCategory,
             threshold: setting.threshold as HarmBlockThreshold,
           })),
+          abortSignal: params.abortSignal, // 添加AbortSignal支持
         }
       });
 

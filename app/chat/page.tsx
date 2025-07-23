@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Message } from "@/components/chat/message";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatHeader } from "@/components/chat/chat-header";
@@ -22,6 +22,11 @@ interface ErrorDetails {
   message: string;     // 错误消息
   details?: any;       // 错误详细信息
   timestamp: string;   // 错误发生时间
+}
+
+// 用于生成请求ID的辅助函数
+function generateRequestId(): string {
+  return 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15);
 }
 
 export default function ChatPage() {
@@ -50,6 +55,8 @@ export default function ChatPage() {
   const characterIdRef = useRef<string | null>(null);
   // 标记是否已处理URL参数
   const urlParamsProcessedRef = useRef(false);
+  // 当前请求ID引用，用于取消请求
+  const currentRequestIdRef = useRef<string | null>(null);
   
   // 加载正则表达式脚本
   const { loadScripts } = useRegexStore();
@@ -269,12 +276,20 @@ export default function ChatPage() {
       // 应用宏替换到系统提示词
       const processedSystemPrompt = replaceMacros(systemPrompt, playerName, characterName);
 
+      // 生成请求ID
+      const requestId = generateRequestId();
+      console.log(`[重新生成] 发送请求: ${requestId}`);
+      
+      // 保存当前请求ID到ref中
+      currentRequestIdRef.current = requestId;
+
       // API调用参数
       const params = {
         messages: requestMessages,
         systemPrompt: processedSystemPrompt,
         apiKey: settings.apiKey,
         stream: settings.enableStreaming,
+        requestId, // 添加requestId
         temperature: settings.temperature,
         maxOutputTokens: settings.maxTokens,
         topK: settings.topK,
@@ -547,8 +562,12 @@ export default function ChatPage() {
         messageNumber: originalMessageNumber // 保留原始楼层号
       });
     } finally {
+      // 重置UI状态
       setIsLoading(false);
       setLoadingMessageId(null);
+      
+      // 清除请求ID
+      currentRequestIdRef.current = null;
     }
   };
 
@@ -606,12 +625,20 @@ export default function ChatPage() {
       // 应用宏替换到系统提示词
       const processedSystemPrompt = replaceMacros(systemPrompt, playerName, characterName);
 
+      // 生成请求ID
+      const requestId = generateRequestId();
+      console.log(`[生成变体] 发送请求: ${requestId}`);
+      
+      // 保存当前请求ID到ref中
+      currentRequestIdRef.current = requestId;
+
       // API调用参数
       const params = {
         messages: requestMessages,
         systemPrompt: processedSystemPrompt,
         apiKey: settings.apiKey,
         stream: settings.enableStreaming,
+        requestId, // 添加requestId
         temperature: settings.temperature,
         maxOutputTokens: settings.maxTokens,
         topK: settings.topK,
@@ -871,6 +898,8 @@ export default function ChatPage() {
         errorDetails: errorDetails
       });
     } finally {
+      // 重置请求ID
+      currentRequestIdRef.current = null;
       setIsLoading(false);
       setLoadingMessageId(null);
     }
@@ -950,12 +979,20 @@ export default function ChatPage() {
       // 应用宏替换到系统提示词
       const processedSystemPrompt = replaceMacros(systemPrompt, playerName, characterName);
 
+      // 生成请求ID
+      const requestId = generateRequestId();
+      console.log(`发送请求: ${requestId}`);
+      
+      // 保存当前请求ID到ref中
+      currentRequestIdRef.current = requestId;
+      
       // API调用参数，使用裁剪后的消息
       const params = {
         messages: trimmedMessages,
         systemPrompt: processedSystemPrompt,
         apiKey: settings.apiKey,
         stream: settings.enableStreaming,
+        requestId, // 添加requestId
         temperature: settings.temperature,
         maxOutputTokens: settings.maxTokens,
         topK: settings.topK,
@@ -992,6 +1029,9 @@ export default function ChatPage() {
               timestamp: new Date(),
               errorDetails: errorDetails
             });
+            
+            // 清除请求ID
+            currentRequestIdRef.current = null;
             return;
           }
         } catch (fetchError) {
@@ -1331,12 +1371,20 @@ export default function ChatPage() {
       // 应用宏替换到系统提示词
       const processedSystemPrompt = replaceMacros(systemPrompt, playerName, characterName);
 
+      // 生成请求ID
+      const requestId = generateRequestId();
+      console.log(`[直接请求回复] 发送请求: ${requestId}`);
+      
+      // 保存当前请求ID到ref中
+      currentRequestIdRef.current = requestId;
+
       // API调用参数
       const params = {
         messages: requestMessages,
         systemPrompt: processedSystemPrompt,
         apiKey: settings.apiKey,
         stream: settings.enableStreaming,
+        requestId, // 添加requestId
         temperature: settings.temperature,
         maxOutputTokens: settings.maxTokens,
         topK: settings.topK,
@@ -1622,8 +1670,12 @@ export default function ChatPage() {
         errorDetails: errorDetails
       });
     } finally {
+      // 重置加载状态
       setIsLoading(false);
       setLoadingMessageId(null);
+      
+      // 清除请求ID
+      currentRequestIdRef.current = null;
     }
   };
 
@@ -1702,6 +1754,44 @@ export default function ChatPage() {
     return errorDetails;
   };
 
+  // 取消当前请求
+  const cancelRequest = useCallback(async () => {
+    const requestId = currentRequestIdRef.current;
+    if (!requestId) {
+      console.log("没有活动的请求可取消");
+      return;
+    }
+    
+    console.log(`尝试取消请求: ${requestId}`);
+    try {
+      const response = await fetch(`/api/chat?requestId=${requestId}`, {
+        method: "DELETE",
+      });
+      
+      const result = await response.json();
+      console.log("取消请求结果:", result);
+      
+      // 清除当前请求ID
+      currentRequestIdRef.current = null;
+      
+      if (!response.ok) {
+        console.error("取消请求失败:", result.message || "未知错误");
+      }
+    } catch (error) {
+      console.error("调用取消API时出错:", error);
+    }
+  }, []);
+
+  // 在加载状态变化时添加一个清理函数
+  useEffect(() => {
+    return () => {
+      // 当组件卸载时，取消所有请求
+      if (currentRequestIdRef.current) {
+        cancelRequest();
+      }
+    };
+  }, [cancelRequest]);
+
   return (
     <div className={`flex flex-col ${isNavbarVisible ? 'h-[calc(100vh-65px)]' : 'h-screen'}`}>
       <ChatHeader character={currentCharacter} />
@@ -1752,6 +1842,7 @@ export default function ChatPage() {
         <ChatInput
           onSendMessage={handleSendMessage}
           onRequestReply={handleRequestReply}
+          onCancelRequest={cancelRequest} // 添加取消请求功能
           isLoading={isLoading}
           disabled={false} // 始终允许用户输入
           lastUserMessage={lastUserMessage?.content || null}

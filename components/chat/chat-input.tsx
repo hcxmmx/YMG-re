@@ -9,6 +9,7 @@ import { ChatSettings } from "./chat-settings";
 export interface ChatInputProps {
   onSendMessage: (content: string, images?: string[]) => void;
   onRequestReply?: () => void; // 新增：直接请求对最后一条用户消息的回复（不重发消息）
+  onCancelRequest?: () => void; // 新增：取消当前正在处理的请求
   isLoading?: boolean;
   disabled?: boolean;
   lastUserMessage?: string | null; // 最后一条用户消息内容
@@ -18,6 +19,7 @@ export interface ChatInputProps {
 export function ChatInput({ 
   onSendMessage, 
   onRequestReply, 
+  onCancelRequest,
   isLoading, 
   disabled, 
   lastUserMessage, 
@@ -42,6 +44,12 @@ export function ChatInput({
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
+    
+    // 如果正在加载，且有取消回调，则取消请求
+    if (isLoading && onCancelRequest) {
+      onCancelRequest();
+      return;
+    }
     
     if (message.trim()) {
       // 正常发送新消息，即使AI正在回复中也允许发送
@@ -140,15 +148,20 @@ export function ChatInput({
           autoFocus
         />
         
-        {/* 发送按钮：根据canSendMessage()决定是否启用，处理发送新消息或请求回复 */}
+        {/* 发送/取消按钮：根据是否正在加载显示不同状态 */}
         <Button 
           type="submit" 
           size="icon"
-          disabled={!canSendMessage() || disabled}
+          disabled={(!isLoading && (!canSendMessage() || disabled))}
           className="shrink-0"
+          variant={isLoading ? "destructive" : "default"}
         >
-          <Send className="h-5 w-5" />
-          <span className="sr-only">发送</span>
+          {isLoading ? (
+            <span className="font-bold text-xs">取消</span>
+          ) : (
+            <Send className="h-5 w-5" />
+          )}
+          <span className="sr-only">{isLoading ? "取消" : "发送"}</span>
         </Button>
       </div>
       
