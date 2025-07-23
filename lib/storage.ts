@@ -1,6 +1,7 @@
 import { openDB, DBSchema } from 'idb';
 import { Message, UserSettings, Character, Branch, PromptPreset, PromptPresetItem, PlaceholderInfo, WorldBook, WorldBookEntry, WorldBookSettings, CharacterImportResult } from './types';
 import { generateId, extractCharaDataFromPng } from './utils';
+import { RegexScript } from './regexUtils';
 
 // 定义数据库架构
 interface AppDB extends DBSchema {
@@ -70,12 +71,17 @@ interface AppDB extends DBSchema {
     value: WorldBook;
     indexes: { 'by-name': string };
   };
+  regex: {
+    key: string;
+    value: RegexScript;
+    indexes: { 'by-name': string };
+  };
 }
 
 
 // 初始化数据库
 export const initDB = async () => {
-  return openDB<AppDB>('ai-roleplay-db', 6, {
+  return openDB<AppDB>('ai-roleplay-db', 7, {
     upgrade(db, oldVersion) {
       // 版本1: 创建conversations和presets表
       if (oldVersion < 1) {
@@ -133,6 +139,14 @@ export const initDB = async () => {
         if (!db.objectStoreNames.contains('worldBooks')) {
           const worldBookStore = db.createObjectStore('worldBooks', { keyPath: 'id' });
           worldBookStore.createIndex('by-name', 'name');
+        }
+      }
+
+      // 版本7: 添加正则表达式脚本表
+      if (oldVersion < 7) {
+        console.log("升级数据库到版本7，添加正则表达式脚本表");
+        if (!db.objectStoreNames.contains('regex')) {
+          const regexStore = db.createObjectStore('regex', { keyPath: 'id' });
         }
       }
     }
@@ -1636,6 +1650,65 @@ export const promptPresetStorage = {
     
     const json = JSON.stringify(preset, null, 2);
     return new Blob([json], { type: 'application/json' });
+  }
+};
+
+// 正则表达式脚本存储接口
+export const regexStorage = {
+  async saveRegexScript(script: RegexScript) {
+    const db = await initDB();
+    await db.put('regex', script);
+    return script;
+  },
+  
+  async getRegexScript(id: string) {
+    const db = await initDB();
+    return db.get('regex', id);
+  },
+  
+  async listRegexScripts() {
+    const db = await initDB();
+    return db.getAll('regex');
+  },
+  
+  async deleteRegexScript(id: string) {
+    const db = await initDB();
+    await db.delete('regex', id);
+  },
+  
+  // 导入正则表达式脚本
+  async importRegexScriptFromFile(file: File): Promise<RegexScript | null> {
+    try {
+      const content = await file.text();
+      const importedScript = JSON.parse(content);
+      
+      // 验证基本字段
+      if (!importedScript.scriptName || !importedScript.findRegex) {
+        throw new Error("无效的正则表达式脚本文件");
+      }
+      
+      // 创建新的脚本ID以避免冲突
+      const script: RegexScript = {
+        ...importedScript,
+        id: generateId() // 生成新ID
+      };
+      
+      // 确保所有必需字段存在
+      script.trimStrings = script.trimStrings || [];
+      script.placement = script.placement || [2]; // 默认应用于AI响应
+      script.disabled = script.disabled || false;
+      script.markdownOnly = script.markdownOnly || false;
+      script.promptOnly = script.promptOnly || false;
+      script.runOnEdit = script.runOnEdit !== undefined ? script.runOnEdit : true;
+      script.substituteRegex = script.substituteRegex || 0;
+      
+      // 保存到数据库
+      await this.saveRegexScript(script);
+      return script;
+    } catch (error) {
+      console.error("导入正则表达式脚本失败:", error);
+      return null;
+    }
   }
 };
 

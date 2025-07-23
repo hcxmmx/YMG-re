@@ -53,14 +53,19 @@ export default function RegexPage() {
   };
   
   // 处理保存脚本
-  const handleSaveScript = (script: RegexScript) => {
-    if (editingScriptId) {
-      updateScript(editingScriptId, script);
-    } else {
-      addScript(script);
+  const handleSaveScript = async (script: RegexScript) => {
+    try {
+      if (editingScriptId) {
+        await updateScript(editingScriptId, script);
+      } else {
+        await addScript(script);
+      }
+      setEditingScriptId(null);
+      setActiveTab("list");
+    } catch (error) {
+      console.error("保存脚本失败:", error);
+      alert("保存脚本失败");
     }
-    setEditingScriptId(null);
-    setActiveTab("list");
   };
   
   // 处理取消编辑
@@ -126,9 +131,30 @@ export default function RegexPage() {
           <RegexList 
             scripts={scripts}
             onEdit={handleEditScript}
-            onDelete={deleteScript}
-            onToggleEnabled={toggleScriptEnabled}
-            onExport={exportScriptToFile}
+            onDelete={async (id) => {
+              try {
+                await deleteScript(id);
+              } catch (error) {
+                console.error("删除脚本失败:", error);
+                alert("删除脚本失败");
+              }
+            }}
+            onToggleEnabled={async (id) => {
+              try {
+                await toggleScriptEnabled(id);
+              } catch (error) {
+                console.error("切换脚本状态失败:", error);
+                alert("切换脚本状态失败");
+              }
+            }}
+            onExport={async (id) => {
+              try {
+                await exportScriptToFile(id);
+              } catch (error) {
+                console.error("导出脚本失败:", error);
+                alert("导出脚本失败");
+              }
+            }}
             onImportClick={handleImportClick}
             onCreateNew={handleCreateNewScript}
           />

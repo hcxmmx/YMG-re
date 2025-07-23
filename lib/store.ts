@@ -13,6 +13,8 @@ import { Player } from './types';
 import { worldBookStorage } from './storage';
 import { WorldBook, WorldBookEntry } from './types';
 import { RegexScript, importRegexScript, exportRegexScript } from './regexUtils';
+import { regexStorage } from './storage';
+import { devtools } from 'zustand/middleware';
 
 // 用户设置存储
 interface SettingsState {
@@ -2030,30 +2032,36 @@ interface RegexState {
   error: string | null;
   
   // 操作方法
-  loadScripts: () => void;
+  loadScripts: () => Promise<void>;
   getScript: (id: string) => RegexScript | undefined;
-  addScript: (script: RegexScript) => void;
-  updateScript: (id: string, script: Partial<RegexScript>) => void;
-  deleteScript: (id: string) => void;
+  addScript: (script: RegexScript) => Promise<void>;
+  updateScript: (id: string, script: Partial<RegexScript>) => Promise<void>;
+  deleteScript: (id: string) => Promise<void>;
   importScriptFromFile: (file: File) => Promise<RegexScript | null>;
-  exportScriptToFile: (id: string) => void;
-  toggleScriptEnabled: (id: string) => void;
+  exportScriptToFile: (id: string) => Promise<void>;
+  toggleScriptEnabled: (id: string) => Promise<void>;
   
   // 应用正则表达式
   applyRegexToMessage: (text: string, playerName: string, characterName: string, depth?: number, type?: number) => string;
 }
 
 export const useRegexStore = create<RegexState>()(
-  persist(
+  devtools(
     (set, get) => ({
       scripts: [],
       isLoading: false,
       error: null,
       
       // 加载脚本
-      loadScripts: () => {
-        // 从本地存储中加载，不需要异步操作
-        // 脚本已通过 persist 中间件自动加载
+      loadScripts: async () => {
+        try {
+          set({ isLoading: true });
+          const scripts = await regexStorage.listRegexScripts();
+          set({ scripts, isLoading: false });
+        } catch (error) {
+          console.error("加载正则表达式脚本失败:", error);
+          set({ error: "加载脚本失败", isLoading: false });
+        }
       },
       
       // 获取指定脚本
@@ -2063,71 +2071,93 @@ export const useRegexStore = create<RegexState>()(
       },
       
       // 添加脚本
-      addScript: (script: RegexScript) => {
-        set(state => ({
-          scripts: [...state.scripts, script]
-        }));
+      addScript: async (script: RegexScript) => {
+        try {
+          set({ isLoading: true });
+          await regexStorage.saveRegexScript(script);
+          set(state => ({
+            scripts: [...state.scripts, script],
+            isLoading: false
+          }));
+        } catch (error) {
+          console.error("添加正则表达式脚本失败:", error);
+          set({ error: "添加脚本失败", isLoading: false });
+        }
       },
       
       // 更新脚本
-      updateScript: (id: string, scriptUpdate: Partial<RegexScript>) => {
-        set(state => ({
-          scripts: state.scripts.map(script => 
-            script.id === id 
-              ? { ...script, ...scriptUpdate } 
-              : script
-          )
-        }));
+      updateScript: async (id: string, scriptUpdate: Partial<RegexScript>) => {
+        try {
+          set({ isLoading: true });
+          const { scripts } = get();
+          const existingScript = scripts.find(s => s.id === id);
+          
+          if (!existingScript) {
+            throw new Error("脚本不存在");
+          }
+          
+          const updatedScript = { ...existingScript, ...scriptUpdate };
+          await regexStorage.saveRegexScript(updatedScript);
+          
+          set(state => ({
+            scripts: state.scripts.map(script => 
+              script.id === id ? updatedScript : script
+            ),
+            isLoading: false
+          }));
+        } catch (error) {
+          console.error("更新正则表达式脚本失败:", error);
+          set({ error: "更新脚本失败", isLoading: false });
+        }
       },
       
       // 删除脚本
-      deleteScript: (id: string) => {
-        set(state => ({
-          scripts: state.scripts.filter(script => script.id !== id)
-        }));
+      deleteScript: async (id: string) => {
+        try {
+          set({ isLoading: true });
+          await regexStorage.deleteRegexScript(id);
+          set(state => ({
+            scripts: state.scripts.filter(script => script.id !== id),
+            isLoading: false
+          }));
+        } catch (error) {
+          console.error("删除正则表达式脚本失败:", error);
+          set({ error: "删除脚本失败", isLoading: false });
+        }
       },
       
       // 导入脚本
       importScriptFromFile: async (file: File): Promise<RegexScript | null> => {
         try {
-          const content = await file.text();
-          const script = importRegexScript(content);
+          set({ isLoading: true });
+          const script = await regexStorage.importRegexScriptFromFile(file);
           
           if (script) {
-            // 检查是否已存在相同ID的脚本
-            const { scripts } = get();
-            const existingScript = scripts.find(s => s.id === script.id);
-            
-            if (existingScript) {
-              // 生成新ID以避免冲突
-              script.id = generateId();
-            }
-            
-            // 添加脚本
             set(state => ({
               scripts: [...state.scripts, script]
             }));
           }
           
+          set({ isLoading: false });
           return script;
         } catch (error) {
           console.error('导入正则表达式脚本失败:', error);
-          set({ error: '导入脚本失败' });
+          set({ error: '导入脚本失败', isLoading: false });
           return null;
         }
       },
       
       // 导出脚本
-      exportScriptToFile: (id: string) => {
-        const { scripts } = get();
-        const script = scripts.find(s => s.id === id);
-        
-        if (!script) {
-          set({ error: '脚本不存在' });
-          return;
-        }
-        
+      exportScriptToFile: async (id: string) => {
         try {
+          const { scripts } = get();
+          const script = scripts.find(s => s.id === id);
+          
+          if (!script) {
+            set({ error: '脚本不存在' });
+            return;
+          }
+          
           const json = exportRegexScript(script);
           const blob = new Blob([json], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
@@ -2151,14 +2181,27 @@ export const useRegexStore = create<RegexState>()(
       },
       
       // 切换脚本启用状态
-      toggleScriptEnabled: (id: string) => {
-        set(state => ({
-          scripts: state.scripts.map(script => 
-            script.id === id 
-              ? { ...script, disabled: !script.disabled } 
-              : script
-          )
-        }));
+      toggleScriptEnabled: async (id: string) => {
+        try {
+          const { scripts } = get();
+          const script = scripts.find(s => s.id === id);
+          
+          if (!script) {
+            throw new Error("脚本不存在");
+          }
+          
+          const updatedScript = { ...script, disabled: !script.disabled };
+          await regexStorage.saveRegexScript(updatedScript);
+          
+          set(state => ({
+            scripts: state.scripts.map(s => 
+              s.id === id ? updatedScript : s
+            )
+          }));
+        } catch (error) {
+          console.error("切换脚本启用状态失败:", error);
+          set({ error: "切换脚本启用状态失败" });
+        }
       },
       
       // 应用正则表达式处理
@@ -2170,10 +2213,6 @@ export const useRegexStore = create<RegexState>()(
         
         return processWithRegex(text, scripts, playerName, characterName, depth, type);
       }
-    }),
-    {
-      name: 'regex-store',
-      storage: createJSONStorage(() => localStorage)
-    }
+    })
   )
 ); 
