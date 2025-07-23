@@ -33,8 +33,10 @@ export function Header() {
     <header className="border-b sticky top-0 bg-background z-10">
       <div className="container mx-auto flex items-center justify-between p-2 md:p-4">
         {/* 标志和标题 */}
-        <Link href="/" className="font-bold text-lg md:text-xl">
-          云妙馆
+        <Link href="/" className="font-bold text-lg md:text-xl flex items-center">
+          <span>云</span>
+          <span className="animate-pulse-subtle">妙</span>
+          <span>馆</span>
         </Link>
 
         {/* 导航链接 */}
