@@ -3,11 +3,17 @@
 import { useState, useRef, ChangeEvent, FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Image } from "lucide-react";
+import { Send, Image, File, FileText } from "lucide-react";
 import { ChatSettings } from "./chat-settings";
 
+export interface FileData {
+  data: string;  // DataURL或文本内容
+  type: string;  // MIME类型
+  name?: string; // 文件名
+}
+
 export interface ChatInputProps {
-  onSendMessage: (content: string, images?: string[]) => void;
+  onSendMessage: (content: string, files?: FileData[]) => void;
   onRequestReply?: () => void; // 新增：直接请求对最后一条用户消息的回复（不重发消息）
   onCancelRequest?: () => void; // 新增：取消当前正在处理的请求
   isLoading?: boolean;
@@ -26,15 +32,15 @@ export function ChatInput({
   canRequestReply 
 }: ChatInputProps) {
   const [message, setMessage] = useState("");
-  const [images, setImages] = useState<string[]>([]);
+  const [files, setFiles] = useState<FileData[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // 判断是否可以发送消息
   // 注意：这里处理两种情况 - 1) 有新消息内容 2) 空输入框但可以请求回复
   const canSendMessage = () => {
-    // 如果有输入，正常发送新消息
-    if (message.trim()) return true;
+    // 如果有文件或输入，正常发送新消息
+    if (message.trim() || files.length > 0) return true;
     
     // 如果没有输入，但可以请求回复（最后一条是用户消息），也允许点击发送按钮
     if (!message.trim() && canRequestReply) return true;
@@ -51,11 +57,11 @@ export function ChatInput({
       return;
     }
     
-    if (message.trim()) {
+    if (message.trim() || files.length > 0) {
       // 正常发送新消息，即使AI正在回复中也允许发送
-      onSendMessage(message, images.length > 0 ? images : undefined);
+      onSendMessage(message, files.length > 0 ? files : undefined);
       setMessage("");
-      setImages([]);
+      setFiles([]);
     } else if (!message.trim() && canRequestReply && onRequestReply && !disabled) {
       // 直接请求对最后一条用户消息的回复（不会重发用户消息）
       // 这个功能允许用户在输入框为空时，点击发送按钮直接获取对最后一条用户消息的回复
@@ -75,18 +81,59 @@ export function ChatInput({
     }
   };
 
-  const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
+  const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = e.target.files;
+    if (!selectedFiles) return;
 
-    Array.from(files).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        if (e.target?.result) {
-          setImages(prev => [...prev, e.target!.result as string]);
-        }
-      };
-      reader.readAsDataURL(file);
+    Array.from(selectedFiles).forEach(file => {
+      // 根据文件类型处理
+      if (file.type.startsWith('image/')) {
+        // 图片文件：使用DataURL
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          if (e.target?.result) {
+            const fileData: FileData = {
+              data: e.target.result as string,
+              type: file.type,
+              name: file.name
+            };
+            setFiles(prev => [...prev, fileData]);
+          }
+        };
+        reader.readAsDataURL(file);
+      } else if (
+        file.type === 'text/plain' || 
+        file.type === 'application/json' || 
+        file.type === 'text/markdown'
+      ) {
+        // 文本文件：读取文本内容
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          if (e.target?.result) {
+            const fileData: FileData = {
+              data: e.target.result as string,
+              type: file.type,
+              name: file.name
+            };
+            setFiles(prev => [...prev, fileData]);
+          }
+        };
+        reader.readAsText(file);
+      } else {
+        // 其他类型：尝试作为DataURL处理
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          if (e.target?.result) {
+            const fileData: FileData = {
+              data: e.target.result as string,
+              type: file.type,
+              name: file.name
+            };
+            setFiles(prev => [...prev, fileData]);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
     });
     
     // 清空文件输入，以便可以再次选择同一文件
@@ -95,24 +142,53 @@ export function ChatInput({
     }
   };
 
-  const removeImage = (index: number) => {
-    setImages(prev => prev.filter((_, i) => i !== index));
+  const removeFile = (index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // 根据文件类型获取适当的图标
+  const getFileIcon = (fileType: string) => {
+    if (fileType.startsWith('image/')) {
+      return <Image className="h-4 w-4" />;
+    } else if (fileType === 'text/plain' || fileType === 'application/json' || fileType === 'text/markdown') {
+      return <FileText className="h-4 w-4" />;
+    } else {
+      return <File className="h-4 w-4" />;
+    }
+  };
+
+  // 获取文件预览
+  const getFilePreview = (file: FileData) => {
+    if (file.type.startsWith('image/')) {
+      return (
+        <img 
+          src={file.data} 
+          alt={file.name || "上传的图片"} 
+          className="w-16 h-16 object-cover rounded-md"
+        />
+      );
+    } else {
+      return (
+        <div className="w-16 h-16 bg-muted flex items-center justify-center rounded-md">
+          {getFileIcon(file.type)}
+          <span className="text-xs ml-1 max-w-[40px] overflow-hidden text-ellipsis">
+            {file.name || "文件"}
+          </span>
+        </div>
+      );
+    }
   };
 
   return (
     <form onSubmit={handleSubmit} className="w-full p-3">
-      {images.length > 0 && (
+      {files.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-3 max-h-32 overflow-y-auto">
-          {images.map((img, index) => (
+          {files.map((file, index) => (
             <div key={index} className="relative">
-              <img 
-                src={img} 
-                alt={`上传的图片 ${index + 1}`} 
-                className="w-16 h-16 object-cover rounded-md"
-              />
+              {getFilePreview(file)}
               <button
                 type="button"
-                onClick={() => removeImage(index)}
+                onClick={() => removeFile(index)}
                 className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-4 h-4 flex items-center justify-center text-xs"
               >
                 &times;
@@ -133,8 +209,8 @@ export function ChatInput({
           disabled={disabled}
           className="shrink-0"
         >
-          <Image className="h-5 w-5" />
-          <span className="sr-only">添加图片</span>
+          <File className="h-5 w-5" />
+          <span className="sr-only">添加文件</span>
         </Button>
         
         <Input
@@ -168,8 +244,8 @@ export function ChatInput({
       <input
         type="file"
         ref={fileInputRef}
-        onChange={handleImageUpload}
-        accept="image/*"
+        onChange={handleFileUpload}
+        accept="image/*,text/plain,application/json,text/markdown"
         multiple
         className="hidden"
         disabled={disabled}

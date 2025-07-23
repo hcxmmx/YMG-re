@@ -919,7 +919,7 @@ export default function ChatPage() {
   };
 
   // 发送消息
-  const handleSendMessage = async (content: string, images?: string[]) => {
+  const handleSendMessage = async (content: string, files?: { data: string; type: string; name?: string }[]) => {
     if (!settings.apiKey) {
       addMessage({
         id: generateId(),
@@ -951,7 +951,7 @@ export default function ChatPage() {
       id: generateId(),
       role: "user",
       content: processedContent,
-      images,
+      files,
       timestamp: new Date(),
     };
 

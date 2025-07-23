@@ -22,6 +22,21 @@ export class GeminiService {
     this.genAI = new GoogleGenAI({ apiKey });
   }
 
+  // 辅助方法：从DataURL中提取Base64数据部分
+  private extractBase64FromDataUrl(dataUrl: string): string {
+    // 检查是否是DataURL格式
+    if (dataUrl.startsWith('data:')) {
+      const base64Index = dataUrl.indexOf('base64,');
+      if (base64Index !== -1) {
+        // 提取base64部分
+        return dataUrl.substring(base64Index + 7);
+      }
+    }
+    
+    // 如果不是DataURL格式，假设已经是Base64编码
+    return dataUrl;
+  }
+
   // 转换消息格式，从我们应用中的格式转为Gemini API需要的格式
   public transformMessages(messages: Message[]) {
     // 提取系统消息
@@ -56,11 +71,55 @@ export class GeminiService {
         // 如果有图片，添加到parts中
         if (msg.images && msg.images.length > 0) {
           for (const image of msg.images) {
-            // 使用类型断言来处理data属性
+            // 处理DataURL格式，提取base64部分
+            const base64Data = this.extractBase64FromDataUrl(image);
+            
             userContent.parts.push({
-              data: image,
-              type: "image/jpeg" // 假设图片是JPEG格式，可以根据实际情况调整
+              inlineData: {
+                data: base64Data,
+                mimeType: "image/jpeg" // 假设图片是JPEG格式，可以根据实际情况调整
+              }
             } as any);
+          }
+        }
+        
+        // 处理新的files格式（支持多种文件类型）
+        if (msg.files && msg.files.length > 0) {
+          for (const file of msg.files) {
+            // 根据文件类型进行处理
+            if (file.type.startsWith('image/')) {
+              // 图片文件：提取base64部分
+              const base64Data = this.extractBase64FromDataUrl(file.data);
+              
+              userContent.parts.push({
+                inlineData: {
+                  data: base64Data,
+                  mimeType: file.type
+                }
+              } as any);
+            } else if (file.type === 'text/plain' || file.type === 'application/json' || file.type === 'text/markdown') {
+              // 文本文件：作为文本内容添加
+              userContent.parts.push({
+                text: file.data
+              });
+            } else {
+              // 其他类型文件：尝试作为base64处理
+              try {
+                const base64Data = this.extractBase64FromDataUrl(file.data);
+                userContent.parts.push({
+                  inlineData: {
+                    data: base64Data,
+                    mimeType: file.type
+                  }
+                } as any);
+              } catch (error) {
+                console.error("处理文件数据失败:", error);
+                // 如果处理失败，尝试作为文本添加
+                userContent.parts.push({
+                  text: `[无法处理的文件: ${file.name || "未命名文件"}]`
+                });
+              }
+            }
           }
         }
 

@@ -4,7 +4,12 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
-  images?: string[]; // 图片URL或DataURL列表
+  images?: string[]; // 图片URL或DataURL列表（旧版兼容）
+  files?: {
+    data: string;  // DataURL或文本内容
+    type: string;  // MIME类型
+    name?: string; // 文件名
+  }[];
   messageNumber?: number; // 消息楼层号
   charCount?: number; // 字符数统计
   responseTime?: number; // 响应时间（毫秒）
