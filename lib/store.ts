@@ -2040,6 +2040,7 @@ interface RegexState {
   importScriptFromFile: (file: File) => Promise<RegexScript | null>;
   exportScriptToFile: (id: string) => Promise<void>;
   toggleScriptEnabled: (id: string) => Promise<void>;
+  reorderScripts: (newScripts: RegexScript[]) => Promise<void>;
   
   // 应用正则表达式
   applyRegexToMessage: (text: string, playerName: string, characterName: string, depth?: number, type?: number) => string;
@@ -2212,6 +2213,27 @@ export const useRegexStore = create<RegexState>()(
         const { processWithRegex } = require('./regexUtils');
         
         return processWithRegex(text, scripts, playerName, characterName, depth, type);
+      },
+      
+      // 重新排序脚本
+      reorderScripts: async (newScripts: RegexScript[]) => {
+        try {
+          set({ isLoading: true });
+          
+          // 保存每一个脚本到数据库
+          for (const script of newScripts) {
+            await regexStorage.saveRegexScript(script);
+          }
+          
+          // 更新状态
+          set({ 
+            scripts: newScripts,
+            isLoading: false
+          });
+        } catch (error) {
+          console.error("重新排序正则表达式脚本失败:", error);
+          set({ error: "重新排序脚本失败", isLoading: false });
+        }
       }
     })
   )

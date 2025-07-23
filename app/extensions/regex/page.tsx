@@ -24,7 +24,8 @@ export default function RegexPage() {
     deleteScript,
     importScriptFromFile,
     exportScriptToFile,
-    toggleScriptEnabled
+    toggleScriptEnabled,
+    reorderScripts
   } = useRegexStore();
   
   // 状态
@@ -65,6 +66,16 @@ export default function RegexPage() {
     } catch (error) {
       console.error("保存脚本失败:", error);
       alert("保存脚本失败");
+    }
+  };
+  
+  // 处理重新排序
+  const handleReorderScripts = async (newScripts: RegexScript[]) => {
+    try {
+      await reorderScripts(newScripts);
+    } catch (error) {
+      console.error("重新排序脚本失败:", error);
+      alert("重新排序脚本失败");
     }
   };
   
@@ -157,6 +168,7 @@ export default function RegexPage() {
             }}
             onImportClick={handleImportClick}
             onCreateNew={handleCreateNewScript}
+            onReorder={handleReorderScripts}
           />
         </TabsContent>
         
