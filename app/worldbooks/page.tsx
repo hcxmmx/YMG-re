@@ -10,11 +10,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Plus, FileUp, Download, Trash, Edit, Link2, Users } from "lucide-react";
+import { ViewToggle } from "@/components/ui/view-toggle";
+import { useResponsiveView } from "@/lib/useResponsiveView";
+import { WorldBookListItem } from "@/components/ui/worldbook-list-item";
+
+type ViewMode = 'grid' | 'list';
 
 export default function WorldBooksPage() {
   const { worldBooks, loadWorldBooks, importWorldBookFromFile, exportWorldBookToFile, deleteWorldBook, toggleWorldBookEnabled, getLinkedCharacters } = useWorldBookStore();
   const [isLoading, setIsLoading] = useState(true);
   const [linkedCharacters, setLinkedCharacters] = useState<Record<string, number>>({});
+  const [viewMode, setViewMode] = useResponsiveView('worldbooks-view-mode');
 
   // 加载世界书列表
   useEffect(() => {
@@ -90,11 +96,20 @@ export default function WorldBooksPage() {
     }
   };
 
+  const handleViewModeChange = (mode: ViewMode) => {
+    setViewMode(mode);
+  };
+
   return (
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">世界书管理</h1>
-        <div className="flex gap-2">
+        <div className="flex space-x-2 items-center">
+          {/* 视图切换组件 */}
+          <div className="hidden sm:block mr-2">
+            <ViewToggle viewMode={viewMode} onChange={handleViewModeChange} />
+          </div>
+          
           <Button asChild>
             <Link href="/worldbooks/new">
               <Plus className="mr-2 h-4 w-4" /> 新建
@@ -113,6 +128,11 @@ export default function WorldBooksPage() {
             </Button>
           </div>
         </div>
+      </div>
+
+      {/* 移动端专用的视图切换按钮 */}
+      <div className="sm:hidden flex justify-end items-center mb-4">
+        <ViewToggle viewMode={viewMode} onChange={handleViewModeChange} />
       </div>
 
       {isLoading ? (
@@ -138,10 +158,23 @@ export default function WorldBooksPage() {
             </div>
           </div>
         </div>
-      ) : (
+      ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {worldBooks.map((worldBook) => (
             <WorldBookCard
+              key={worldBook.id}
+              worldBook={worldBook}
+              characterCount={linkedCharacters[worldBook.id] || 0}
+              onExport={() => handleExport(worldBook.id)}
+              onDelete={() => handleDelete(worldBook.id)}
+              onToggleEnabled={() => handleToggleEnabled(worldBook.id)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {worldBooks.map((worldBook) => (
+            <WorldBookListItem
               key={worldBook.id}
               worldBook={worldBook}
               characterCount={linkedCharacters[worldBook.id] || 0}
