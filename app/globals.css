@@ -76,34 +76,17 @@
 } 
 
 /* 引号高亮样式 */
-.quoted-text {
+.quoted-text-segment {
   position: relative;
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   transition: all 0.2s ease-in-out;
-  border-radius: 0.25rem;
-  margin: 0 -0.125rem;
-  padding: 0.125rem 0.25rem;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
 
-.quoted-text:hover {
+.quoted-text-segment:hover {
   filter: brightness(1.1);
   backdrop-filter: blur(5px);
   -webkit-backdrop-filter: blur(5px);
-}
-
-.quote-mark {
-  position: relative;
-  display: inline-block;
-  transform: scale(1.1);
-  filter: drop-shadow(0 0 1px currentColor);
-  transition: all 0.2s ease-in-out;
-  font-weight: bold;
-}
-
-.quote-mark:hover {
-  transform: scale(1.2);
-  filter: drop-shadow(0 0 2px currentColor);
 } 

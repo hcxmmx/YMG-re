@@ -114,39 +114,35 @@ function QuoteHighlight({ children }: { children: React.ReactNode }) {
   
   return (
     <>
+      {/* 单独渲染每个文本段，但为引号和引号内容应用相同的样式 */}
       {segments.map((segment, index) => {
+        // 根据段落类型应用不同的样式
         switch (segment.type) {
           case 'openQuote':
           case 'closeQuote':
-            return (
-              <span 
-                key={index} 
-                className="quote-mark"
-                style={{
-                  color: highlightColor,
-                  fontWeight: 'bold'
-                }}
-              >
-                {segment.content}
-              </span>
-            );
           case 'quotedText':
+            // 引号和引号内容使用相同的高亮样式
             return (
               <span 
-                key={index} 
-                className="quoted-text"
+                key={index}
+                className="quoted-text-segment"
                 style={{
                   backgroundColor: `${highlightColor}20`,
-                  borderRadius: '0.25rem',
-                  padding: '0.125rem 0',
-                  boxShadow: `inset 0 -1px 0 ${highlightColor}30`,
                   color: highlightColor,
+                  boxShadow: `inset 0 -1px 0 ${highlightColor}30`,
+                  borderRadius: '0.125rem',
+                  padding: '0 0.125rem',
+                  display: 'inline',
+                  whiteSpace: 'pre-wrap',
+                  boxDecorationBreak: 'clone',
+                  WebkitBoxDecorationBreak: 'clone',
                 }}
               >
                 {segment.content}
               </span>
             );
           default:
+            // 普通文本不添加任何样式
             return <span key={index}>{segment.content}</span>;
         }
       })}
