@@ -21,6 +21,15 @@ const nextConfig = {
       exclude: ['error', 'warn'],
     } : false,
   },
+  // 允许外部访问开发服务器
+  webpack: (config, { isServer }) => {
+    return config;
+  },
+  // 开发服务器配置
+  devServer: {
+    host: '0.0.0.0',
+    allowedHosts: ['*'],
+  }
 };
 
 module.exports = withPWA(nextConfig); 
