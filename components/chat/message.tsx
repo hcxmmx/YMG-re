@@ -18,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { replaceMacros } from "@/lib/macroUtils";
+import { parseTextWithQuotes, isQuoteHighlightEnabled, getQuoteHighlightColor, TextSegment } from "@/lib/quoteUtils";
 
 // 添加一个打字动画指示器组件
 function TypingIndicator({ 
@@ -72,6 +73,87 @@ function TypingIndicator({
   );
 }
 
+// 引号高亮处理组件
+function QuoteHighlight({ children }: { children: React.ReactNode }) {
+  // 检查是否启用引号高亮
+  const highlightColor = getQuoteHighlightColor();
+  
+  // 如果children不是字符串，直接返回
+  if (!children) {
+    return <>{children}</>;
+  }
+  
+  // 将children转换为字符串
+  let textContent = '';
+  
+  // 处理不同类型的children
+  if (typeof children === 'string') {
+    textContent = children;
+  } else if (Array.isArray(children)) {
+    // 如果是数组，尝试连接所有字符串元素
+    textContent = children
+      .map(child => (typeof child === 'string' ? child : ''))
+      .join('');
+  } else {
+    // 如果不是字符串也不是数组，直接返回原内容
+    return <>{children}</>;
+  }
+  
+  // 如果处理后的文本为空，直接返回原内容
+  if (!textContent) {
+    return <>{children}</>;
+  }
+  
+  // 解析文本，识别引号和引号内容
+  const segments = parseTextWithQuotes(textContent);
+  
+  // 如果没有解析出任何段落，或者只有一个普通文本段落，直接返回原文
+  if (segments.length === 0 || (segments.length === 1 && segments[0].type === 'text')) {
+    return <>{children}</>;
+  }
+  
+  return (
+    <>
+      {segments.map((segment, index) => {
+        switch (segment.type) {
+          case 'openQuote':
+          case 'closeQuote':
+            return (
+              <span 
+                key={index} 
+                className="quote-mark"
+                style={{
+                  color: highlightColor,
+                  fontWeight: 'bold'
+                }}
+              >
+                {segment.content}
+              </span>
+            );
+          case 'quotedText':
+            return (
+              <span 
+                key={index} 
+                className="quoted-text"
+                style={{
+                  backgroundColor: `${highlightColor}20`,
+                  borderRadius: '0.25rem',
+                  padding: '0.125rem 0',
+                  boxShadow: `inset 0 -1px 0 ${highlightColor}30`,
+                  color: highlightColor,
+                }}
+              >
+                {segment.content}
+              </span>
+            );
+          default:
+            return <span key={index}>{segment.content}</span>;
+        }
+      })}
+    </>
+  );
+}
+
 interface MessageProps {
   message: MessageType;
   character?: Character | null;
@@ -92,7 +174,7 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
   const [branchName, setBranchName] = useState("");
   
   // 获取UI设置
-  const { showResponseTime, showCharCount, showMessageNumber } = uiSettings;
+  const { showResponseTime, showCharCount, showMessageNumber, enableQuoteHighlight, quoteHighlightColor } = uiSettings;
   
   // 订阅正则脚本变化，确保脚本变更时消息能够重新渲染
   // 注意：只使用scripts.length作为依赖，因为我们只关心脚本的启用/禁用状态变化
@@ -435,8 +517,52 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                       console.error("应用正则表达式处理失败:", error);
                     }
                     
-                    // 使用ReactMarkdown渲染处理后的内容
-                    return <ReactMarkdown className="break-words">{processedContent}</ReactMarkdown>;
+                    // 使用ReactMarkdown渲染处理后的内容，添加引号高亮支持
+                    return (
+                      <ReactMarkdown 
+                        className="break-words"
+                        components={enableQuoteHighlight ? {
+                          p: ({node, children, ...props}) => {
+                            return <p {...props}><QuoteHighlight>{children}</QuoteHighlight></p>;
+                          },
+                          li: ({node, children, ...props}) => {
+                            return <li {...props}><QuoteHighlight>{children}</QuoteHighlight></li>;
+                          },
+                          h1: ({node, children, ...props}) => {
+                            return <h1 {...props}><QuoteHighlight>{children}</QuoteHighlight></h1>;
+                          },
+                          h2: ({node, children, ...props}) => {
+                            return <h2 {...props}><QuoteHighlight>{children}</QuoteHighlight></h2>;
+                          },
+                          h3: ({node, children, ...props}) => {
+                            return <h3 {...props}><QuoteHighlight>{children}</QuoteHighlight></h3>;
+                          },
+                          h4: ({node, children, ...props}) => {
+                            return <h4 {...props}><QuoteHighlight>{children}</QuoteHighlight></h4>;
+                          },
+                          h5: ({node, children, ...props}) => {
+                            return <h5 {...props}><QuoteHighlight>{children}</QuoteHighlight></h5>;
+                          },
+                          h6: ({node, children, ...props}) => {
+                            return <h6 {...props}><QuoteHighlight>{children}</QuoteHighlight></h6>;
+                          },
+                          blockquote: ({node, children, ...props}) => {
+                            return <blockquote {...props}><QuoteHighlight>{children}</QuoteHighlight></blockquote>;
+                          },
+                          strong: ({node, children, ...props}) => {
+                            return <strong {...props}><QuoteHighlight>{children}</QuoteHighlight></strong>;
+                          },
+                          em: ({node, children, ...props}) => {
+                            return <em {...props}><QuoteHighlight>{children}</QuoteHighlight></em>;
+                          },
+                          span: ({node, children, ...props}) => {
+                            return <span {...props}><QuoteHighlight>{children}</QuoteHighlight></span>;
+                          }
+                        } : {}}
+                      >
+                        {processedContent}
+                      </ReactMarkdown>
+                    );
                   })()}
                 </>
               )}

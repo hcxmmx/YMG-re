@@ -23,12 +23,16 @@ interface SettingsState {
     showResponseTime: boolean;
     showCharCount: boolean;
     showMessageNumber: boolean;
+    enableQuoteHighlight: boolean;  // 启用引号高亮
+    quoteHighlightColor: string;    // 引号高亮颜色
   };
   updateSettings: (settings: Partial<UserSettings>) => void;
   updateUISettings: (settings: Partial<{
     showResponseTime: boolean;
     showCharCount: boolean;
     showMessageNumber: boolean;
+    enableQuoteHighlight: boolean;  // 启用引号高亮
+    quoteHighlightColor: string;    // 引号高亮颜色
   }>) => void;
 }
 
@@ -58,6 +62,8 @@ export const useSettingsStore = create<SettingsState>()(
         showResponseTime: true,
         showCharCount: true,
         showMessageNumber: true,
+        enableQuoteHighlight: true,     // 默认启用引号高亮
+        quoteHighlightColor: '#8b5cf6', // 默认使用紫色
       },
       updateSettings: (newSettings) =>
         set((state) => ({
@@ -74,6 +80,12 @@ export const useSettingsStore = create<SettingsState>()(
           }
           if (newUISettings.showMessageNumber !== undefined) {
             localStorage.setItem('showMessageNumber', String(newUISettings.showMessageNumber));
+          }
+          if (newUISettings.enableQuoteHighlight !== undefined) {
+            localStorage.setItem('enableQuoteHighlight', String(newUISettings.enableQuoteHighlight));
+          }
+          if (newUISettings.quoteHighlightColor !== undefined) {
+            localStorage.setItem('quoteHighlightColor', newUISettings.quoteHighlightColor);
           }
 
           return {

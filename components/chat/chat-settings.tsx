@@ -33,6 +33,8 @@ export function ChatSettings() {
     showResponseTime: uiSettings.showResponseTime,
     showCharCount: uiSettings.showCharCount,
     showMessageNumber: uiSettings.showMessageNumber,
+    enableQuoteHighlight: uiSettings.enableQuoteHighlight,
+    quoteHighlightColor: uiSettings.quoteHighlightColor,
   });
   
   // 是否是第一次加载
@@ -56,6 +58,8 @@ export function ChatSettings() {
       showResponseTime: uiSettings.showResponseTime,
       showCharCount: uiSettings.showCharCount,
       showMessageNumber: uiSettings.showMessageNumber,
+      enableQuoteHighlight: uiSettings.enableQuoteHighlight,
+      quoteHighlightColor: uiSettings.quoteHighlightColor,
     }));
   }, [settings, uiSettings]);
   
@@ -83,7 +87,7 @@ export function ChatSettings() {
     // 根据设置类型更新到对应的存储
     if (['model', 'temperature', 'maxTokens', 'topK', 'topP', 'enableStreaming'].includes(key)) {
       updateSettings({ [key]: value });
-    } else if (['showResponseTime', 'showCharCount', 'showMessageNumber'].includes(key)) {
+    } else if (['showResponseTime', 'showCharCount', 'showMessageNumber', 'enableQuoteHighlight', 'quoteHighlightColor'].includes(key)) {
       updateUISettings({ [key]: value });
     }
     
@@ -369,6 +373,35 @@ export function ChatSettings() {
                 onCheckedChange={(checked) => handleSettingChange('showMessageNumber', checked)}
               />
             </div>
+            
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">启用引号高亮</label>
+              <Switch 
+                checked={localSettings.enableQuoteHighlight}
+                onCheckedChange={(checked) => handleSettingChange('enableQuoteHighlight', checked)}
+              />
+            </div>
+            
+            {/* 引号高亮颜色选择 */}
+            {localSettings.enableQuoteHighlight && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">引号高亮颜色</label>
+                  <div className="flex items-center gap-2">
+                    <div 
+                      className="w-5 h-5 rounded-full border" 
+                      style={{ backgroundColor: localSettings.quoteHighlightColor }}
+                    ></div>
+                    <Input 
+                      type="color" 
+                      value={localSettings.quoteHighlightColor} 
+                      onChange={(e) => handleSettingChange('quoteHighlightColor', e.target.value)}
+                      className="w-8 h-8 p-0 cursor-pointer"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </PopoverContent>
