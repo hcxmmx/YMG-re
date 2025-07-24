@@ -75,17 +75,8 @@
   }
 } 
 
-/* 引号高亮样式 */
-.quoted-text-segment {
-  position: relative;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  transition: all 0.2s ease-in-out;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
-}
-
-.quoted-text-segment:hover {
+/* 引号高亮样式 - 只保留悬停效果 */
+.quote-highlight:hover {
   filter: brightness(1.1);
   backdrop-filter: blur(5px);
   -webkit-backdrop-filter: blur(5px);

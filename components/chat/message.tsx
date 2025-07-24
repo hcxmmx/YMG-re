@@ -112,38 +112,93 @@ function QuoteHighlight({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
   
+  // 处理引号组
+  type QuoteGroup = {
+    segments: TextSegment[];
+    isQuote: boolean;
+  };
+  
+  // 将连续的引号相关段落（开引号、引号内容、闭引号）组合在一起
+  const groupedSegments: QuoteGroup[] = [];
+  let currentQuoteGroup: TextSegment[] = [];
+  let inQuote = false;
+  
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    
+    if (segment.type === 'openQuote') {
+      // 如果当前有普通文本，先添加为一个组
+      if (currentQuoteGroup.length > 0 && !inQuote) {
+        groupedSegments.push({
+          segments: [...currentQuoteGroup],
+          isQuote: false
+        });
+        currentQuoteGroup = [];
+      }
+      
+      // 开始一个新的引号组
+      currentQuoteGroup.push(segment);
+      inQuote = true;
+    } else if (segment.type === 'closeQuote') {
+      // 添加闭引号到当前组
+      currentQuoteGroup.push(segment);
+      
+      // 结束当前引号组
+      groupedSegments.push({
+        segments: [...currentQuoteGroup],
+        isQuote: true
+      });
+      
+      currentQuoteGroup = [];
+      inQuote = false;
+    } else {
+      // 添加到当前组
+      currentQuoteGroup.push(segment);
+    }
+  }
+  
+  // 处理剩余的段落
+  if (currentQuoteGroup.length > 0) {
+    groupedSegments.push({
+      segments: currentQuoteGroup,
+      isQuote: inQuote
+    });
+  }
+  
+  // 渲染分组后的内容
   return (
     <>
-      {/* 单独渲染每个文本段，但为引号和引号内容应用相同的样式 */}
-      {segments.map((segment, index) => {
-        // 根据段落类型应用不同的样式
-        switch (segment.type) {
-          case 'openQuote':
-          case 'closeQuote':
-          case 'quotedText':
-            // 引号和引号内容使用相同的高亮样式
-            return (
-              <span 
-                key={index}
-                className="quoted-text-segment"
-                style={{
-                  backgroundColor: `${highlightColor}20`,
-                  color: highlightColor,
-                  boxShadow: `inset 0 -1px 0 ${highlightColor}30`,
-                  borderRadius: '0.125rem',
-                  padding: '0 0.125rem',
-                  display: 'inline',
-                  whiteSpace: 'pre-wrap',
-                  boxDecorationBreak: 'clone',
-                  WebkitBoxDecorationBreak: 'clone',
-                }}
-              >
-                {segment.content}
-              </span>
-            );
-          default:
-            // 普通文本不添加任何样式
-            return <span key={index}>{segment.content}</span>;
+      {groupedSegments.map((group, groupIndex) => {
+        if (group.isQuote) {
+          // 引号组 - 应用高亮样式
+          const content = group.segments.map(seg => seg.content).join('');
+          return (
+            <span 
+              key={`quote-${groupIndex}`}
+              style={{
+                backgroundColor: `${highlightColor}20`,
+                color: highlightColor,
+                boxShadow: `inset 0 -1px 0 ${highlightColor}30`,
+                borderRadius: '0.25rem',
+                padding: '0.125rem 0.25rem',
+                margin: '0 0.0625rem',
+                display: 'inline',
+                whiteSpace: 'pre-wrap',
+                boxDecorationBreak: 'clone',
+                WebkitBoxDecorationBreak: 'clone',
+                backdropFilter: 'blur(4px)',
+                WebkitBackdropFilter: 'blur(4px)',
+                transition: 'all 0.2s ease-in-out',
+              }}
+              className="quote-highlight"
+            >
+              {content}
+            </span>
+          );
+        } else {
+          // 普通文本组 - 不应用样式
+          const content = group.segments.map(seg => seg.content).join('');
+          return <span key={`text-${groupIndex}`}>{content}</span>;
         }
       })}
     </>
