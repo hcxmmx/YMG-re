@@ -4,8 +4,11 @@ import { useEffect, useState, useRef } from "react";
 import { Character, CharacterImportResult } from "@/lib/types";
 import { characterStorage } from "@/lib/storage";
 import { CharacterCard } from "@/components/ui/character-card";
+import { CharacterListItem } from "@/components/ui/character-list-item";
 import { CharacterForm } from "@/components/ui/character-form";
 import { Button } from "@/components/ui/button";
+import { ViewToggle } from "@/components/ui/view-toggle";
+import { useResponsiveView } from "@/lib/useResponsiveView";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +18,8 @@ import {
 } from "@/components/ui/dialog";
 import { useChatStore } from "@/lib/store";
 
+type ViewMode = 'grid' | 'list';
+
 export default function CharactersPage() {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,6 +28,7 @@ export default function CharactersPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogTitle, setDialogTitle] = useState("");
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
+  const [viewMode, setViewMode] = useResponsiveView('characters-view-mode');
   const importFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -63,6 +69,10 @@ export default function CharactersPage() {
 
   const handleCancelEdit = () => {
     setIsDialogOpen(false);
+  };
+
+  const handleViewModeChange = (mode: ViewMode) => {
+    setViewMode(mode);
   };
 
   // 处理角色卡导入
@@ -112,11 +122,17 @@ export default function CharactersPage() {
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">角色管理</h1>
-        <div className="flex space-x-2">
+        <div className="flex space-x-2 items-center">
+          {/* 视图切换组件 */}
+          <div className="hidden sm:block mr-2">
+            <ViewToggle viewMode={viewMode} onChange={handleViewModeChange} />
+          </div>
+          
           <Button 
             onClick={() => importFileRef.current?.click()}
             variant="outline"
             disabled={isImporting}
+            className="hidden sm:flex"
           >
             {isImporting ? '导入中...' : '导入角色卡'}
           </Button>
@@ -127,12 +143,23 @@ export default function CharactersPage() {
             accept=".json,.png"
             className="hidden"
           />
-          <Button 
-            onClick={handleCreateCharacter}
-          >
+          <Button onClick={handleCreateCharacter}>
             创建角色
           </Button>
         </div>
+      </div>
+      
+      {/* 移动端专用的视图切换和导入按钮 */}
+      <div className="sm:hidden flex justify-between items-center mb-4">
+        <ViewToggle viewMode={viewMode} onChange={handleViewModeChange} />
+        <Button 
+          onClick={() => importFileRef.current?.click()}
+          variant="outline"
+          disabled={isImporting}
+          size="sm"
+        >
+          {isImporting ? '导入中...' : '导入角色卡'}
+        </Button>
       </div>
 
       {/* 角色表单模态框 */}
@@ -157,16 +184,29 @@ export default function CharactersPage() {
           <p>加载中...</p>
         </div>
       ) : characters.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {characters.map((character) => (
-            <CharacterCard 
-              key={character.id} 
-              character={character} 
-              onEdit={() => handleEditCharacter(character)}
-              onDelete={loadCharacters}
-            />
-          ))}
-        </div>
+        viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {characters.map((character) => (
+              <CharacterCard 
+                key={character.id} 
+                character={character} 
+                onEdit={() => handleEditCharacter(character)}
+                onDelete={loadCharacters}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {characters.map((character) => (
+              <CharacterListItem
+                key={character.id}
+                character={character}
+                onEdit={() => handleEditCharacter(character)}
+                onDelete={loadCharacters}
+              />
+            ))}
+          </div>
+        )
       ) : (
         <div className="flex flex-col items-center justify-center h-60">
           <p className="text-muted-foreground mb-4">还没有创建角色</p>

@@ -4,9 +4,12 @@ import { useState, useEffect } from "react";
 import { Player } from "@/lib/types";
 import { usePlayerStore } from "@/lib/store";
 import { PlayerCard } from "@/components/ui/player-card";
+import { PlayerListItem } from "@/components/ui/player-list-item";
 import { PlayerForm } from "@/components/ui/player-form";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
+import { ViewToggle } from "@/components/ui/view-toggle";
+import { useResponsiveView } from "@/lib/useResponsiveView";
 import {
   Dialog,
   DialogContent,
@@ -16,17 +19,24 @@ import {
 } from "@/components/ui/dialog";
 import { generateId } from "@/lib/utils";
 
+type ViewMode = 'grid' | 'list';
+
 export default function PlayersPage() {
   const { players, loadPlayers, savePlayer, deletePlayer, currentPlayerId, setCurrentPlayer } = usePlayerStore();
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogTitle, setDialogTitle] = useState("");
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
+  const [viewMode, setViewMode] = useResponsiveView('players-view-mode');
 
   useEffect(() => {
     document.title = "玩家管理 - AI角色扮演平台";
     loadPlayers().then(() => setLoading(false));
   }, [loadPlayers]);
+
+  const handleViewModeChange = (mode: ViewMode) => {
+    setViewMode(mode);
+  };
 
   const handleCreatePlayer = () => {
     setEditingPlayer(null);
@@ -65,10 +75,21 @@ export default function PlayersPage() {
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">玩家管理</h1>
-        <Button onClick={handleCreatePlayer} className="flex items-center gap-1">
-          <Plus className="h-4 w-4" />
-          创建玩家
-        </Button>
+        <div className="flex space-x-2 items-center">
+          {/* 视图切换组件 */}
+          <div className="hidden sm:block">
+            <ViewToggle viewMode={viewMode} onChange={handleViewModeChange} />
+          </div>
+          <Button onClick={handleCreatePlayer} className="flex items-center gap-1">
+            <Plus className="h-4 w-4" />
+            创建玩家
+          </Button>
+        </div>
+      </div>
+      
+      {/* 移动端专用的视图切换按钮 */}
+      <div className="sm:hidden flex justify-end items-center mb-4">
+        <ViewToggle viewMode={viewMode} onChange={handleViewModeChange} />
       </div>
 
       {players.length === 0 ? (
@@ -78,10 +99,23 @@ export default function PlayersPage() {
           </p>
           <Button onClick={handleCreatePlayer}>创建第一个玩家</Button>
         </div>
-      ) : (
+      ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {players.map((player) => (
             <PlayerCard
+              key={player.id}
+              player={player}
+              isActive={player.id === currentPlayerId}
+              onSelect={handleSelectPlayer}
+              onEdit={handleEditPlayer}
+              onDelete={handleDeletePlayer}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {players.map((player) => (
+            <PlayerListItem
               key={player.id}
               player={player}
               isActive={player.id === currentPlayerId}
