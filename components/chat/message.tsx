@@ -499,7 +499,7 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
 
             {/* 渲染文本内容 */}
             <div className={cn(
-              "prose dark:prose-invert max-w-none",
+              "prose dark:prose-invert max-w-none chat-message-text",
               isUser ? "prose-primary" : ""
             )}>
               {isEditing ? (
@@ -570,49 +570,51 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                     
                     // 使用ReactMarkdown渲染处理后的内容，添加引号高亮支持
                     return (
-                      <ReactMarkdown 
-                        className="break-words"
-                        components={enableQuoteHighlight ? {
-                          p: ({node, children, ...props}) => {
-                            return <p {...props}><QuoteHighlight>{children}</QuoteHighlight></p>;
-                          },
-                          li: ({node, children, ...props}) => {
-                            return <li {...props}><QuoteHighlight>{children}</QuoteHighlight></li>;
-                          },
-                          h1: ({node, children, ...props}) => {
-                            return <h1 {...props}><QuoteHighlight>{children}</QuoteHighlight></h1>;
-                          },
-                          h2: ({node, children, ...props}) => {
-                            return <h2 {...props}><QuoteHighlight>{children}</QuoteHighlight></h2>;
-                          },
-                          h3: ({node, children, ...props}) => {
-                            return <h3 {...props}><QuoteHighlight>{children}</QuoteHighlight></h3>;
-                          },
-                          h4: ({node, children, ...props}) => {
-                            return <h4 {...props}><QuoteHighlight>{children}</QuoteHighlight></h4>;
-                          },
-                          h5: ({node, children, ...props}) => {
-                            return <h5 {...props}><QuoteHighlight>{children}</QuoteHighlight></h5>;
-                          },
-                          h6: ({node, children, ...props}) => {
-                            return <h6 {...props}><QuoteHighlight>{children}</QuoteHighlight></h6>;
-                          },
-                          blockquote: ({node, children, ...props}) => {
-                            return <blockquote {...props}><QuoteHighlight>{children}</QuoteHighlight></blockquote>;
-                          },
-                          strong: ({node, children, ...props}) => {
-                            return <strong {...props}><QuoteHighlight>{children}</QuoteHighlight></strong>;
-                          },
-                          em: ({node, children, ...props}) => {
-                            return <em {...props}><QuoteHighlight>{children}</QuoteHighlight></em>;
-                          },
-                          span: ({node, children, ...props}) => {
-                            return <span {...props}><QuoteHighlight>{children}</QuoteHighlight></span>;
-                          }
-                        } : {}}
-                      >
-                        {processedContent}
-                      </ReactMarkdown>
+                      <div className="chat-message-content">
+                        <ReactMarkdown 
+                          className="break-words"
+                          components={enableQuoteHighlight ? {
+                            p: ({node, children, ...props}) => {
+                              return <p {...props}><QuoteHighlight>{children}</QuoteHighlight></p>;
+                            },
+                            li: ({node, children, ...props}) => {
+                              return <li {...props}><QuoteHighlight>{children}</QuoteHighlight></li>;
+                            },
+                            h1: ({node, children, ...props}) => {
+                              return <h1 {...props}><QuoteHighlight>{children}</QuoteHighlight></h1>;
+                            },
+                            h2: ({node, children, ...props}) => {
+                              return <h2 {...props}><QuoteHighlight>{children}</QuoteHighlight></h2>;
+                            },
+                            h3: ({node, children, ...props}) => {
+                              return <h3 {...props}><QuoteHighlight>{children}</QuoteHighlight></h3>;
+                            },
+                            h4: ({node, children, ...props}) => {
+                              return <h4 {...props}><QuoteHighlight>{children}</QuoteHighlight></h4>;
+                            },
+                            h5: ({node, children, ...props}) => {
+                              return <h5 {...props}><QuoteHighlight>{children}</QuoteHighlight></h5>;
+                            },
+                            h6: ({node, children, ...props}) => {
+                              return <h6 {...props}><QuoteHighlight>{children}</QuoteHighlight></h6>;
+                            },
+                            blockquote: ({node, children, ...props}) => {
+                              return <blockquote {...props}><QuoteHighlight>{children}</QuoteHighlight></blockquote>;
+                            },
+                            strong: ({node, children, ...props}) => {
+                              return <strong {...props}><QuoteHighlight>{children}</QuoteHighlight></strong>;
+                            },
+                            em: ({node, children, ...props}) => {
+                              return <em {...props}><QuoteHighlight>{children}</QuoteHighlight></em>;
+                            },
+                            span: ({node, children, ...props}) => {
+                              return <span {...props}><QuoteHighlight>{children}</QuoteHighlight></span>;
+                            }
+                          } : {}}
+                        >
+                          {processedContent}
+                        </ReactMarkdown>
+                      </div>
                     );
                   })()}
                 </>

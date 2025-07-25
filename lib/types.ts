@@ -46,10 +46,17 @@ export enum HarmBlockThreshold {
   BLOCK_UNSPECIFIED = "BLOCK_UNSPECIFIED"
 }
 
+// 字体系列选项
+export type FontFamily = 
+  | 'system'
+  | 'sans'
+  | 'serif'
+  | 'mono';
+
 // 用户设置类型
 export interface UserSettings {
   apiKey?: string;
-  theme: 'light' | 'dark' | 'system';
+  theme: string;
   language: string;
   enableStreaming: boolean;
   maxTokens: number;
@@ -66,6 +73,10 @@ export interface UserSettings {
   // 上下文窗口相关设置
   contextWindow: number;        // 上下文窗口大小（token数或消息数）
   contextControlMode: 'count' | 'token';  // 上下文控制方式
+  // 字体相关设置
+  fontFamily: FontFamily; // 字体系列
+  fontSize: number; // 全局字体大小（百分比，100 = 100%）
+  chatFontSize: number; // 聊天消息字体大小（百分比，100 = 100%）
 }
 
 // 对话类型

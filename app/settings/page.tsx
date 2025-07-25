@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useSettingsStore } from "@/lib/store";
-import { HarmBlockThreshold } from "@/lib/types";
+import { HarmBlockThreshold, FontFamily } from "@/lib/types";
 import Link from "next/link";
 
 // 可用的Gemini模型列表
@@ -28,6 +28,14 @@ const CONTEXT_CONTROL_OPTIONS = [
   { value: "token", label: "基于Token数量" },
 ];
 
+// 字体选项
+const FONT_FAMILY_OPTIONS = [
+  { value: "system", label: "系统默认" },
+  { value: "sans", label: "无衬线字体" },
+  { value: "serif", label: "衬线字体" },
+  { value: "mono", label: "等宽字体" },
+];
+
 export default function SettingsPage() {
   const router = useRouter();
   const { settings, updateSettings } = useSettingsStore();
@@ -46,6 +54,12 @@ export default function SettingsPage() {
     sexuallyExplicit: HarmBlockThreshold.BLOCK_NONE,
     dangerousContent: HarmBlockThreshold.BLOCK_NONE,
   });
+  
+  // 新增字体设置状态
+  const [fontFamily, setFontFamily] = useState<FontFamily>('system');
+  const [fontSize, setFontSize] = useState(100);
+  const [chatFontSize, setChatFontSize] = useState(100);
+  
   const [isSaved, setIsSaved] = useState(false);
 
   // 加载已保存的设置
@@ -60,7 +74,33 @@ export default function SettingsPage() {
     setSafetySettings(settings.safetySettings);
     setContextWindow(settings.contextWindow || 0);
     setContextControlMode(settings.contextControlMode || 'token');
+    // 加载字体设置
+    setFontFamily(settings.fontFamily || 'system');
+    setFontSize(settings.fontSize || 100);
+    setChatFontSize(settings.chatFontSize || 100);
   }, [settings]);
+
+  // 字体映射对象，将字体类型映射到实际CSS字体值
+  const fontFamilyMap: Record<FontFamily, string> = {
+    system: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+    sans: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+    serif: "ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif",
+    mono: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+  };
+
+  // 在用户交互时立即应用字体设置到预览（不保存）
+  const applyFontPreview = (family: FontFamily, globalSize: number, chatSize: number) => {
+    // 预览时应用到整个页面，但不保存设置
+    document.documentElement.style.setProperty('--font-family', fontFamilyMap[family]);
+    document.documentElement.style.fontSize = `${globalSize}%`;
+    document.documentElement.style.setProperty('--chat-font-size', `${chatSize}%`);
+  };
+
+  // 当字体设置发生变化时立即应用到预览
+  useEffect(() => {
+    applyFontPreview(fontFamily, fontSize, chatFontSize);
+    // 这只是临时的，离开页面后会恢复到保存的设置
+  }, [fontFamily, fontSize, chatFontSize]);
 
   // 更新安全设置
   const updateSafetySetting = (category: keyof typeof safetySettings, value: HarmBlockThreshold) => {
@@ -83,9 +123,31 @@ export default function SettingsPage() {
       safetySettings,
       contextWindow,
       contextControlMode,
+      // 保存字体设置
+      fontFamily,
+      fontSize,
+      chatFontSize,
     });
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
+  };
+
+  // 处理字体系列变更
+  const handleFontFamilyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newFontFamily = e.target.value as FontFamily;
+    setFontFamily(newFontFamily);
+  };
+
+  // 处理全局字体大小变更
+  const handleFontSizeChange = (value: number) => {
+    const newSize = Math.max(50, Math.min(200, value || 100));
+    setFontSize(newSize);
+  };
+
+  // 处理聊天字体大小变更
+  const handleChatFontSizeChange = (value: number) => {
+    const newSize = Math.max(50, Math.min(200, value || 100));
+    setChatFontSize(newSize);
   };
 
   return (
@@ -96,6 +158,119 @@ export default function SettingsPage() {
       </header>
 
       <div className="space-y-8">
+        {/* 外观设置 */}
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold">外观设置</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            调整应用程序的字体和文本大小，优化您的阅读体验。
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* 字体选择 */}
+            <div className="space-y-2">
+              <label htmlFor="fontFamily" className="text-sm font-medium">
+                字体
+              </label>
+              <select
+                id="fontFamily"
+                value={fontFamily}
+                onChange={handleFontFamilyChange}
+                className="w-full p-2 border rounded-md bg-background"
+              >
+                {FONT_FAMILY_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                选择应用程序使用的字体。
+              </p>
+            </div>
+            
+            {/* 全局字体大小 */}
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <label htmlFor="fontSize" className="text-sm font-medium">
+                  全局字体大小: {fontSize}%
+                </label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  id="fontSize"
+                  type="range"
+                  min="50"
+                  max="200"
+                  step="5"
+                  value={fontSize}
+                  onChange={(e) => handleFontSizeChange(parseInt(e.target.value))}
+                  className="w-full"
+                />
+                <input
+                  type="number"
+                  min="50"
+                  max="200"
+                  value={fontSize}
+                  onChange={(e) => handleFontSizeChange(parseInt(e.target.value))}
+                  className="w-20 h-9 px-3 py-1 border rounded-md bg-background"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                调整整个应用程序的字体大小，影响所有界面元素。
+              </p>
+            </div>
+            
+            {/* 聊天消息字体大小 */}
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <label htmlFor="chatFontSize" className="text-sm font-medium">
+                  聊天消息字体大小: {chatFontSize}%
+                </label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  id="chatFontSize"
+                  type="range"
+                  min="50"
+                  max="200"
+                  step="5"
+                  value={chatFontSize}
+                  onChange={(e) => handleChatFontSizeChange(parseInt(e.target.value))}
+                  className="w-full"
+                />
+                <input
+                  type="number"
+                  min="50"
+                  max="200"
+                  value={chatFontSize}
+                  onChange={(e) => handleChatFontSizeChange(parseInt(e.target.value))}
+                  className="w-20 h-9 px-3 py-1 border rounded-md bg-background"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                单独调整聊天界面中消息文本的大小，不影响其他界面元素。
+              </p>
+            </div>
+            
+            {/* 示例文本 */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">预览效果</label>
+              <div className="p-3 border rounded-md bg-background">
+                <p className="mb-1" style={{fontFamily: fontFamilyMap[fontFamily]}}>
+                  全局文本样式预览 (当前大小: {fontSize}%)
+                </p>
+                <div className="mt-2 p-3 bg-muted rounded-md" 
+                     style={{fontFamily: fontFamilyMap[fontFamily], fontSize: `${chatFontSize}%`}}>
+                  <p className="mb-0">聊天消息文本样式预览 (当前大小: {chatFontSize}%)</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                拖动调整条或更改字体时会实时预览效果，点击保存设置后生效。
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* API密钥设置 */}
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">API密钥</h2>

@@ -57,6 +57,10 @@ export const useSettingsStore = create<SettingsState>()(
         // 上下文窗口设置
         contextWindow: 0, // 默认0表示不限制
         contextControlMode: 'token', // 默认使用token计数方式
+        // 字体设置
+        fontFamily: 'system', // 默认使用系统字体
+        fontSize: 100, // 默认100%的全局字体大小
+        chatFontSize: 100, // 默认100%的聊天消息字体大小
       },
       uiSettings: {
         showResponseTime: true,
@@ -66,9 +70,22 @@ export const useSettingsStore = create<SettingsState>()(
         quoteHighlightColor: '#8b5cf6', // 默认使用紫色
       },
       updateSettings: (newSettings) =>
-        set((state) => ({
-          settings: { ...state.settings, ...newSettings },
-        })),
+        set((state) => {
+          // 如果更新了字体相关设置，同步到localStorage以便全局访问
+          if (newSettings.fontFamily !== undefined) {
+            localStorage.setItem('fontFamily', String(newSettings.fontFamily));
+          }
+          if (newSettings.fontSize !== undefined) {
+            localStorage.setItem('fontSize', String(newSettings.fontSize));
+          }
+          if (newSettings.chatFontSize !== undefined) {
+            localStorage.setItem('chatFontSize', String(newSettings.chatFontSize));
+          }
+          
+          return {
+            settings: { ...state.settings, ...newSettings },
+          };
+        }),
       updateUISettings: (newUISettings) =>
         set((state) => {
           // 同时更新localStorage以便消息组件可以直接读取
