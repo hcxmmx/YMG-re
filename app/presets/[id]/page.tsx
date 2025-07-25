@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { usePromptPresetStore } from "@/lib/store";
-import { ArrowLeft, Edit, Trash2, Plus, GripVertical, Info } from "lucide-react";
+import { ArrowLeft, Edit, Trash2, Plus, GripVertical, Info, List, LayoutGrid, MoreHorizontal } from "lucide-react";
 import { PromptPresetItem } from "@/lib/types";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -19,6 +19,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useResponsiveView } from "@/lib/useResponsiveView";
+import { ViewToggle } from "@/components/ui/view-toggle";
 import {
   DndContext,
   closestCenter,
@@ -37,7 +39,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-// 可排序的提示词项组件
+// 可排序的提示词项组件（完整视图）
 interface SortablePromptItemProps {
   prompt: PromptPresetItem;
   index: number;
@@ -160,6 +162,138 @@ function SortablePromptItem({ prompt, index, togglePromptEnabled, startEditPromp
   );
 }
 
+// 可排序的简化提示词项（移动端视图）
+interface SimplifiedPromptItemProps {
+  prompt: PromptPresetItem;
+  index: number;
+  togglePromptEnabled: (index: number) => void;
+  startEditPrompt: (index: number) => void;
+  deletePrompt: (index: number) => void;
+}
+
+function SimplifiedPromptItem({ prompt, index, togglePromptEnabled, startEditPrompt, deletePrompt }: SimplifiedPromptItemProps) {
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  
+  // 关闭菜单的点击外部处理
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    
+    if (showMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showMenu]);
+  
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: prompt.identifier });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : 1
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "flex items-center py-2 px-2 hover:bg-muted/30 transition-colors border-b last:border-b-0 min-w-max",
+        !prompt.enabled && "opacity-60",
+        isDragging && "bg-accent shadow-lg rounded-md"
+      )}
+    >
+      {/* 拖拽手柄 - 固定宽度 */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="flex items-center justify-center w-8 h-8 mr-1 flex-shrink-0 text-muted-foreground hover:text-foreground rounded-full hover:bg-muted/50 cursor-grab active:cursor-grabbing touch-manipulation"
+      >
+        <GripVertical className="h-4 w-4" />
+      </div>
+      
+      {/* 提示词名称 - 可伸缩并截断 */}
+      <div 
+        className="w-0 flex-1 min-w-0 overflow-hidden py-1 mr-1" 
+        onClick={() => startEditPrompt(index)}
+      >
+        <div className="font-medium flex items-center flex-wrap">
+          <span className="truncate max-w-full block">{prompt.name}</span>
+          {prompt.isPlaceholder && (
+            <Badge variant="outline" className="mt-0.5 bg-primary/10 text-xs flex-shrink-0">
+              {prompt.placeholderType}
+              {!prompt.implemented && " ⚠️"}
+            </Badge>
+          )}
+        </div>
+      </div>
+      
+      {/* 功能按钮组 - 不可收缩 */}
+      <div className="flex items-center gap-1 flex-shrink-0" style={{ width: "85px" }}>
+        <Switch
+          checked={prompt.enabled}
+          onCheckedChange={() => togglePromptEnabled(index)}
+          className="data-[state=unchecked]:bg-muted flex-shrink-0"
+          aria-label={prompt.enabled ? "禁用" : "启用"}
+        />
+        
+        {/* 更多操作按钮 - 下拉菜单 */}
+        <div className="relative flex-shrink-0" ref={menuRef}>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-8 w-8 rounded-full flex-shrink-0 p-0"
+            onClick={() => setShowMenu(!showMenu)}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+          
+          {showMenu && (
+            <div className="absolute right-0 z-10 mt-1 w-36 rounded-md bg-white dark:bg-gray-800 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+              <div className="py-1">
+                <button 
+                  className="flex w-full items-center px-3 py-2 text-sm hover:bg-muted/50 text-foreground"
+                  onClick={() => {
+                    startEditPrompt(index);
+                    setShowMenu(false);
+                  }}
+                >
+                  <Edit className="mr-2 h-4 w-4" />
+                  编辑
+                </button>
+                <button 
+                  className="flex w-full items-center px-3 py-2 text-sm hover:bg-muted/50 text-destructive"
+                  onClick={() => {
+                    deletePrompt(index);
+                    setShowMenu(false);
+                  }}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  删除
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface EditPresetPageProps {
   params: {
     id: string;
@@ -171,6 +305,9 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
   const { id } = params;
   
   const { presets, getPreset, savePreset, loadPresets } = usePromptPresetStore();
+  
+  // 添加视图模式状态，使用useResponsiveView钩子
+  const [viewMode, setViewMode] = useResponsiveView('preset-prompts-view-mode');
   
   // 编辑状态
   const [name, setName] = useState("");
@@ -479,10 +616,16 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
                 已启用 {prompts.filter(p => p.enabled).length}/{prompts.length} 项
               </p>
             </div>
-            <Button onClick={addPrompt}>
-              <Plus className="h-4 w-4 mr-1" />
-              添加提示词
-            </Button>
+            <div className="flex space-x-2 items-center">
+              {/* 视图切换组件 */}
+              <div className="mr-2">
+                <ViewToggle viewMode={viewMode} onChange={setViewMode} />
+              </div>
+              <Button onClick={addPrompt}>
+                <Plus className="h-4 w-4 mr-1" />
+                添加提示词
+              </Button>
+            </div>
           </div>
           
           <Card>
@@ -491,7 +634,7 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
                 没有提示词条目。点击"添加提示词"按钮创建一个。
               </div>
             ) : (
-              <ScrollArea className="h-[600px]">
+              <div className="max-h-[600px] overflow-y-auto overflow-x-visible">
                 <DndContext
                   sensors={sensors}
                   collisionDetection={closestCenter}
@@ -503,19 +646,30 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
                   >
                     <div className="divide-y">
                       {prompts.map((prompt, index) => (
-                        <SortablePromptItem
-                          key={prompt.identifier}
-                          prompt={prompt}
-                          index={index}
-                          togglePromptEnabled={togglePromptEnabled}
-                          startEditPrompt={startEditPrompt}
-                          deletePrompt={deletePrompt}
-                        />
+                        viewMode === 'list' ? (
+                          <SimplifiedPromptItem
+                            key={prompt.identifier}
+                            prompt={prompt}
+                            index={index}
+                            togglePromptEnabled={togglePromptEnabled}
+                            startEditPrompt={startEditPrompt}
+                            deletePrompt={deletePrompt}
+                          />
+                        ) : (
+                          <SortablePromptItem
+                            key={prompt.identifier}
+                            prompt={prompt}
+                            index={index}
+                            togglePromptEnabled={togglePromptEnabled}
+                            startEditPrompt={startEditPrompt}
+                            deletePrompt={deletePrompt}
+                          />
+                        )
                       ))}
                     </div>
                   </SortableContext>
                 </DndContext>
-              </ScrollArea>
+              </div>
             )}
           </Card>
         </TabsContent>
