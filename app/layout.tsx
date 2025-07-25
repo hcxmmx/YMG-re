@@ -7,6 +7,7 @@ import { Header } from "@/components/header";
 import { useState, useEffect, createContext, useContext } from "react";
 import { usePathname } from "next/navigation";
 import { useSettingsStore } from "@/lib/store";
+import { Toaster } from "@/components/ui/toast";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -144,6 +145,7 @@ export default function RootLayout({
               <main className={`flex-1 transition-all duration-300 ease-in-out`}>{children}</main>
             </div>
           </NavbarContext.Provider>
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

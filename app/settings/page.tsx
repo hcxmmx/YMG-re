@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { useSettingsStore } from "@/lib/store";
 import { HarmBlockThreshold, FontFamily } from "@/lib/types";
 import Link from "next/link";
+import { DataExportImport, ExportOptions } from "@/components/ui/data-export-import";
+import { exportData, importData, downloadFile } from "@/lib/dataUtils";
+import { useToast } from "@/components/ui/use-toast";
 
 // 可用的Gemini模型列表
 const AVAILABLE_MODELS = [
@@ -47,6 +50,7 @@ const FONT_FAMILY_OPTIONS = [
 export default function SettingsPage() {
   const router = useRouter();
   const { settings, updateSettings } = useSettingsStore();
+  const { toast } = useToast();
   const [apiKey, setApiKey] = useState("");
   const [temperature, setTemperature] = useState(0.7);
   const [maxTokens, setMaxTokens] = useState(1024);
@@ -69,6 +73,10 @@ export default function SettingsPage() {
   const [chatFontSize, setChatFontSize] = useState(100);
   
   const [isSaved, setIsSaved] = useState(false);
+  
+  // 导入导出状态
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   // 加载已保存的设置
   useEffect(() => {
@@ -275,6 +283,69 @@ export default function SettingsPage() {
   const handleChatFontSizeChange = (value: number) => {
     const newSize = Math.max(50, Math.min(200, value || 100));
     setChatFontSize(newSize);
+  };
+
+  // 处理数据导出
+  const handleExport = async (options: ExportOptions) => {
+    try {
+      setIsExporting(true);
+      const blob = await exportData(options);
+      
+      // 生成文件名，格式：AI对话平台数据备份_YYYY-MM-DD.json
+      const date = new Date();
+      const dateString = date.toISOString().split('T')[0]; // YYYY-MM-DD
+      const filename = `AI对话平台数据备份_${dateString}.json`;
+      
+      // 下载文件
+      downloadFile(blob, filename);
+      
+      toast({
+        title: "导出成功",
+        description: "数据已成功导出",
+      });
+    } catch (error) {
+      console.error("导出失败:", error);
+      toast({
+        title: "导出失败",
+        description: error instanceof Error ? error.message : "导出数据时发生未知错误",
+        variant: "destructive"
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // 处理数据导入
+  const handleImport = async (file: File) => {
+    try {
+      setIsImporting(true);
+      const result = await importData(file);
+      
+      if (result.success) {
+        toast({
+          title: "导入成功",
+          description: result.message,
+        });
+        
+        // 重新加载页面以应用导入的设置
+        window.location.reload();
+      } else {
+        toast({
+          title: "导入失败",
+          description: result.message,
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error("导入失败:", error);
+      toast({
+        title: "导入失败",
+        description: error instanceof Error ? error.message : "导入数据时发生未知错误",
+        variant: "destructive"
+      });
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   return (
@@ -751,6 +822,21 @@ export default function SettingsPage() {
               </select>
             </div>
           </div>
+        </div>
+        
+        {/* 数据备份与恢复 */}
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold">数据备份与恢复</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            导出或导入您的应用数据，包括对话历史、角色、预设等
+          </p>
+          
+          <DataExportImport 
+            onExport={handleExport}
+            onImport={handleImport}
+            isExporting={isExporting}
+            isImporting={isImporting}
+          />
         </div>
 
         {/* 保存按钮 */}
