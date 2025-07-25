@@ -204,17 +204,17 @@ export default function EntryPage({ params }: EntryPageProps) {
     <div className="container mx-auto p-4">
       <div className="mb-6">
         <Button variant="ghost" className="mb-2" asChild>
-          <Link href={`/worldbooks/${id}`}>
+          <Link href={`/worldbooks/${id}?tab=entries&highlightEntryId=${entryId}`}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             返回世界书
           </Link>
         </Button>
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
           <div>
-            <h1 className="text-3xl font-bold">编辑条目</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold">编辑条目</h1>
             <p className="text-muted-foreground">世界书: {worldBookName}</p>
           </div>
-          <Button onClick={handleSave}>
+          <Button onClick={handleSave} className="mt-2 sm:mt-0">
             <Save className="mr-2 h-4 w-4" />
             保存
           </Button>
@@ -222,12 +222,14 @@ export default function EntryPage({ params }: EntryPageProps) {
       </div>
       
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="basic">基本信息</TabsTrigger>
-          <TabsTrigger value="keywords">关键字</TabsTrigger>
-          <TabsTrigger value="recursion">递归设置</TabsTrigger>
-          <TabsTrigger value="timing">时效设置</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-4 px-4">
+          <TabsList className="mb-4 w-full sm:w-auto">
+            <TabsTrigger value="basic" className="flex-1 sm:flex-none">基本信息</TabsTrigger>
+            <TabsTrigger value="keywords" className="flex-1 sm:flex-none">关键字</TabsTrigger>
+            <TabsTrigger value="recursion" className="flex-1 sm:flex-none">递归设置</TabsTrigger>
+            <TabsTrigger value="timing" className="flex-1 sm:flex-none">时效设置</TabsTrigger>
+          </TabsList>
+        </div>
         
         {/* 基本信息标签页 */}
         <TabsContent value="basic">
@@ -237,7 +239,7 @@ export default function EntryPage({ params }: EntryPageProps) {
               <CardDescription>设置条目的基本信息</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div className="flex items-center space-x-2">
                   <Switch 
                     checked={formData.enabled}
@@ -349,22 +351,23 @@ export default function EntryPage({ params }: EntryPageProps) {
               {formData.strategy === 'selective' ? (
                 <>
                   <div className="space-y-4">
-                    <div className="flex justify-between">
-                      <Label htmlFor="primaryKeys">主要关键字</Label>
+                    <div className="flex flex-col sm:flex-row sm:justify-between">
+                      <Label htmlFor="primaryKeys" className="mb-2 sm:mb-0">主要关键字</Label>
                       <div className="text-sm text-muted-foreground">
                         匹配这些关键字会激活条目
                       </div>
                     </div>
                     
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-col sm:flex-row">
                       <Input
                         id="primaryKeys"
                         value={newPrimaryKey}
                         onChange={(e) => setNewPrimaryKey(e.target.value)}
                         placeholder="添加主要关键字"
                         onKeyDown={(e) => e.key === 'Enter' && addPrimaryKey()}
+                        className="flex-1"
                       />
-                      <Button type="button" onClick={addPrimaryKey}>
+                      <Button type="button" onClick={addPrimaryKey} className="sm:w-auto">
                         添加
                       </Button>
                     </div>
@@ -376,11 +379,11 @@ export default function EntryPage({ params }: EntryPageProps) {
                             key={key}
                             className="flex items-center gap-1 bg-secondary px-2 py-1 rounded"
                           >
-                            <span>{key}</span>
+                            <span className="max-w-[180px] sm:max-w-none truncate">{key}</span>
                             <button 
                               type="button" 
                               onClick={() => removePrimaryKey(key)}
-                              className="text-muted-foreground hover:text-destructive"
+                              className="text-muted-foreground hover:text-destructive flex-shrink-0"
                             >
                               <XCircle className="h-4 w-4" />
                             </button>
@@ -395,22 +398,23 @@ export default function EntryPage({ params }: EntryPageProps) {
                   </div>
                   
                   <div className="space-y-4">
-                    <div className="flex justify-between">
-                      <Label htmlFor="secondaryKeys">次要关键字</Label>
+                    <div className="flex flex-col sm:flex-row sm:justify-between">
+                      <Label htmlFor="secondaryKeys" className="mb-2 sm:mb-0">次要关键字</Label>
                       <div className="text-sm text-muted-foreground">
                         用于筛选主要关键字匹配
                       </div>
                     </div>
                     
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-col sm:flex-row">
                       <Input
                         id="secondaryKeys"
                         value={newSecondaryKey}
                         onChange={(e) => setNewSecondaryKey(e.target.value)}
                         placeholder="添加次要关键字"
                         onKeyDown={(e) => e.key === 'Enter' && addSecondaryKey()}
+                        className="flex-1"
                       />
-                      <Button type="button" onClick={addSecondaryKey}>
+                      <Button type="button" onClick={addSecondaryKey} className="sm:w-auto">
                         添加
                       </Button>
                     </div>
@@ -422,11 +426,11 @@ export default function EntryPage({ params }: EntryPageProps) {
                             key={key}
                             className="flex items-center gap-1 bg-secondary/60 px-2 py-1 rounded"
                           >
-                            <span>{key}</span>
+                            <span className="max-w-[180px] sm:max-w-none truncate">{key}</span>
                             <button 
                               type="button" 
                               onClick={() => removeSecondaryKey(key)}
-                              className="text-muted-foreground hover:text-destructive"
+                              className="text-muted-foreground hover:text-destructive flex-shrink-0"
                             >
                               <XCircle className="h-4 w-4" />
                             </button>

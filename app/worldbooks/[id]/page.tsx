@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import { useWorldBookStore } from "@/lib/store";
 import { WorldBook, WorldBookEntry, Character } from "@/lib/types";
 import { characterStorage } from "@/lib/storage";
 import Image from "next/image";
+import { useSearchParams } from "next/navigation";
 
 interface WorldBookPageProps {
   params: {
@@ -25,6 +26,11 @@ interface WorldBookPageProps {
 export default function WorldBookPage({ params }: WorldBookPageProps) {
   const { id } = params;
   const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  // 添加对高亮条目的引用
+  const highlightEntryId = searchParams.get('highlightEntryId');
+  const highlightedEntryRef = useRef<HTMLDivElement>(null);
   
   const { 
     worldBooks, 
@@ -37,7 +43,8 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
     toggleWorldBookEnabled,
     getLinkedCharacters,
     linkToCharacter,
-    unlinkFromCharacter
+    unlinkFromCharacter,
+    updateEntry // 新增 updateEntry
   } = useWorldBookStore();
   
   const [isLoading, setIsLoading] = useState(true);
@@ -51,7 +58,11 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [enabled, setEnabled] = useState(true);
-  const [activeTab, setActiveTab] = useState("info");
+  // 根据URL查询参数设置初始标签
+  const [activeTab, setActiveTab] = useState(() => {
+    const tab = searchParams.get('tab');
+    return tab && ['info', 'entries', 'characters', 'settings'].includes(tab) ? tab : 'info';
+  });
   
   // 加载世界书详情
   useEffect(() => {
@@ -93,6 +104,20 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
     
     loadData();
   }, [id, getWorldBook, loadWorldBooks, getLinkedCharacters]);
+
+  // 添加滚动到高亮条目的效果
+  useEffect(() => {
+    // 当条目加载完成且有指定高亮ID时，滚动到对应条目
+    if (!isLoading && highlightEntryId && highlightedEntryRef.current) {
+      // 等待DOM更新完成
+      setTimeout(() => {
+        highlightedEntryRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center'
+        });
+      }, 100);
+    }
+  }, [isLoading, highlightEntryId, worldBook]);
   
   // 保存世界书信息
   const handleSave = async () => {
@@ -274,6 +299,57 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
       alert("保存设置失败");
     }
   };
+
+  // 在WorldBookPage组件中添加新的处理函数
+  // 修改handleToggleStrategy函数，接收特定的策略值参数
+  const handleToggleStrategy = async (entryId: string, strategy?: 'constant' | 'selective' | 'vectorized') => {
+    try {
+      if (!worldBook) return;
+      
+      const entryToUpdate = worldBook.entries.find(e => e.id === entryId);
+      if (!entryToUpdate) return;
+      
+      let newStrategy: 'constant' | 'selective' | 'vectorized';
+      
+      if (strategy) {
+        // 如果提供了特定策略，则直接使用
+        newStrategy = strategy;
+      } else {
+        // 否则按照原来的逻辑循环切换
+        if (entryToUpdate.strategy === 'constant') {
+          newStrategy = 'selective';
+        } else if (entryToUpdate.strategy === 'selective') {
+          newStrategy = 'vectorized';
+        } else {
+          newStrategy = 'constant';
+        }
+      }
+      
+      // 更新条目
+      const updatedEntry = {
+        ...entryToUpdate,
+        strategy: newStrategy
+      };
+      
+      // 保存更改
+      await updateEntry(id, updatedEntry);
+      
+      // 更新本地状态以立即反映变化
+      setWorldBook({
+        ...worldBook,
+        entries: worldBook.entries.map(e => 
+          e.id === entryId ? {...e, strategy: newStrategy} : e
+        )
+      });
+      
+      // 用户反馈
+      console.log(`条目 ${entryId} 的激活策略已更新为: ${newStrategy}`);
+      
+    } catch (error) {
+      console.error("切换条目策略失败:", error);
+      alert("切换条目策略失败");
+    }
+  };
   
   if (isLoading) {
     return (
@@ -339,13 +415,16 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
         </div>
       </div>
 
+      {/* 标签页部分 */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="mb-4">
-          <TabsTrigger value="info">基本信息</TabsTrigger>
-          <TabsTrigger value="entries">条目 ({worldBook?.entries.length || 0})</TabsTrigger>
-          <TabsTrigger value="characters">关联角色</TabsTrigger>
-          <TabsTrigger value="settings">设置</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-4 px-4 pb-1">
+          <TabsList className="mb-4 w-full sm:w-auto">
+            <TabsTrigger value="info" className="flex-1 sm:flex-none">基本信息</TabsTrigger>
+            <TabsTrigger value="entries" className="flex-1 sm:flex-none">条目 ({worldBook?.entries.length || 0})</TabsTrigger>
+            <TabsTrigger value="characters" className="flex-1 sm:flex-none">关联角色</TabsTrigger>
+            <TabsTrigger value="settings" className="flex-1 sm:flex-none">设置</TabsTrigger>
+          </TabsList>
+        </div>
         
         <TabsContent value="info" className="space-y-4">
           <Card>
@@ -465,13 +544,19 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
                 .slice() // 创建副本以避免修改原数组
                 .sort((a, b) => a.order - b.order)
                 .map((entry) => (
-                <EntryCard
-                  key={entry.id}
-                  entry={entry}
-                  worldBookId={worldBook.id}
-                  onToggleEnabled={() => handleToggleEntryEnabled(entry.id)}
-                  onDelete={() => handleDeleteEntry(entry.id)}
-                />
+                <div 
+                  key={entry.id} 
+                  ref={entry.id === highlightEntryId ? highlightedEntryRef : null}
+                  className={`transition-all duration-700 ${entry.id === highlightEntryId ? 'ring-2 ring-primary ring-opacity-70' : ''}`}
+                >
+                  <EntryCard
+                    entry={entry}
+                    worldBookId={worldBook.id}
+                    onToggleEnabled={() => handleToggleEntryEnabled(entry.id)}
+                    onDelete={() => handleDeleteEntry(entry.id)}
+                    onToggleStrategy={handleToggleStrategy}
+                  />
+                </div>
               ))}
             </div>
           ) : (
@@ -744,52 +829,133 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
   );
 }
 
-// 条目卡片组件
-function EntryCard({ entry, worldBookId, onToggleEnabled, onDelete }: { 
+// 修改EntryCard组件，将策略指示器改为下拉菜单
+function EntryCard({ entry, worldBookId, onToggleEnabled, onDelete, onToggleStrategy }: { 
   entry: WorldBookEntry, 
   worldBookId: string,
   onToggleEnabled: () => void,
-  onDelete: () => void
+  onDelete: () => void,
+  onToggleStrategy: (entryId: string, strategy?: 'constant' | 'selective' | 'vectorized') => void
 }) {
-  // 简化版条目卡片，仅显示必要信息
+  const [showStrategyMenu, setShowStrategyMenu] = useState(false);
+  
+  // 用于关闭菜单的引用
+  const menuRef = useRef<HTMLDivElement>(null);
+  
+  // 添加点击外部关闭菜单的处理
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowStrategyMenu(false);
+      }
+    };
+    
+    if (showStrategyMenu) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [showStrategyMenu]);
+  
+  // 修改为直接更新到特定策略的函数
+  const handleSetStrategy = async (strategy: 'constant' | 'selective' | 'vectorized') => {
+    if (!entry) return;
+    
+    // 关闭下拉菜单
+    setShowStrategyMenu(false);
+    
+    // 调用父组件传入的onToggleStrategy函数，传递条目ID和指定的策略
+    onToggleStrategy(entry.id, strategy);
+  };
+  
+  // 获取策略颜色和名称
+  const getStrategyColor = () => {
+    switch (entry.strategy) {
+      case 'constant': return 'bg-blue-500';
+      case 'selective': return 'bg-green-500';
+      case 'vectorized': return 'bg-purple-500';
+      default: return 'bg-gray-500';
+    }
+  };
+  
+  const getStrategyName = () => {
+    switch (entry.strategy) {
+      case 'constant': return '常量';
+      case 'selective': return '选择性';
+      case 'vectorized': return '向量化';
+      default: return '未知';
+    }
+  };
+  
   console.log("渲染条目卡片，条目ID:", entry.id);
   return (
     <Card className={`${!entry.enabled ? 'opacity-60' : ''}`}>
-      <div className="p-4 flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          {/* 策略指示器（蓝灯/绿灯/链接图标） */}
-          <div 
-            className={`w-4 h-4 rounded-full ${
-              entry.strategy === 'constant' 
-                ? 'bg-blue-500' 
-                : entry.strategy === 'selective' 
-                  ? 'bg-green-500' 
-                  : 'bg-purple-500'
-            }`}
-            title={
-              entry.strategy === 'constant' 
-                ? '常量条目' 
-                : entry.strategy === 'selective' 
-                  ? '选择性条目' 
-                  : '向量条目'
-            }
-          />
+      <div className="p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+        {/* 标题和状态部分 */}
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          {/* 策略指示器（可交互下拉菜单） */}
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setShowStrategyMenu(!showStrategyMenu)}
+              className={`flex-shrink-0 w-6 h-6 rounded-full transition-colors flex items-center justify-center cursor-pointer hover:opacity-80 ${getStrategyColor()}`}
+              title="点击切换策略"
+              aria-label="点击切换策略"
+            >
+              <span className="sr-only">切换策略</span>
+            </button>
+            
+            {/* 确保菜单内容完整显示 */}
+            {showStrategyMenu && (
+              <div className="absolute z-10 left-0 mt-1 bg-white dark:bg-gray-800 shadow-lg rounded-md border border-border w-48">
+                <div className="py-1">
+                  <button
+                    className={`w-full text-left px-3 py-2 hover:bg-muted flex items-center ${entry.strategy === 'constant' ? 'bg-muted/50' : ''}`}
+                    onClick={() => handleSetStrategy('constant')}
+                  >
+                    <div className="w-3 h-3 rounded-full bg-blue-500 mr-2"></div>
+                    <span>常量（总是激活）</span>
+                  </button>
+                  <button
+                    className={`w-full text-left px-3 py-2 hover:bg-muted flex items-center ${entry.strategy === 'selective' ? 'bg-muted/50' : ''}`}
+                    onClick={() => handleSetStrategy('selective')}
+                  >
+                    <div className="w-3 h-3 rounded-full bg-green-500 mr-2"></div>
+                    <span>选择性（关键字触发）</span>
+                  </button>
+                  <button
+                    className={`w-full text-left px-3 py-2 hover:bg-muted flex items-center ${entry.strategy === 'vectorized' ? 'bg-muted/50' : ''}`}
+                    onClick={() => handleSetStrategy('vectorized')}
+                  >
+                    <div className="w-3 h-3 rounded-full bg-purple-500 mr-2"></div>
+                    <span>向量化（语义触发）</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* 显示当前策略名称（小屏幕下） */}
+          <span className="text-xs text-muted-foreground sm:hidden">{getStrategyName()}</span>
           
           {/* 启用/禁用开关 */}
           <Switch 
             checked={entry.enabled}
             onCheckedChange={onToggleEnabled}
             aria-label={entry.enabled ? '禁用条目' : '启用条目'}
+            className="flex-shrink-0"
           />
           
           {/* 条目标题 */}
           <div className="font-medium truncate">{entry.title}</div>
         </div>
         
-        <div className="flex items-center gap-2">
+        {/* 操作按钮部分 */}
+        <div className="flex items-center gap-2 sm:ml-auto sm:flex-shrink-0 mt-2 sm:mt-0">
           {/* 插入位置标签 */}
           <div 
-            className={`px-2 py-0.5 rounded text-xs ${
+            className={`px-2 py-0.5 rounded text-xs flex-shrink-0 ${
               entry.position === 'before' 
                 ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' 
                 : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
@@ -799,12 +965,12 @@ function EntryCard({ entry, worldBookId, onToggleEnabled, onDelete }: {
           </div>
           
           {/* 排序值 */}
-          <div className="text-xs text-muted-foreground">
+          <div className="text-xs text-muted-foreground flex-shrink-0">
             顺序: {entry.order}
           </div>
           
           {/* 操作按钮 */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-shrink-0 ml-auto sm:ml-0">
             <Button 
               variant="outline" 
               size="sm"
