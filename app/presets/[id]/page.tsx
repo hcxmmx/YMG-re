@@ -28,8 +28,9 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
-  DragEndEvent
+  DragEndEvent,
 } from "@dnd-kit/core";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import {
   arrayMove,
   SortableContext,
@@ -56,7 +57,13 @@ function SortablePromptItem({ prompt, index, togglePromptEnabled, startEditPromp
     transform,
     transition,
     isDragging
-  } = useSortable({ id: prompt.identifier });
+  } = useSortable({ 
+    id: prompt.identifier,
+    transition: {
+      duration: 150,
+      easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
+    },
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -69,22 +76,23 @@ function SortablePromptItem({ prompt, index, togglePromptEnabled, startEditPromp
       ref={setNodeRef}
       style={style}
       className={cn(
-        "flex items-center p-4 hover:bg-muted/30 transition-colors border-b last:border-b-0",
+        "flex items-center p-4 hover:bg-muted/30 transition-colors border-b last:border-b-0 select-none",
         !prompt.enabled && "opacity-60",
-        isDragging && "bg-accent shadow-lg rounded-md"
+        isDragging && "bg-accent shadow-lg rounded-md opacity-90"
       )}
     >
       {/* 拖拽手柄 */}
       <div
         {...attributes}
         {...listeners}
-        className="flex items-center mr-3 text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
+        className="flex items-center justify-center w-9 h-9 mr-3 flex-shrink-0 text-muted-foreground hover:text-foreground active:text-primary rounded-full hover:bg-muted/50 active:bg-muted cursor-grab active:cursor-grabbing touch-manipulation"
+        data-drag-handle
       >
         <GripVertical className="h-5 w-5" />
       </div>
       
       {/* 提示词内容 */}
-      <div className="flex-grow mr-4">
+      <div className="flex-grow mr-4 select-none">
         <div className="font-medium flex items-center gap-1">
           {prompt.name}
           {prompt.isPlaceholder && (
@@ -199,7 +207,14 @@ function SimplifiedPromptItem({ prompt, index, togglePromptEnabled, startEditPro
     transform,
     transition,
     isDragging
-  } = useSortable({ id: prompt.identifier });
+  } = useSortable({ 
+    id: prompt.identifier,
+    // 禁用自动滚动，在移动端体验更好
+    transition: {
+      duration: 150,
+      easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
+    },
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -212,23 +227,24 @@ function SimplifiedPromptItem({ prompt, index, togglePromptEnabled, startEditPro
       ref={setNodeRef}
       style={style}
       className={cn(
-        "flex items-center py-2 px-2 hover:bg-muted/30 transition-colors border-b last:border-b-0 min-w-max",
+        "flex items-center py-2 px-2 hover:bg-muted/30 transition-colors border-b last:border-b-0 min-w-max select-none touch-manipulation",
         !prompt.enabled && "opacity-60",
-        isDragging && "bg-accent shadow-lg rounded-md"
+        isDragging && "bg-accent shadow-lg rounded-md opacity-90"
       )}
     >
-      {/* 拖拽手柄 - 固定宽度 */}
+      {/* 拖拽手柄 - 固定宽度，增强移动端拖拽体验 */}
       <div
         {...attributes}
         {...listeners}
-        className="flex items-center justify-center w-8 h-8 mr-1 flex-shrink-0 text-muted-foreground hover:text-foreground rounded-full hover:bg-muted/50 cursor-grab active:cursor-grabbing touch-manipulation"
+        className="flex items-center justify-center w-10 h-10 mr-1 flex-shrink-0 text-muted-foreground hover:text-foreground active:text-primary rounded-full hover:bg-muted/50 active:bg-muted cursor-grab active:cursor-grabbing touch-manipulation"
+        data-drag-handle
       >
-        <GripVertical className="h-4 w-4" />
+        <GripVertical className="h-5 w-5" />
       </div>
       
-      {/* 提示词名称 - 可伸缩并截断 */}
+      {/* 提示词名称 - 可伸缩并截断，禁止文本选择 */}
       <div 
-        className="w-0 flex-1 min-w-0 overflow-hidden py-1 mr-1" 
+        className="w-0 flex-1 min-w-0 overflow-hidden py-1 mr-1 select-none" 
         onClick={() => startEditPrompt(index)}
       >
         <div className="font-medium flex items-center flex-wrap">
@@ -294,6 +310,36 @@ function SimplifiedPromptItem({ prompt, index, togglePromptEnabled, startEditPro
   );
 }
 
+// 移动端拖拽优化的全局样式
+const GlobalDragStyles = () => {
+  return (
+    <style jsx global>{`
+      /* 防止长按文本选择 */
+      * {
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      
+      /* 输入框和文本域允许选择文本 */
+      input, textarea {
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      
+      /* 增强移动端拖拽手感 */
+      [data-drag-handle] {
+        touch-action: none;
+      }
+      
+      /* 提高拖拽时的视觉层级 */
+      .sortable-item-dragging {
+        z-index: 999 !important;
+      }
+    `}</style>
+  );
+};
+
 interface EditPresetPageProps {
   params: {
     id: string;
@@ -326,9 +372,17 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
   const [editPrompt, setEditPrompt] = useState<PromptPresetItem | null>(null);
   const [showDialog, setShowDialog] = useState(false);
   
-  // 拖拽传感器设置
+  // 修改拖拽传感器设置
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      // 优化指针传感器，减少长按触发选择的可能
+      activationConstraint: {
+        // 设置延迟确保用户是有意拖动而非滚动
+        delay: 100,
+        // 容忍一定的移动距离，避免轻微触摸被误认为拖拽
+        tolerance: 5,
+      }
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates
     })
@@ -476,6 +530,9 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
   
   return (
     <div className="container max-w-screen-xl mx-auto py-6 px-4">
+      {/* 添加全局拖拽优化样式 */}
+      <GlobalDragStyles />
+      
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center">
           <Button variant="ghost" size="sm" asChild className="mr-4">
@@ -639,6 +696,16 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
                   sensors={sensors}
                   collisionDetection={closestCenter}
                   onDragEnd={handleDragEnd}
+                  onDragStart={() => {
+                    // 触发触觉反馈（如果浏览器支持）
+                    if ('navigator' in window && 'vibrate' in navigator) {
+                      navigator.vibrate(50);
+                    }
+                  }}
+                  modifiers={[
+                    // 将拖拽项限制在垂直方向上移动
+                    restrictToVerticalAxis,
+                  ]}
                 >
                   <SortableContext
                     items={prompts.map(p => p.identifier)}
