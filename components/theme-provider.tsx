@@ -14,6 +14,13 @@ const fontFamilyMap: Record<FontFamily, string> = {
   sans: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
   serif: "ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif",
   mono: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+  song: "'宋体', SimSun, 'Song', serif",
+  hei: "'黑体', SimHei, 'Hei', sans-serif",
+  kai: "'楷体', KaiTi, 'Kai', cursive",
+  fangsong: "'仿宋', FangSong, 'Fang Song', serif",
+  yahei: "'微软雅黑', 'Microsoft YaHei', 'Yahei', sans-serif",
+  pingfang: "'PingFang SC', 'PingFang', 'Ping Fang', sans-serif",
+  sourcehans: "'Source Han Sans CN', 'Source Han Sans', 'Source Han', sans-serif"
 };
 
 // 加载从localStorage获取字体设置的函数
@@ -95,22 +102,25 @@ export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
         }
       }
       
-      // 设置字体系列
-      document.documentElement.style.setProperty(
-        '--font-family', 
-        fontFamilyMap[fontFamily as FontFamily] || fontFamilyMap.system
-      );
+      // 获取字体值
+      const fontValue = fontFamilyMap[fontFamily as FontFamily] || fontFamilyMap.system;
+      
+      // 设置字体系列CSS变量
+      document.documentElement.style.setProperty('--font-family', fontValue);
+      
+      // 直接设置body字体样式，确保字体立即应用
+      document.body.style.fontFamily = fontValue;
       
       // 设置全局字体大小
       document.documentElement.style.fontSize = `${fontSize}%`;
       
       // 为聊天字体大小设置CSS变量
-      document.documentElement.style.setProperty(
-        '--chat-font-size', 
-        `${chatFontSize}%`
-      );
+      document.documentElement.style.setProperty('--chat-font-size', `${chatFontSize}%`);
       
-      console.log('已应用字体设置:', { fontFamily, fontSize, chatFontSize });
+      // 添加数据属性用于调试
+      document.documentElement.setAttribute('data-font-family', fontFamily);
+      
+      console.log('已应用字体设置:', { fontFamily, fontValue, fontSize, chatFontSize });
     };
     
     // 检测页面路径变化

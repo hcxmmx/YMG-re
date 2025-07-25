@@ -34,6 +34,14 @@ const FONT_FAMILY_OPTIONS = [
   { value: "sans", label: "无衬线字体" },
   { value: "serif", label: "衬线字体" },
   { value: "mono", label: "等宽字体" },
+  // 中文字体选项
+  { value: "song", label: "宋体" },
+  { value: "hei", label: "黑体" },
+  { value: "kai", label: "楷体" },
+  { value: "fangsong", label: "仿宋" },
+  { value: "yahei", label: "微软雅黑" },
+  { value: "pingfang", label: "苹方" },
+  { value: "sourcehans", label: "思源黑体" }
 ];
 
 export default function SettingsPage() {
@@ -86,6 +94,13 @@ export default function SettingsPage() {
     sans: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
     serif: "ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif",
     mono: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    song: "'宋体', SimSun, 'Song', serif",
+    hei: "'黑体', SimHei, 'Hei', sans-serif",
+    kai: "'楷体', KaiTi, 'Kai', cursive",
+    fangsong: "'仿宋', FangSong, 'Fang Song', serif",
+    yahei: "'微软雅黑', 'Microsoft YaHei', 'Yahei', sans-serif",
+    pingfang: "'PingFang SC', 'PingFang', 'Ping Fang', sans-serif",
+    sourcehans: "'Source Han Sans CN', 'Source Han Sans', 'Source Han', sans-serif"
   };
 
   // 在用户交互时立即应用字体设置到预览（不保存）
@@ -94,6 +109,11 @@ export default function SettingsPage() {
     document.documentElement.style.setProperty('--font-family', fontFamilyMap[family]);
     document.documentElement.style.fontSize = `${globalSize}%`;
     document.documentElement.style.setProperty('--chat-font-size', `${chatSize}%`);
+    // 直接应用到body以确保预览立即生效
+    document.body.style.fontFamily = fontFamilyMap[family];
+    // 添加数据属性用于调试
+    document.documentElement.setAttribute('data-font-family', family);
+    console.log('预览应用字体设置:', { family, fontValue: fontFamilyMap[family], globalSize, chatSize });
   };
 
   // 当字体设置发生变化时立即应用到预览
@@ -112,6 +132,7 @@ export default function SettingsPage() {
 
   // 保存设置
   const handleSave = () => {
+    // 更新Zustand存储
     updateSettings({
       apiKey,
       temperature,
@@ -128,6 +149,26 @@ export default function SettingsPage() {
       fontSize,
       chatFontSize,
     });
+
+    // 确保字体设置也被保存到localStorage以便更可靠地应用
+    localStorage.setItem('fontFamily', fontFamily);
+    localStorage.setItem('fontSize', String(fontSize));
+    localStorage.setItem('chatFontSize', String(chatFontSize));
+
+    // 强制应用字体设置
+    const fontValue = fontFamilyMap[fontFamily];
+    document.documentElement.style.setProperty('--font-family', fontValue);
+    document.body.style.fontFamily = fontValue;
+    document.documentElement.style.fontSize = `${fontSize}%`;
+    document.documentElement.style.setProperty('--chat-font-size', `${chatFontSize}%`);
+    document.documentElement.setAttribute('data-font-family', fontFamily);
+
+    // 触发自定义事件通知其他组件字体设置已更改
+    const event = new CustomEvent('fontsettingschanged', { 
+      detail: { fontFamily, fontSize, chatFontSize } 
+    });
+    window.dispatchEvent(event);
+
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
   };

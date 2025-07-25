@@ -79,7 +79,25 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: var(--font-family);
+    font-family: var(--font-family) !important;
+  }
+
+  /* 强制所有主要容器继承字体设置 */
+  #__next, 
+  main,
+  div,
+  section,
+  article,
+  header,
+  footer,
+  nav,
+  aside {
+    font-family: inherit !important;
+  }
+
+  /* 确保所有文本元素继承字体设置 */
+  p, h1, h2, h3, h4, h5, h6, span, button, input, textarea, select, option, a, li {
+    font-family: inherit !important;
   }
 } 
 
@@ -94,11 +112,13 @@
 .chat-message-text {
   font-size: var(--chat-font-size);
   line-height: 1.5;
+  font-family: inherit !important;
 }
 
 /* 确保聊天内容也能应用字体大小 */
 .chat-message-content {
   font-size: var(--chat-font-size);
+  font-family: inherit !important;
 }
 
 /* 确保Markdown元素的字体大小也能被覆盖 */
@@ -119,4 +139,28 @@
 .chat-message-content h5,
 .chat-message-content h6 {
   font-size: inherit !important;
+  font-family: inherit !important;
+}
+
+/* 中文字体特定类 */
+.font-song {
+  font-family: '宋体', SimSun, 'Song', serif !important;
+}
+.font-hei {
+  font-family: '黑体', SimHei, 'Hei', sans-serif !important;
+}
+.font-kai {
+  font-family: '楷体', KaiTi, 'Kai', cursive !important;
+}
+.font-fangsong {
+  font-family: '仿宋', FangSong, 'Fang Song', serif !important;
+}
+.font-yahei {
+  font-family: '微软雅黑', 'Microsoft YaHei', 'Yahei', sans-serif !important;
+}
+.font-pingfang {
+  font-family: 'PingFang SC', 'PingFang', 'Ping Fang', sans-serif !important;
+}
+.font-sourcehans {
+  font-family: 'Source Han Sans CN', 'Source Han Sans', 'Source Han', sans-serif !important;
 } 

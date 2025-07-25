@@ -51,7 +51,14 @@ export type FontFamily =
   | 'system'
   | 'sans'
   | 'serif'
-  | 'mono';
+  | 'mono'
+  | 'song'      // 宋体
+  | 'hei'       // 黑体
+  | 'kai'       // 楷体
+  | 'fangsong'  // 仿宋
+  | 'yahei'     // 微软雅黑
+  | 'pingfang'  // 苹方字体
+  | 'sourcehans'; // 思源黑体
 
 // 用户设置类型
 export interface UserSettings {
