@@ -103,6 +103,74 @@ export default function SettingsPage() {
     sourcehans: "'Source Han Sans CN', 'Source Han Sans', 'Source Han', sans-serif"
   };
 
+  // 字体样式特征映射，为每种字体添加独特的视觉特征
+  const fontStyleMap: Record<FontFamily, React.CSSProperties> = {
+    system: {},
+    sans: { letterSpacing: '-0.01em' },
+    serif: { letterSpacing: '0.015em', fontVariant: 'common-ligatures' },
+    mono: { fontVariantNumeric: 'tabular-nums' },
+    song: { letterSpacing: '0.02em', lineHeight: '1.7' },
+    hei: { letterSpacing: '-0.01em', lineHeight: '1.6', fontWeight: 500 },
+    kai: { letterSpacing: '0.03em', lineHeight: '1.8', fontStyle: 'italic' },
+    fangsong: { letterSpacing: '0.02em', lineHeight: '1.75' },
+    yahei: { letterSpacing: '-0.01em', lineHeight: '1.6', fontWeight: 500 },
+    pingfang: { letterSpacing: '-0.01em', lineHeight: '1.6' },
+    sourcehans: { letterSpacing: '-0.01em', lineHeight: '1.5', fontWeight: 500 }
+  };
+
+  // 移动设备上的增强样式
+  const getMobileEnhancedStyle = (family: FontFamily): React.CSSProperties => {
+    const isMobile = typeof window !== 'undefined' && (window.innerWidth < 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
+    
+    if (!isMobile) return {};
+    
+    const baseStyle = fontStyleMap[family] || {};
+    
+    switch(family) {
+      case 'song':
+        return {
+          ...baseStyle,
+          textIndent: '0.5em',
+          borderLeft: '2px solid rgba(0, 0, 0, 0.1)',
+          paddingLeft: '0.5em'
+        };
+      case 'kai':
+        return {
+          ...baseStyle,
+          fontStyle: 'italic',
+          textIndent: '0.5em'
+        };
+      case 'hei':
+        return {
+          ...baseStyle,
+          fontWeight: 600
+        };
+      case 'fangsong':
+        return {
+          ...baseStyle,
+          textIndent: '0.5em',
+          borderLeft: '2px solid rgba(0, 0, 0, 0.05)',
+          paddingLeft: '0.5em'
+        };
+      case 'serif':
+        return {
+          ...baseStyle,
+          borderLeft: '2px solid rgba(0, 0, 0, 0.1)',
+          paddingLeft: '0.5em',
+          letterSpacing: '0.02em'
+        };
+      case 'mono':
+        return {
+          ...baseStyle,
+          backgroundColor: 'rgba(0, 0, 0, 0.02)',
+          borderRadius: '2px',
+          padding: '0 2px'
+        };
+      default:
+        return baseStyle;
+    }
+  };
+
   // 在用户交互时立即应用字体设置到预览（不保存）
   const applyFontPreview = (family: FontFamily, globalSize: number, chatSize: number) => {
     // 预览时应用到整个页面，但不保存设置
@@ -113,6 +181,24 @@ export default function SettingsPage() {
     document.body.style.fontFamily = fontFamilyMap[family];
     // 添加数据属性用于调试
     document.documentElement.setAttribute('data-font-family', family);
+    
+    // 检测是否为移动设备
+    const isMobile = window.innerWidth < 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+      document.documentElement.setAttribute('data-mobile', 'true');
+      document.body.classList.add('mobile-font-enhanced');
+      
+      // 清除可能存在的字体类
+      const fontClasses = ['font-song', 'font-hei', 'font-kai', 'font-fangsong', 'font-yahei', 'font-pingfang', 'font-sourcehans'];
+      document.body.classList.remove(...fontClasses);
+      
+      // 添加当前字体类
+      if (family !== 'system' && family !== 'sans' && family !== 'serif' && family !== 'mono') {
+        document.body.classList.add(`font-${family}`);
+      }
+    }
+    
     console.log('预览应用字体设置:', { family, fontValue: fontFamilyMap[family], globalSize, chatSize });
   };
 
@@ -297,12 +383,43 @@ export default function SettingsPage() {
             <div className="space-y-2">
               <label className="text-sm font-medium">预览效果</label>
               <div className="p-3 border rounded-md bg-background">
-                <p className="mb-1" style={{fontFamily: fontFamilyMap[fontFamily]}}>
+                <p className="mb-1" style={{
+                  fontFamily: fontFamilyMap[fontFamily],
+                  ...fontStyleMap[fontFamily],
+                  ...getMobileEnhancedStyle(fontFamily)
+                }}>
                   全局文本样式预览 (当前大小: {fontSize}%)
                 </p>
                 <div className="mt-2 p-3 bg-muted rounded-md" 
-                     style={{fontFamily: fontFamilyMap[fontFamily], fontSize: `${chatFontSize}%`}}>
+                     style={{
+                       fontFamily: fontFamilyMap[fontFamily],
+                       fontSize: `${chatFontSize}%`,
+                       ...fontStyleMap[fontFamily],
+                       ...getMobileEnhancedStyle(fontFamily)
+                     }}>
                   <p className="mb-0">聊天消息文本样式预览 (当前大小: {chatFontSize}%)</p>
+                </div>
+                
+                {/* 增强的字体对比预览 */}
+                <div className="mt-4 border-t pt-3">
+                  <h4 className="text-sm font-medium mb-2">字体对比</h4>
+                  <div className="grid grid-cols-1 gap-2">
+                    {FONT_FAMILY_OPTIONS.map(option => (
+                      <div 
+                        key={option.value} 
+                        className={`p-2 rounded-sm ${fontFamily === option.value ? 'bg-primary/10 border border-primary/30' : 'bg-background hover:bg-secondary/50'}`}
+                        style={{
+                          fontFamily: fontFamilyMap[option.value as FontFamily],
+                          ...fontStyleMap[option.value as FontFamily],
+                          ...getMobileEnhancedStyle(option.value as FontFamily)
+                        }}
+                      >
+                        <p className="m-0">
+                          {option.label} - 这是一段示例文本，用于展示不同字体的效果。
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-1">

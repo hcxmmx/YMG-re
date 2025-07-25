@@ -27,13 +27,27 @@ export default function RootLayout({
 }>) {
   const [isNavbarVisible, setIsNavbarVisible] = useState(true);
   const pathname = usePathname();
-  const { uiSettings } = useSettingsStore();
+  const { settings, uiSettings } = useSettingsStore();
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
   
   // 当路由变化时，重置导航栏为可见
   useEffect(() => {
     setIsNavbarVisible(true);
   }, [pathname]);
   
+  // 检测是否为移动设备
+  useEffect(() => {
+    const checkIfMobile = () => {
+      const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+      const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
+      setIsMobileDevice(isMobile || window.innerWidth < 768);
+    };
+
+    checkIfMobile();
+    window.addEventListener('resize', checkIfMobile);
+    return () => window.removeEventListener('resize', checkIfMobile);
+  }, []);
+
   // 初始化localStorage中的UI设置值
   useEffect(() => {
     // 确保只在客户端执行
@@ -43,6 +57,63 @@ export default function RootLayout({
       localStorage.setItem('showMessageNumber', String(uiSettings.showMessageNumber));
     }
   }, [uiSettings]);
+
+  // 应用字体设置
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // 获取字体设置
+      const fontFamily = settings.fontFamily || localStorage.getItem('fontFamily') || 'system';
+      const fontSize = settings.fontSize || Number(localStorage.getItem('fontSize')) || 100;
+      const chatFontSize = settings.chatFontSize || Number(localStorage.getItem('chatFontSize')) || 100;
+      
+      // 映射字体系列到实际CSS值
+      const fontFamilyMap: Record<string, string> = {
+        system: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+        sans: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+        serif: "ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif",
+        mono: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+        song: "'宋体', SimSun, 'Song', serif",
+        hei: "'黑体', SimHei, 'Hei', sans-serif",
+        kai: "'楷体', KaiTi, 'Kai', cursive",
+        fangsong: "'仿宋', FangSong, 'Fang Song', serif",
+        yahei: "'微软雅黑', 'Microsoft YaHei', 'Yahei', sans-serif",
+        pingfang: "'PingFang SC', 'PingFang', 'Ping Fang', sans-serif",
+        sourcehans: "'Source Han Sans CN', 'Source Han Sans', 'Source Han', sans-serif"
+      };
+      
+      // 应用字体设置到文档根元素
+      document.documentElement.style.setProperty('--font-family', fontFamilyMap[fontFamily] || fontFamilyMap.system);
+      document.documentElement.style.fontSize = `${fontSize}%`;
+      document.documentElement.style.setProperty('--chat-font-size', `${chatFontSize}%`);
+      document.documentElement.setAttribute('data-font-family', fontFamily);
+      
+      // 为移动设备添加特殊标记，以便CSS可以应用特定样式
+      if (isMobileDevice) {
+        document.documentElement.setAttribute('data-mobile', 'true');
+      } else {
+        document.documentElement.removeAttribute('data-mobile');
+      }
+      
+      // 直接应用字体到body以确保全局生效
+      document.body.style.fontFamily = fontFamilyMap[fontFamily] || fontFamilyMap.system;
+      
+      // 如果是移动设备，为特定字体添加额外的样式特征
+      if (isMobileDevice) {
+        document.body.classList.add('mobile-font-enhanced');
+        
+        // 清除可能存在的字体类
+        const fontClasses = ['font-song', 'font-hei', 'font-kai', 'font-fangsong', 'font-yahei', 'font-pingfang', 'font-sourcehans'];
+        document.body.classList.remove(...fontClasses);
+        
+        // 添加当前字体类
+        if (fontFamily !== 'system' && fontFamily !== 'sans' && fontFamily !== 'serif' && fontFamily !== 'mono') {
+          document.body.classList.add(`font-${fontFamily}`);
+        }
+      } else {
+        document.body.classList.remove('mobile-font-enhanced');
+      }
+    }
+  }, [settings.fontFamily, settings.fontSize, settings.chatFontSize, isMobileDevice]);
   
   const toggleNavbar = () => {
     setIsNavbarVisible(prev => !prev);

@@ -142,25 +142,123 @@
   font-family: inherit !important;
 }
 
-/* 中文字体特定类 */
+/* 增强的中文字体样式，为移动设备优化 */
 .font-song {
   font-family: '宋体', SimSun, 'Song', serif !important;
+  letter-spacing: 0.02em !important;
+  line-height: 1.7 !important;
+  font-weight: 400 !important;
 }
 .font-hei {
   font-family: '黑体', SimHei, 'Hei', sans-serif !important;
+  letter-spacing: -0.01em !important;
+  line-height: 1.6 !important;
+  font-weight: 500 !important;
 }
 .font-kai {
   font-family: '楷体', KaiTi, 'Kai', cursive !important;
+  letter-spacing: 0.03em !important;
+  line-height: 1.8 !important;
+  font-weight: 400 !important;
+  font-style: italic !important;
 }
 .font-fangsong {
   font-family: '仿宋', FangSong, 'Fang Song', serif !important;
+  letter-spacing: 0.02em !important;
+  line-height: 1.75 !important;
+  font-weight: 400 !important;
 }
 .font-yahei {
   font-family: '微软雅黑', 'Microsoft YaHei', 'Yahei', sans-serif !important;
+  letter-spacing: -0.01em !important;
+  line-height: 1.6 !important;
+  font-weight: 500 !important;
 }
 .font-pingfang {
   font-family: 'PingFang SC', 'PingFang', 'Ping Fang', sans-serif !important;
+  letter-spacing: -0.01em !important;
+  line-height: 1.6 !important;
+  font-weight: 400 !important;
 }
 .font-sourcehans {
   font-family: 'Source Han Sans CN', 'Source Han Sans', 'Source Han', sans-serif !important;
+  letter-spacing: -0.01em !important;
+  line-height: 1.5 !important;
+  font-weight: 500 !important;
+}
+
+/* 为基础字体添加更多区分特性 */
+[data-font-family="system"] {
+  --font-feature: normal;
+  --letter-spacing: 0;
+}
+
+[data-font-family="sans"] {
+  --font-feature: normal;
+  --letter-spacing: -0.01em;
+  font-weight: 400 !important;
+}
+
+[data-font-family="serif"] {
+  --font-feature: 'palt';
+  --letter-spacing: 0.015em;
+  font-weight: 400 !important;
+  font-variant: common-ligatures !important;
+}
+
+[data-font-family="mono"] {
+  --font-feature: 'tnum';
+  --letter-spacing: 0;
+  font-weight: 400 !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+/* 移动设备上的字体增强 */
+@media (max-width: 768px) {
+  .font-song {
+    text-indent: 0.5em;
+    border-left: 2px solid rgba(0, 0, 0, 0.1);
+    padding-left: 0.5em;
+  }
+  
+  .font-kai {
+    font-style: italic;
+    text-indent: 0.5em;
+  }
+  
+  .font-hei {
+    font-weight: 600 !important;
+  }
+  
+  .font-fangsong {
+    text-indent: 0.5em;
+    border-left: 2px solid rgba(0, 0, 0, 0.05);
+    padding-left: 0.5em;
+  }
+  
+  .font-yahei {
+    font-weight: 500 !important;
+  }
+  
+  .font-pingfang {
+    letter-spacing: -0.02em !important;
+  }
+  
+  .font-sourcehans {
+    letter-spacing: -0.01em !important;
+    font-weight: 500 !important;
+  }
+  
+  [data-font-family="serif"] {
+    border-left: 2px solid rgba(0, 0, 0, 0.1);
+    padding-left: 0.5em;
+    letter-spacing: 0.02em !important;
+  }
+  
+  [data-font-family="mono"] {
+    font-feature-settings: 'tnum' !important;
+    background-color: rgba(0, 0, 0, 0.02);
+    border-radius: 2px;
+    padding: 0 2px;
+  }
 } 
