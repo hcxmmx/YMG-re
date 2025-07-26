@@ -83,24 +83,9 @@ export function CharacterCard({ character, onEdit, onDelete }: CharacterCardProp
 
   // 开始与角色聊天
   const handleStartChat = () => {
-    // 优先使用最后选择的对话
-    if (lastSelectedConversationId) {
-      console.log("导航至最后选择的对话:", lastSelectedConversationId);
-      router.push(`/chat?characterId=${id}&conversationId=${lastSelectedConversationId}`);
-    } 
-    // 如果没有最后选择的对话但有现有对话，导航到最近的对话
-    else if (characterConversations.length > 0) {
-      // 按最后更新时间排序，选择最新的对话
-      const sortedConversations = [...characterConversations].sort((a, b) => b.lastUpdated - a.lastUpdated);
-      const latestConversation = sortedConversations[0];
-      console.log("导航至最新对话:", latestConversation.id);
-      router.push(`/chat?characterId=${id}`);
-    } 
-    // 没有现有对话，创建新对话
-    else {
-      console.log("创建新对话");
-      router.push(`/chat?characterId=${id}`);
-    }
+    // 创建新对话，确保使用最新的角色信息，包括可能已更新的开场白
+    console.log("开始新的角色聊天:", character.name);
+    router.push(`/chat?characterId=${id}`);
   };
 
   // 打开指定对话

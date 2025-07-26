@@ -77,21 +77,8 @@ export function CharacterListItem({ character, onEdit, onDelete }: CharacterList
 
   // 开始与角色聊天
   const handleStartChat = () => {
-    // 优先使用最后选择的对话
-    if (lastSelectedConversationId) {
-      router.push(`/chat?characterId=${id}&conversationId=${lastSelectedConversationId}`);
-    } 
-    // 如果没有最后选择的对话但有现有对话，导航到最近的对话
-    else if (characterConversations.length > 0) {
-      // 按最后更新时间排序，选择最新的对话
-      const sortedConversations = [...characterConversations].sort((a, b) => b.lastUpdated - a.lastUpdated);
-      const latestConversation = sortedConversations[0];
-      router.push(`/chat?characterId=${id}`);
-    } 
-    // 没有现有对话，创建新对话
-    else {
-      router.push(`/chat?characterId=${id}`);
-    }
+    // 创建新对话，确保使用最新的角色信息
+    router.push(`/chat?characterId=${id}`);
   };
   
   return (

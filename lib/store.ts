@@ -715,6 +715,21 @@ export const useChatStore = create<ChatState>()(
             return null;
           }
 
+          // 如果主开场白为空，先将"(主开场白为空)"设置为该角色的主开场白
+          if (!character.firstMessage) {
+            console.log('检测到角色没有主开场白，设置默认开场白');
+            const updatedCharacter = {
+              ...character,
+              firstMessage: "(主开场白为空)"
+            };
+            
+            // 保存更新后的角色信息
+            await characterStorage.saveCharacter(updatedCharacter);
+            
+            // 更新本地角色对象
+            character.firstMessage = "(主开场白为空)";
+          }
+
           // 重置状态，创建新对话
           set({
             currentConversationId: null,
@@ -729,23 +744,22 @@ export const useChatStore = create<ChatState>()(
           const conversationId = generateId();
           const messages: Message[] = [];
 
-          if (character.firstMessage) {
-            const messageId = generateId();
-            const assistantMessage: Message = {
-              id: messageId,
-              role: 'assistant',
-              content: character.firstMessage,
-              timestamp: new Date(),
-              messageNumber: 1,
-              charCount: character.firstMessage.length,
-              characterId: characterId // 添加角色ID，确保聊天记录与角色ID严格关联
-            };
-            messages.push(assistantMessage);
-            set({
-              currentMessages: messages,
-              messageCounter: 1
-            });
-          }
+          // 此时角色必定有开场白（原始开场白或默认的"(主开场白为空)"）
+          const messageId = generateId();
+          const assistantMessage: Message = {
+            id: messageId,
+            role: 'assistant',
+            content: character.firstMessage,
+            timestamp: new Date(),
+            messageNumber: 1,
+            charCount: character.firstMessage.length,
+            characterId: characterId // 添加角色ID，确保聊天记录与角色ID严格关联
+          };
+          messages.push(assistantMessage);
+          set({
+            currentMessages: messages,
+            messageCounter: 1
+          });
 
           // 设置当前对话ID
           set({

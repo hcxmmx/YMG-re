@@ -179,31 +179,13 @@ export default function ChatPage() {
               if (characterId) {
                 characterIdRef.current = characterId;
                 
-                // 检查是否已经有该角色的对话
-                const characterConversations = conversations.filter(conv => 
-                  conv.messages.some(msg => msg.role === 'assistant' && msg.characterId === characterId)
-                );
-                
-                // 如果有该角色的对话，加载最新的
-                if (characterConversations.length > 0) {
-                  // 按最后更新时间排序，选择最新的对话
-                  const sortedConversations = [...characterConversations]
-                    .sort((a, b) => b.lastUpdated - a.lastUpdated);
-                  
-                  setCurrentConversation(sortedConversations[0].id).then(() => {
-                    loadBranches(); // 加载分支数据
-                  }).catch(error => {
-                    console.error('加载角色最近对话失败:', error);
-                  });
-                } else {
-                  // 没有该角色的对话，创建新的
-                  console.log('URL参数包含角色ID，启动角色聊天:', characterId);
-                  startCharacterChat(characterId).then(() => {
-                    loadBranches(); // 加载分支数据
-                  }).catch(error => {
-                    console.error('启动角色聊天失败:', error);
-                  });
-                }
+                // 直接创建新的角色聊天，确保使用最新的角色信息
+                console.log('URL参数包含角色ID，启动角色聊天:', characterId);
+                startCharacterChat(characterId).then(() => {
+                  loadBranches(); // 加载分支数据
+                }).catch(error => {
+                  console.error('启动角色聊天失败:', error);
+                });
               }
             }
             
