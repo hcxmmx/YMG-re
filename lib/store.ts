@@ -235,12 +235,16 @@ export const useChatStore = create<ChatState>()(
               return { ...msg, messageNumber: maxMessageNumber };
             });
 
-            // 确定该对话关联的角色ID
-            let characterId = null;
-            for (const msg of conversation.messages) {
-              if (msg.role === 'assistant' && msg.characterId) {
-                characterId = msg.characterId;
-                break;
+            // 优先使用对话级别的角色ID，如果没有再从消息中查找
+            let characterId = conversation.characterId;
+            
+            if (!characterId) {
+              // 从消息中查找角色ID（兼容旧数据）
+              for (const msg of conversation.messages) {
+                if (msg.role === 'assistant' && msg.characterId) {
+                  characterId = msg.characterId;
+                  break;
+                }
               }
             }
 
@@ -317,8 +321,8 @@ export const useChatStore = create<ChatState>()(
       },
 
       addMessage: async (message) => {
-        // 获取当前分支ID
-        const { currentBranchId } = get();
+        // 获取当前分支ID和角色ID
+        const { currentBranchId, currentCharacter } = get();
         
         // 确保消息有分支ID
         const messageWithBranch = {
@@ -389,14 +393,15 @@ export const useChatStore = create<ChatState>()(
                 msg.id === updatedMessage.id ? updatedMessage : msg
               );
               
-              // 保存更新后的对话
+              // 保存更新后的对话，保留角色ID
               await conversationStorage.saveConversation(
                 conversationId,
                 title,
                 allMessages,
                 systemPrompt,
                 branches,
-                currentBranchId
+                currentBranchId,
+                conversation.characterId // 保留现有的角色ID
               );
             }
           }
@@ -414,14 +419,15 @@ export const useChatStore = create<ChatState>()(
               // 添加新消息到所有消息列表
               const allMessages = [...conversation.messages, updatedMessage];
               
-              // 保存更新后的对话
+              // 保存更新后的对话，保留角色ID
               await conversationStorage.saveConversation(
                 conversationId,
                 title,
                 allMessages,
                 systemPrompt,
                 branches,
-                currentBranchId
+                currentBranchId,
+                conversation.characterId // 保留现有的角色ID
               );
             }
           } else {
@@ -432,7 +438,8 @@ export const useChatStore = create<ChatState>()(
               [updatedMessage],
               systemPrompt,
               [], // 新对话不需要设置分支，后面会初始化
-              null // 新对话不设置分支ID，后面会初始化
+              null, // 新对话不设置分支ID，后面会初始化
+              currentCharacter?.id // 如果有当前角色，保存角色ID
             );
           }
         }
@@ -521,12 +528,32 @@ export const useChatStore = create<ChatState>()(
           // 使用setTimeout延迟保存，不阻塞UI更新
           setTimeout(async () => {
             try {
-              await conversationStorage.saveConversation(
-                currentConversationId,
-                currentTitle,
-                get().currentMessages, // 获取最新状态
-                systemPrompt
-              );
+              // 获取完整对话信息以保留角色ID
+              const conversation = await conversationStorage.getConversation(currentConversationId);
+              if (conversation) {
+                // 更新消息内容但保留角色ID
+                const updatedConversationMessages = conversation.messages.map(msg => 
+                  msg.id === updatedMessage.id ? updatedMessage : msg
+                );
+                
+                await conversationStorage.saveConversation(
+                  currentConversationId,
+                  currentTitle,
+                  updatedConversationMessages,
+                  systemPrompt,
+                  conversation.branches,
+                  conversation.currentBranchId,
+                  conversation.characterId // 保留角色ID
+                );
+              } else {
+                // 如果找不到现有对话，直接保存当前状态
+                await conversationStorage.saveConversation(
+                  currentConversationId,
+                  currentTitle,
+                  get().currentMessages, // 获取最新状态
+                  systemPrompt
+                );
+              }
             } catch (error) {
               console.error('保存对话失败:', error);
             }
@@ -567,12 +594,27 @@ export const useChatStore = create<ChatState>()(
         const { currentConversationId, currentTitle, systemPrompt } = get();
         if (currentConversationId) {
           try {
-            await conversationStorage.saveConversation(
-              currentConversationId,
-              currentTitle,
-              messagesWithUpdatedNumbers,
-              systemPrompt
-            );
+            // 获取完整对话信息以保留角色ID
+            const conversation = await conversationStorage.getConversation(currentConversationId);
+            if (conversation) {
+              await conversationStorage.saveConversation(
+                currentConversationId,
+                currentTitle,
+                messagesWithUpdatedNumbers,
+                systemPrompt,
+                conversation.branches,
+                conversation.currentBranchId,
+                conversation.characterId // 保留角色ID
+              );
+            } else {
+              // 如果找不到现有对话，直接保存
+              await conversationStorage.saveConversation(
+                currentConversationId,
+                currentTitle,
+                messagesWithUpdatedNumbers,
+                systemPrompt
+              );
+            }
           } catch (error) {
             console.error('保存对话失败:', error);
           }
@@ -698,8 +740,12 @@ export const useChatStore = create<ChatState>()(
 
       getCharacterConversations: (characterId) => {
         const { conversations } = get();
-        // 只检查消息中的characterId，确保严格匹配
+        // 优先使用对话级别的characterId字段，同时兼容旧版本的消息级别characterId
         return conversations.filter(conv => {
+          // 检查对话级别的characterId
+          if (conv.characterId === characterId) return true;
+          
+          // 如果没有对话级别的characterId，检查消息中的characterId（兼容旧数据）
           return conv.messages.some(msg => 
             msg.role === 'assistant' && msg.characterId === characterId
           );
@@ -773,12 +819,15 @@ export const useChatStore = create<ChatState>()(
           };
           set({ lastSelectedCharacterConversation: updatedLastSelected });
 
-          // 保存对话到数据库
+          // 保存对话到数据库，显式传递角色ID
           await conversationStorage.saveConversation(
             conversationId,
             character.name,
             messages,
-            '你是一个友好、乐于助人的AI助手。'
+            '你是一个友好、乐于助人的AI助手。',
+            [], // 分支信息
+            null, // 当前分支ID
+            characterId // 在对话级别保存角色ID
           );
           
           // 更新对话列表

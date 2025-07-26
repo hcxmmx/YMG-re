@@ -15,6 +15,7 @@ interface AppDB extends DBSchema {
       lastUpdated: number;
       branches?: Branch[];
       currentBranchId?: string | null;
+      characterId?: string; // 添加角色ID字段
     };
     indexes: { 'by-lastUpdated': number };
   };
@@ -196,15 +197,25 @@ export const initializeMainBranch = async (conversationId: string): Promise<stri
 
 // 对话存储接口
 export const conversationStorage = {
-  async saveConversation(id: string, title: string, messages: Message[], systemPrompt?: string, branches?: Branch[], currentBranchId?: string | null) {
+  async saveConversation(
+    id: string, 
+    title: string, 
+    messages: Message[], 
+    systemPrompt?: string, 
+    branches?: Branch[], 
+    currentBranchId?: string | null,
+    characterId?: string // 添加角色ID参数
+  ) {
     const db = await initDB();
     
-    // 如果未提供分支信息，尝试获取现有信息
-    if (!branches || !currentBranchId) {
+    // 如果未提供分支信息或角色ID，尝试获取现有信息
+    if (!branches || !currentBranchId || !characterId) {
       try {
         const existingConv = await db.get('conversations', id);
         branches = branches || existingConv?.branches;
         currentBranchId = currentBranchId || existingConv?.currentBranchId;
+        // 保留现有的角色ID，除非明确提供了新值
+        characterId = characterId || existingConv?.characterId;
       } catch (error) {
         // 忽略错误，可能是新对话
       }
@@ -217,6 +228,7 @@ export const conversationStorage = {
       systemPrompt,
       branches,
       currentBranchId,
+      characterId, // 存储角色ID
       lastUpdated: Date.now()
     });
   },

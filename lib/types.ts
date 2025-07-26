@@ -95,6 +95,7 @@ export interface Conversation {
   lastUpdated: number;
   branches?: Branch[]; // 对话的所有分支
   currentBranchId?: string | null; // 当前活动的分支ID
+  characterId?: string; // 对话关联的角色ID
 }
 
 // 角色预设类型
