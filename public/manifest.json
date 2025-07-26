@@ -1,6 +1,6 @@
 {
-  "name": "AI角色扮演平台",
-  "short_name": "AI扮演",
+  "name": "云边有个妙妙馆",
+  "short_name": "云妙馆",
   "description": "基于Gemini API的高度可定制AI对话平台",
   "start_url": "/",
   "display": "standalone",
