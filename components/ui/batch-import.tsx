@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import { Button } from './button';
-import { Progress } from './progress';
+import { Progress } from '@/components/ui/progress';
 import { Upload, X, AlertCircle, CheckCircle } from 'lucide-react';
 
 export interface ImportResult {
