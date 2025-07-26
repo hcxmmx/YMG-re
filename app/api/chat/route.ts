@@ -1,9 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GeminiService, GeminiParams } from "@/lib/gemini";
 import type { Message } from "@/lib/types";
+import { apiKeyStorage } from "@/lib/storage";
 
 // 用于存储活动请求的AbortController
 const activeRequests = new Map<string, AbortController>();
+
+// 获取活动API密钥或回退到提供的密钥
+async function getApiKey(providedKey: string): Promise<string> {
+  try {
+    // 尝试从存储中获取活动密钥
+    const activeKey = await apiKeyStorage.getActiveApiKey();
+    if (activeKey) {
+      console.log(`使用轮询API密钥: ${activeKey.name} (ID: ${activeKey.id})`);
+      return activeKey.key;
+    }
+  } catch (error) {
+    console.warn("获取轮询API密钥失败，使用提供的密钥", error);
+  }
+  
+  // 如果没有可用的轮询密钥，使用提供的密钥
+  return providedKey;
+}
 
 // 添加DELETE方法用于取消请求
 export async function DELETE(req: NextRequest) {
@@ -77,7 +95,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const geminiService = new GeminiService(apiKey);
+    // 获取API密钥（优先使用轮询系统的密钥）
+    const effectiveApiKey = await getApiKey(apiKey);
+    const geminiService = new GeminiService(effectiveApiKey);
     
     // 如果需要流式响应
     if (stream) {

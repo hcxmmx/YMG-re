@@ -30,8 +30,8 @@ export default function CharactersPage() {
   const [dialogTitle, setDialogTitle] = useState("");
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
   const [viewMode, setViewMode] = useResponsiveView('characters-view-mode');
-  const importFileRef = useRef<HTMLInputElement>(null);
-
+  // 移除未使用的导入文件引用
+  
   useEffect(() => {
     document.title = "角色管理 - AI角色扮演平台";
     loadCharacters();
@@ -208,13 +208,14 @@ export default function CharactersPage() {
         <div className="flex flex-col items-center justify-center h-60">
           <p className="text-muted-foreground mb-4">还没有创建角色</p>
           <div className="flex space-x-2">
-            <Button 
+            {/* 使用批量导入组件替代旧的导入方法 */}
+            <BatchImport 
+              onImport={handleBatchImportCharacter}
+              accept=".json,.png"
+              buttonText="导入角色卡"
               variant="outline"
-              onClick={() => importFileRef.current?.click()}
               disabled={isImporting}
-            >
-              导入角色卡
-            </Button>
+            />
             <Button onClick={handleCreateCharacter}>
               创建角色
             </Button>

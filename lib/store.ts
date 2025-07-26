@@ -15,6 +15,8 @@ import { WorldBook, WorldBookEntry } from './types';
 import { RegexScript, importRegexScript, exportRegexScript } from './regexUtils';
 import { regexStorage } from './storage';
 import { devtools } from 'zustand/middleware';
+import { apiKeyStorage } from './storage';
+import { ApiKey, ApiKeySettings } from './types';
 
 // 用户设置存储
 interface SettingsState {
@@ -2330,3 +2332,213 @@ export const useRegexStore = create<RegexState>()(
     })
   )
 ); 
+
+// API密钥管理
+interface ApiKeyState {
+  apiKeys: ApiKey[];
+  settings: ApiKeySettings;
+  isLoading: boolean;
+  error: string | null;
+  
+  // 操作方法
+  loadApiKeys: () => Promise<void>;
+  saveApiKey: (apiKey: ApiKey) => Promise<ApiKey>;
+  deleteApiKey: (id: string) => Promise<void>;
+  getApiKey: (id: string) => ApiKey | undefined;
+  getActiveApiKey: () => Promise<ApiKey | undefined>;
+  setActiveApiKey: (id: string) => Promise<void>;
+  incrementApiKeyUsage: (id: string) => Promise<void>;
+  updateApiKeySettings: (settings: Partial<ApiKeySettings>) => Promise<void>;
+}
+
+export const useApiKeyStore = create<ApiKeyState>()(
+  devtools(
+    (set, get) => ({
+      apiKeys: [],
+      settings: {
+        id: 'settings',
+        rotationStrategy: 'sequential',
+        activeKeyId: null,
+        autoSwitch: true,
+        switchThreshold: 100
+      },
+      isLoading: false,
+      error: null,
+      
+      // 加载API密钥
+      loadApiKeys: async () => {
+        try {
+          set({ isLoading: true });
+          
+          // 加载所有API密钥
+          const apiKeys = await apiKeyStorage.listApiKeys();
+          
+          // 加载API密钥设置
+          const settings = await apiKeyStorage.getApiKeySettings();
+          
+          set({ 
+            apiKeys, 
+            settings,
+            isLoading: false,
+            error: null
+          });
+        } catch (error) {
+          console.error("加载API密钥失败:", error);
+          set({ 
+            error: "加载API密钥失败", 
+            isLoading: false 
+          });
+        }
+      },
+      
+      // 保存API密钥
+      saveApiKey: async (apiKey: ApiKey) => {
+        try {
+          set({ isLoading: true });
+          
+          // 保存密钥到存储
+          const savedKey = await apiKeyStorage.saveApiKey(apiKey);
+          
+          // 更新状态
+          set(state => ({
+            apiKeys: state.apiKeys.some(key => key.id === savedKey.id)
+              ? state.apiKeys.map(key => key.id === savedKey.id ? savedKey : key)
+              : [...state.apiKeys, savedKey],
+            isLoading: false,
+            error: null
+          }));
+          
+          return savedKey;
+        } catch (error) {
+          console.error("保存API密钥失败:", error);
+          set({ 
+            error: "保存API密钥失败", 
+            isLoading: false 
+          });
+          throw error;
+        }
+      },
+      
+      // 删除API密钥
+      deleteApiKey: async (id: string) => {
+        try {
+          set({ isLoading: true });
+          
+          // 从存储中删除
+          await apiKeyStorage.deleteApiKey(id);
+          
+          // 更新状态
+          set(state => ({
+            apiKeys: state.apiKeys.filter(key => key.id !== id),
+            // 如果删除的是当前活动密钥，清除活动密钥ID
+            settings: state.settings.activeKeyId === id 
+              ? { ...state.settings, activeKeyId: null }
+              : state.settings,
+            isLoading: false,
+            error: null
+          }));
+          
+        } catch (error) {
+          console.error("删除API密钥失败:", error);
+          set({ 
+            error: "删除API密钥失败", 
+            isLoading: false 
+          });
+        }
+      },
+      
+      // 获取指定API密钥
+      getApiKey: (id: string) => {
+        const { apiKeys } = get();
+        return apiKeys.find(key => key.id === id);
+      },
+      
+      // 获取活动API密钥
+      getActiveApiKey: async () => {
+        try {
+          // 从存储中获取活动密钥
+          const activeKey = await apiKeyStorage.getActiveApiKey();
+          return activeKey;
+        } catch (error) {
+          console.error("获取活动API密钥失败:", error);
+          set({ error: "获取活动API密钥失败" });
+          return undefined;
+        }
+      },
+      
+      // 设置活动API密钥
+      setActiveApiKey: async (id: string) => {
+        try {
+          set({ isLoading: true });
+          
+          // 更新存储中的设置
+          const updatedSettings = await apiKeyStorage.updateApiKeySettings({
+            activeKeyId: id,
+            // 当手动设置活动密钥时，禁用自动切换
+            autoSwitch: false
+          });
+          
+          // 更新状态
+          set({
+            settings: updatedSettings,
+            isLoading: false,
+            error: null
+          });
+          
+        } catch (error) {
+          console.error("设置活动API密钥失败:", error);
+          set({ 
+            error: "设置活动API密钥失败", 
+            isLoading: false 
+          });
+        }
+      },
+      
+      // 增加API密钥使用次数
+      incrementApiKeyUsage: async (id: string) => {
+        try {
+          // 增加存储中的使用次数
+          const updatedKey = await apiKeyStorage.incrementApiKeyUsage(id);
+          
+          if (updatedKey) {
+            // 更新状态
+            set(state => ({
+              apiKeys: state.apiKeys.map(key => 
+                key.id === id ? updatedKey : key
+              )
+            }));
+          }
+          
+        } catch (error) {
+          console.error("更新API密钥使用次数失败:", error);
+          // 这种操作失败不应该影响用户体验，所以不设置错误状态
+        }
+      },
+      
+      // 更新API密钥设置
+      updateApiKeySettings: async (settings: Partial<ApiKeySettings>) => {
+        try {
+          set({ isLoading: true });
+          
+          // 更新存储中的设置
+          const updatedSettings = await apiKeyStorage.updateApiKeySettings(settings);
+          
+          // 更新状态
+          set({
+            settings: updatedSettings,
+            isLoading: false,
+            error: null
+          });
+          
+        } catch (error) {
+          console.error("更新API密钥设置失败:", error);
+          set({ 
+            error: "更新API密钥设置失败", 
+            isLoading: false 
+          });
+        }
+      }
+    }),
+    { name: 'api-key-store' }
+  )
+);

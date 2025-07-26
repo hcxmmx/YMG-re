@@ -1,5 +1,6 @@
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import type { Message } from "./types";
+import { apiKeyStorage } from "./storage";
 
 export interface GeminiParams {
   temperature?: number;
@@ -17,9 +18,51 @@ export interface GeminiParams {
 export class GeminiService {
   public genAI: GoogleGenAI;
   private defaultModel: string = "gemini-2.5-pro";
+  private apiKey: string;
+  private activeKeyId: string | null = null;
 
   constructor(apiKey: string) {
+    this.apiKey = apiKey;
     this.genAI = new GoogleGenAI({ apiKey });
+  }
+  
+  // 获取活动API密钥并更新genAI实例
+  private async getActiveApiKey(): Promise<string | undefined> {
+    try {
+      // 获取当前活动API密钥
+      const activeKey = await apiKeyStorage.getActiveApiKey();
+      
+      if (activeKey && activeKey.key !== this.apiKey) {
+        // 如果密钥发生变化，重新创建genAI实例
+        this.apiKey = activeKey.key;
+        this.activeKeyId = activeKey.id;
+        this.genAI = new GoogleGenAI({ apiKey: activeKey.key });
+        
+        console.log(`已切换到API密钥: ${activeKey.name} (ID: ${activeKey.id})`);
+        return activeKey.key;
+      } else if (activeKey) {
+        // 如果密钥未变化，但需要记录当前密钥ID
+        this.activeKeyId = activeKey.id;
+        return activeKey.key;
+      }
+      
+      // 如果没有可用密钥，继续使用当前密钥
+      return this.apiKey;
+    } catch (error) {
+      console.error("获取API密钥失败，使用默认密钥:", error);
+      return this.apiKey;
+    }
+  }
+  
+  // 记录当前密钥的使用
+  private async incrementApiKeyUsage() {
+    if (this.activeKeyId) {
+      try {
+        await apiKeyStorage.incrementApiKeyUsage(this.activeKeyId);
+      } catch (error) {
+        console.error("增加API密钥使用次数失败:", error);
+      }
+    }
   }
 
   // 辅助方法：从DataURL中提取Base64数据部分
@@ -154,6 +197,9 @@ export class GeminiService {
     }
 
     try {
+      // 使用活动API密钥
+      await this.getActiveApiKey();
+      
       // 创建生成内容请求
       const result = await this.genAI.models.generateContent({
         model: params.model || this.defaultModel,
@@ -171,6 +217,9 @@ export class GeminiService {
           abortSignal: params.abortSignal, // 添加AbortSignal支持
         }
       });
+      
+      // 增加API密钥使用次数
+      await this.incrementApiKeyUsage();
 
       return result.text || "";
     } catch (error) {
@@ -195,6 +244,9 @@ export class GeminiService {
     }
 
     try {
+      // 使用活动API密钥
+      await this.getActiveApiKey();
+      
       // 创建流式生成内容请求
       const result = await this.genAI.models.generateContentStream({
         model: params.model || this.defaultModel,
@@ -213,6 +265,9 @@ export class GeminiService {
         }
       });
 
+      // 增加API密钥使用次数
+      await this.incrementApiKeyUsage();
+      
       let hasYieldedContent = false;
 
       for await (const chunk of result) {

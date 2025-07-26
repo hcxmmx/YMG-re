@@ -1,5 +1,5 @@
 import { openDB, DBSchema } from 'idb';
-import { Message, UserSettings, Character, Branch, PromptPreset, PromptPresetItem, PlaceholderInfo, WorldBook, WorldBookEntry, WorldBookSettings, CharacterImportResult } from './types';
+import { Message, UserSettings, Character, Branch, PromptPreset, PromptPresetItem, PlaceholderInfo, WorldBook, WorldBookEntry, WorldBookSettings, CharacterImportResult, ApiKey, ApiKeySettings } from './types';
 import { generateId, extractCharaDataFromPng } from './utils';
 import { RegexScript } from './regexUtils';
 
@@ -77,12 +77,36 @@ interface AppDB extends DBSchema {
     value: RegexScript;
     indexes: { 'by-name': string };
   };
+  apiKeys: {
+    key: string;
+    value: {
+      id: string;
+      name: string;
+      key: string;
+      enabled: boolean;
+      priority: number;
+      usageCount: number;
+      lastUsed?: number;
+      createdAt: number;
+    };
+    indexes: { 'by-priority': number, 'by-name': string };
+  };
+  apiKeySettings: {
+    key: string;
+    value: {
+      id: string;
+      rotationStrategy: 'sequential' | 'random' | 'least-used';
+      activeKeyId: string | null;
+      autoSwitch: boolean;
+      switchThreshold: number;
+    };
+  };
 }
 
 
 // 初始化数据库
 export const initDB = async () => {
-  return openDB<AppDB>('ai-roleplay-db', 7, {
+  return openDB<AppDB>('ai-roleplay-db', 8, {
     upgrade(db, oldVersion) {
       // 版本1: 创建conversations和presets表
       if (oldVersion < 1) {
@@ -98,56 +122,64 @@ export const initDB = async () => {
           presetStore.createIndex('by-name', 'name');
         }
       }
-
-      // 版本2: 添加characters表
+      
+      // 版本2: 创建characters表
       if (oldVersion < 2) {
-        // 存储角色
         if (!db.objectStoreNames.contains('characters')) {
           const characterStore = db.createObjectStore('characters', { keyPath: 'id' });
           characterStore.createIndex('by-name', 'name');
         }
       }
       
-      // 版本3: 更新数据结构支持分支功能
+      // 版本3: 创建promptPresets表
       if (oldVersion < 3) {
-        console.log("升级数据库到版本3，添加分支支持");
-        // 数据迁移将在单独的函数中进行，以避免阻塞版本升级事务
-      }
-      
-      // 版本4: 添加提示词预设表
-      if (oldVersion < 4) {
-        console.log("升级数据库到版本4，添加提示词预设表");
         if (!db.objectStoreNames.contains('promptPresets')) {
           const promptPresetStore = db.createObjectStore('promptPresets', { keyPath: 'id' });
           promptPresetStore.createIndex('by-name', 'name');
           promptPresetStore.createIndex('by-updatedAt', 'updatedAt');
         }
       }
-
-      // 版本5: 添加玩家表
-      if (oldVersion < 5) {
-        console.log("升级数据库到版本5，添加玩家表");
+      
+      // 版本4: 创建players表
+      if (oldVersion < 4) {
         if (!db.objectStoreNames.contains('players')) {
           const playerStore = db.createObjectStore('players', { keyPath: 'id' });
           playerStore.createIndex('by-name', 'name');
           playerStore.createIndex('by-updatedAt', 'updatedAt');
         }
       }
-
-      // 版本6: 添加世界书表
-      if (oldVersion < 6) {
-        console.log("升级数据库到版本6，添加世界书表");
+      
+      // 版本5: 创建worldBooks表
+      if (oldVersion < 5) {
         if (!db.objectStoreNames.contains('worldBooks')) {
           const worldBookStore = db.createObjectStore('worldBooks', { keyPath: 'id' });
           worldBookStore.createIndex('by-name', 'name');
         }
       }
-
-      // 版本7: 添加正则表达式脚本表
-      if (oldVersion < 7) {
-        console.log("升级数据库到版本7，添加正则表达式脚本表");
+      
+      // 版本6: 创建regex表
+      if (oldVersion < 6) {
         if (!db.objectStoreNames.contains('regex')) {
           const regexStore = db.createObjectStore('regex', { keyPath: 'id' });
+          regexStore.createIndex('by-name', 'scriptName');
+        }
+      }
+      
+      // 版本7: 更新conversations表，添加characterId字段
+      if (oldVersion < 7) {
+        // 7版本中已经处理了
+      }
+      
+      // 版本8: 创建apiKeys和apiKeySettings表
+      if (oldVersion < 8) {
+        if (!db.objectStoreNames.contains('apiKeys')) {
+          const apiKeyStore = db.createObjectStore('apiKeys', { keyPath: 'id' });
+          apiKeyStore.createIndex('by-priority', 'priority');
+          apiKeyStore.createIndex('by-name', 'name');
+        }
+        
+        if (!db.objectStoreNames.contains('apiKeySettings')) {
+          db.createObjectStore('apiKeySettings', { keyPath: 'id' });
         }
       }
     }
@@ -1721,6 +1753,164 @@ export const regexStorage = {
       console.error("导入正则表达式脚本失败:", error);
       return null;
     }
+  }
+};
+
+// API密钥管理
+export const apiKeyStorage = {
+  // 获取单个API密钥
+  async getApiKey(id: string): Promise<ApiKey | undefined> {
+    const db = await initDB();
+    return db.get('apiKeys', id);
+  },
+  
+  // 获取所有API密钥，按优先级排序
+  async listApiKeys(): Promise<ApiKey[]> {
+    const db = await initDB();
+    return db.getAllFromIndex('apiKeys', 'by-priority');
+  },
+  
+  // 保存或更新API密钥
+  async saveApiKey(apiKey: ApiKey): Promise<ApiKey> {
+    const db = await initDB();
+    
+    // 确保有创建时间
+    if (!apiKey.createdAt) {
+      apiKey.createdAt = Date.now();
+    }
+    
+    // 如果是新密钥，确保有ID和使用次数初始化为0
+    if (!apiKey.id) {
+      apiKey.id = generateId();
+      apiKey.usageCount = 0;
+    }
+    
+    await db.put('apiKeys', apiKey);
+    return apiKey;
+  },
+  
+  // 删除API密钥
+  async deleteApiKey(id: string): Promise<void> {
+    const db = await initDB();
+    await db.delete('apiKeys', id);
+  },
+  
+  // 增加API密钥使用次数
+  async incrementApiKeyUsage(id: string): Promise<ApiKey | undefined> {
+    const db = await initDB();
+    const apiKey = await db.get('apiKeys', id);
+    
+    if (apiKey) {
+      apiKey.usageCount = (apiKey.usageCount || 0) + 1;
+      apiKey.lastUsed = Date.now();
+      await db.put('apiKeys', apiKey);
+      return apiKey;
+    }
+    
+    return undefined;
+  },
+  
+  // 获取API密钥设置
+  async getApiKeySettings(): Promise<ApiKeySettings> {
+    const db = await initDB();
+    // 使用固定ID "settings" 存储单例设置
+    let settings = await db.get('apiKeySettings', 'settings');
+    
+    // 如果设置不存在，创建默认设置
+    if (!settings) {
+      settings = {
+        id: 'settings',
+        rotationStrategy: 'sequential',
+        activeKeyId: null,
+        autoSwitch: true,
+        switchThreshold: 100
+      };
+      await db.put('apiKeySettings', settings);
+    }
+    
+    return settings;
+  },
+  
+  // 更新API密钥设置
+  async updateApiKeySettings(settings: Partial<ApiKeySettings>): Promise<ApiKeySettings> {
+    const db = await initDB();
+    const currentSettings = await this.getApiKeySettings();
+    
+    // 合并设置
+    const updatedSettings = {
+      ...currentSettings,
+      ...settings,
+      id: 'settings' // 确保ID不变
+    };
+    
+    await db.put('apiKeySettings', updatedSettings);
+    return updatedSettings;
+  },
+  
+  // 获取下一个可用的API密钥（根据轮询策略）
+  async getNextApiKey(): Promise<ApiKey | undefined> {
+    const settings = await this.getApiKeySettings();
+    const allKeys = await this.listApiKeys();
+    
+    // 过滤出已启用的密钥
+    const enabledKeys = allKeys.filter(key => key.enabled);
+    
+    if (enabledKeys.length === 0) {
+      return undefined;
+    }
+    
+    // 根据不同的轮询策略选择下一个密钥
+    switch (settings.rotationStrategy) {
+      case 'random':
+        // 随机选择一个密钥
+        return enabledKeys[Math.floor(Math.random() * enabledKeys.length)];
+        
+      case 'least-used':
+        // 选择使用次数最少的密钥
+        return enabledKeys.sort((a, b) => (a.usageCount || 0) - (b.usageCount || 0))[0];
+        
+      case 'sequential':
+      default:
+        // 找到当前活动密钥的索引
+        const currentIndex = enabledKeys.findIndex(key => key.id === settings.activeKeyId);
+        
+        // 如果找不到当前密钥或者当前密钥的使用次数超过阈值，选择下一个密钥
+        if (currentIndex === -1 || 
+            !settings.activeKeyId || 
+            (settings.autoSwitch && 
+             enabledKeys[currentIndex].usageCount >= settings.switchThreshold)) {
+          // 选择下一个密钥（环形索引）
+          const nextIndex = (currentIndex + 1) % enabledKeys.length;
+          const nextKey = enabledKeys[nextIndex];
+          
+          // 更新活动密钥ID
+          await this.updateApiKeySettings({ activeKeyId: nextKey.id });
+          return nextKey;
+        }
+        
+        // 返回当前活动密钥
+        return enabledKeys[currentIndex];
+    }
+  },
+  
+  // 获取当前活动的API密钥
+  async getActiveApiKey(): Promise<ApiKey | undefined> {
+    const settings = await this.getApiKeySettings();
+    
+    // 如果没有设置活动密钥，或者设置为自动切换，获取下一个密钥
+    if (!settings.activeKeyId || settings.autoSwitch) {
+      return this.getNextApiKey();
+    }
+    
+    // 获取设置的活动密钥
+    const activeKey = await this.getApiKey(settings.activeKeyId);
+    
+    // 如果活动密钥不存在或已禁用，获取下一个密钥
+    if (!activeKey || !activeKey.enabled) {
+      return this.getNextApiKey();
+    }
+    
+    return activeKey;
   }
 };
 

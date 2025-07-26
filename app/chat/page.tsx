@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { Message } from "@/components/chat/message";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatHeader } from "@/components/chat/chat-header";
-import { useSettingsStore, useChatStore, usePlayerStore, useRegexStore } from "@/lib/store";
+import { useSettingsStore, useChatStore, usePlayerStore, useRegexStore, useApiKeyStore } from "@/lib/store";
 import { Message as MessageType } from "@/lib/types";
 import { generateId } from "@/lib/utils";
 import { useNavbar } from "@/app/layout";
@@ -12,6 +12,7 @@ import { useSearchParams } from "next/navigation";
 import { TypingIndicator } from "@/components/chat/message";
 import { trimMessageHistory } from "@/lib/tokenUtils";
 import { replaceMacros } from "@/lib/macroUtils";
+import { apiKeyStorage } from "@/lib/storage";
 
 // 定义加载类型
 type LoadingType = 'new' | 'regenerate' | 'variant';
@@ -34,6 +35,26 @@ function SearchParamsWrapper({ children }: { children: (params: URLSearchParams)
   const searchParams = useSearchParams();
   return <>{children(searchParams)}</>;
 }
+
+// 检查API密钥（设置中的密钥或API轮询系统中的密钥）
+const checkApiKey = async (settingsApiKey?: string): Promise<string | null> => {
+  // 检查设置中的密钥
+  if (settingsApiKey) {
+    return settingsApiKey;
+  }
+  
+  try {
+    // 检查API轮询系统中是否有启用的密钥
+    const activeKey = await apiKeyStorage.getActiveApiKey();
+    if (activeKey) {
+      return activeKey.key;
+    }
+  } catch (error) {
+    console.error("检查API轮询系统密钥失败:", error);
+  }
+  
+  return null;
+};
 
 export default function ChatPage() {
   const { settings } = useSettingsStore();
@@ -226,6 +247,19 @@ export default function ChatPage() {
     responseStartTimeRef.current = Date.now();
 
     try {
+      // 检查是否有API密钥（设置中的或轮询系统中的）
+      const effectiveApiKey = await checkApiKey(settings.apiKey);
+      if (!effectiveApiKey) {
+        // 更新消息，添加错误信息
+        updateMessage({
+          ...messageToRegenerate,
+          content: "重新生成失败：未找到有效的API密钥。请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。",
+          timestamp: new Date(),
+        });
+        setIsLoading(false);
+        return;
+      }
+
       // 构建请求消息历史（不包含当前消息和之后的消息）
       const requestMessagesOriginal = currentMessages.slice(0, messageIndex);
       
@@ -233,7 +267,7 @@ export default function ChatPage() {
       const requestMessages = await trimMessageHistory(
         requestMessagesOriginal,
         settings,
-        settings.apiKey || ''
+        effectiveApiKey
       );
       
       console.log(`[重新生成] 消息裁剪: 从${requestMessagesOriginal.length}条消息裁剪到${requestMessages.length}条`);
@@ -257,7 +291,7 @@ export default function ChatPage() {
       const params = {
         messages: requestMessages,
         systemPrompt: processedSystemPrompt,
-        apiKey: settings.apiKey,
+        apiKey: effectiveApiKey, // 使用有效的API密钥
         stream: settings.enableStreaming,
         requestId, // 添加requestId
         temperature: settings.temperature,
@@ -575,6 +609,24 @@ export default function ChatPage() {
     responseStartTimeRef.current = Date.now();
 
     try {
+      // 检查是否有API密钥（设置中的或轮询系统中的）
+      const effectiveApiKey = await checkApiKey(settings.apiKey);
+      if (!effectiveApiKey) {
+        // 保持原始内容，但添加错误信息
+        updateMessage({
+          ...messageToAddVariant,
+          content: originalContent,
+          timestamp: new Date(),
+          errorDetails: {
+            code: 400,
+            message: "生成变体失败：未找到有效的API密钥。请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。",
+            timestamp: new Date().toISOString()
+          }
+        });
+        setIsLoading(false);
+        return;
+      }
+
       // 构建请求消息历史（不包含当前消息和之后的消息）
       const requestMessagesOriginal = currentMessages.slice(0, messageIndex);
       
@@ -582,7 +634,7 @@ export default function ChatPage() {
       const requestMessages = await trimMessageHistory(
         requestMessagesOriginal,
         settings,
-        settings.apiKey || ''
+        effectiveApiKey
       );
       
       console.log(`[生成变体] 消息裁剪: 从${requestMessagesOriginal.length}条消息裁剪到${requestMessages.length}条`);
@@ -606,7 +658,7 @@ export default function ChatPage() {
       const params = {
         messages: requestMessages,
         systemPrompt: processedSystemPrompt,
-        apiKey: settings.apiKey,
+        apiKey: effectiveApiKey, // 使用有效的API密钥
         stream: settings.enableStreaming,
         requestId, // 添加requestId
         temperature: settings.temperature,
@@ -890,11 +942,13 @@ export default function ChatPage() {
 
   // 发送消息
   const handleSendMessage = async (content: string, files?: { data: string; type: string; name?: string }[]) => {
-    if (!settings.apiKey) {
+    // 检查是否有API密钥（设置中的或轮询系统中的）
+    const effectiveApiKey = await checkApiKey(settings.apiKey);
+    if (!effectiveApiKey) {
       addMessage({
         id: generateId(),
         role: "system",
-        content: "请先在设置中配置API密钥。",
+        content: "请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。",
         timestamp: new Date(),
       });
       return;
@@ -941,7 +995,7 @@ export default function ChatPage() {
       const trimmedMessages = await trimMessageHistory(
         allMessages,
         settings,
-        settings.apiKey || ''
+        effectiveApiKey
       );
       
       console.log(`消息裁剪: 从${allMessages.length}条消息裁剪到${trimmedMessages.length}条`);
@@ -960,7 +1014,7 @@ export default function ChatPage() {
       const params = {
         messages: trimmedMessages,
         systemPrompt: processedSystemPrompt,
-        apiKey: settings.apiKey,
+        apiKey: effectiveApiKey, // 使用有效的API密钥
         stream: settings.enableStreaming,
         requestId, // 添加requestId
         temperature: settings.temperature,
@@ -1321,6 +1375,19 @@ export default function ChatPage() {
     responseStartTimeRef.current = Date.now();
 
     try {
+      // 检查是否有API密钥（设置中的或轮询系统中的）
+      const effectiveApiKey = await checkApiKey(settings.apiKey);
+      if (!effectiveApiKey) {
+        addMessage({
+          id: generateId(),
+          role: "system",
+          content: "请求回复失败：未找到有效的API密钥。请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。",
+          timestamp: new Date(),
+        });
+        setIsLoading(false);
+        return;
+      }
+
       // 构建请求消息历史（使用现有消息，不添加新的用户消息）
       const requestMessagesOriginal = currentMessages;
       
@@ -1328,7 +1395,7 @@ export default function ChatPage() {
       const requestMessages = await trimMessageHistory(
         requestMessagesOriginal,
         settings,
-        settings.apiKey || ''
+        effectiveApiKey
       );
       
       console.log(`[直接请求回复] 消息裁剪: 从${requestMessagesOriginal.length}条消息裁剪到${requestMessages.length}条`);
@@ -1352,7 +1419,7 @@ export default function ChatPage() {
       const params = {
         messages: requestMessages,
         systemPrompt: processedSystemPrompt,
-        apiKey: settings.apiKey,
+        apiKey: effectiveApiKey, // 使用有效的API密钥
         stream: settings.enableStreaming,
         requestId, // 添加requestId
         temperature: settings.temperature,

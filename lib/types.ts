@@ -242,3 +242,22 @@ export interface WorldBookSettings {
 
 // 从gemini.ts导出GeminiParams类型
 export type { GeminiParams } from './gemini'; 
+
+// API密钥相关类型
+export interface ApiKey {
+  id: string;           // 唯一ID
+  name: string;         // 密钥名称
+  key: string;          // API密钥值
+  enabled: boolean;     // 是否启用
+  priority: number;     // 优先级（数字越小优先级越高）
+  usageCount: number;   // 使用次数
+  lastUsed?: number;    // 最后使用时间戳
+  createdAt: number;    // 创建时间戳
+}
+
+export interface ApiKeySettings {
+  rotationStrategy: 'sequential' | 'random' | 'least-used'; // 轮询策略
+  activeKeyId: string | null;                             // 当前活动密钥ID
+  autoSwitch: boolean;                                   // 是否自动切换密钥
+  switchThreshold: number;                               // 切换阈值（使用次数）
+} 

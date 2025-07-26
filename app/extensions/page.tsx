@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Code } from "lucide-react";
+import { Code, Key } from "lucide-react";
 
 export default function ExtensionsPage() {
   useEffect(() => {
@@ -19,6 +19,14 @@ export default function ExtensionsPage() {
       description: "使用正则表达式处理聊天消息和提示词",
       icon: <Code className="h-10 w-10 text-primary" />,
       href: "/extensions/regex",
+      available: true
+    },
+    {
+      id: "api-keys",
+      title: "API密钥管理",
+      description: "管理多个API密钥并自动轮询使用",
+      icon: <Key className="h-10 w-10 text-primary" />,
+      href: "/extensions/api-keys",
       available: true
     }
   ];
