@@ -25,11 +25,6 @@ const nextConfig = {
   webpack: (config, { isServer }) => {
     return config;
   },
-  // 开发服务器配置
-  devServer: {
-    host: '0.0.0.0',
-    allowedHosts: ['*'],
-  }
 };
 
 module.exports = withPWA(nextConfig); 

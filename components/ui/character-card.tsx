@@ -164,9 +164,11 @@ export function CharacterCard({ character, onEdit, onDelete }: CharacterCardProp
           </div>
         )}
         
-        <div className="text-xs text-muted-foreground mt-2">
+        {character.createdAt && ( // 添加这个条件判断
+         <div className="text-xs text-muted-foreground mt-2">
           创建于 {formatDate(character.createdAt)}
-        </div>
+         </div>
+        )}
         
         <div className="flex space-x-2 pt-2">
           <Button 

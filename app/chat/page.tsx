@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { Message } from "@/components/chat/message";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatHeader } from "@/components/chat/chat-header";
@@ -29,6 +29,12 @@ function generateRequestId(): string {
   return 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15);
 }
 
+// 创建一个SearchParams组件，包装useSearchParams的使用
+function SearchParamsWrapper({ children }: { children: (params: URLSearchParams) => React.ReactNode }) {
+  const searchParams = useSearchParams();
+  return <>{children(searchParams)}</>;
+}
+
 export default function ChatPage() {
   const { settings } = useSettingsStore();
   const {
@@ -51,7 +57,7 @@ export default function ChatPage() {
   const { isNavbarVisible } = useNavbar();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const responseStartTimeRef = useRef<number>(0);
-  const searchParams = useSearchParams();
+  // 移除直接使用的useSearchParams
   const characterIdRef = useRef<string | null>(null);
   // 标记是否已处理URL参数
   const urlParamsProcessedRef = useRef(false);
@@ -71,60 +77,8 @@ export default function ChatPage() {
   }, [loadScripts]);
 
   // 处理URL参数，加载角色和对话，但只在首次加载时处理
-  useEffect(() => {
-    // 如果已经处理过URL参数，则不再处理
-    if (urlParamsProcessedRef.current) {
-      return;
-    }
-
-    const characterId = searchParams.get('characterId');
-    const conversationId = searchParams.get('conversationId');
-
-    // 标记URL参数已处理
-    urlParamsProcessedRef.current = true;
-
-    // 如果有对话ID参数，优先加载指定对话
-    if (conversationId) {
-      setCurrentConversation(conversationId).then(() => {
-        loadBranches(); // 加载分支数据
-      }).catch(error => {
-        console.error('加载指定对话失败:', error);
-      });
-      return; // 已经处理了对话加载，不需要进一步处理角色
-    }
-
-    // 如果只有角色ID参数
-    if (characterId) {
-      characterIdRef.current = characterId;
-
-      // 检查是否已经有该角色的对话
-      const characterConversations = conversations.filter(conv => 
-        conv.messages.some(msg => msg.role === 'assistant' && msg.characterId === characterId)
-      );
-
-      // 如果有该角色的对话，加载最新的
-      if (characterConversations.length > 0) {
-        // 按最后更新时间排序，选择最新的对话
-        const sortedConversations = [...characterConversations]
-          .sort((a, b) => b.lastUpdated - a.lastUpdated);
-        
-        setCurrentConversation(sortedConversations[0].id).then(() => {
-          loadBranches(); // 加载分支数据
-        }).catch(error => {
-          console.error('加载角色最近对话失败:', error);
-        });
-      } else {
-        // 没有该角色的对话，创建新的
-        console.log('URL参数包含角色ID，启动角色聊天:', characterId);
-        startCharacterChat(characterId).then(() => {
-          loadBranches(); // 加载分支数据
-        }).catch(error => {
-          console.error('启动角色聊天失败:', error);
-        });
-      }
-    }
-  }, [searchParams, startCharacterChat, setCurrentConversation, conversations, loadBranches]);
-
+  // 移到SearchParamsHandler组件中
+  
   // 确保在页面加载时加载对话历史
   useEffect(() => {
     // 加载对话列表
@@ -132,37 +86,8 @@ export default function ChatPage() {
     loadConversations().then(() => {
       console.log('页面加载时对话列表已加载，当前对话ID:', currentConversationId);
       
-      // 如果有URL参数中的角色ID，优先处理
-      const characterId = searchParams.get('characterId');
-      const conversationId = searchParams.get('conversationId');
-      
-      if (characterId && conversationId) {
-        console.log('URL中包含角色ID和对话ID，直接加载特定对话');
-        setCurrentConversation(conversationId).then(() => {
-          loadBranches(); // 加载分支数据
-        }).catch(error => {
-          console.error('加载指定对话失败:', error);
-        });
-      } else if (characterId) {
-        console.log('URL中包含角色ID:', characterId);
-        characterIdRef.current = characterId;
-        
-        // 检查当前是否已经是该角色的对话
-        const isCurrentCharacterChat = currentCharacter && currentCharacter.id === characterId;
-        
-        // 如果不是当前角色的对话，启动新的角色聊天
-        if (!isCurrentCharacterChat) {
-          console.log('启动新的角色聊天');
-          startCharacterChat(characterId).then(() => {
-            loadBranches(); // 加载分支数据
-          }).catch(error => {
-            console.error('启动角色聊天失败:', error);
-          });
-        } else {
-          console.log('当前已经是该角色的对话');
-          loadBranches(); // 加载分支数据
-        }
-      } else if (currentConversationId) {
+      // 如果有当前对话ID，确保对话内容已加载
+      if (currentConversationId) {
         // 如果没有URL参数但有当前对话ID，确保对话内容已加载
         console.log('确保当前对话内容已加载，消息数量:', currentMessages.length);
         loadBranches(); // 加载分支数据
@@ -225,6 +150,69 @@ export default function ChatPage() {
       console.error("加载玩家数据失败:", error)
     );
   }, [loadPlayers]);
+  
+  // 使用SearchParams的处理组件
+  function SearchParamsHandler() {
+    return (
+      <Suspense fallback={<div>Loading...</div>}>
+        <SearchParamsWrapper>
+          {(searchParams) => {
+            // 如果已经处理过URL参数，则不再处理
+            if (!urlParamsProcessedRef.current) {
+              const characterId = searchParams.get('characterId');
+              const conversationId = searchParams.get('conversationId');
+              
+              // 标记URL参数已处理
+              urlParamsProcessedRef.current = true;
+              
+              // 如果有对话ID参数，优先加载指定对话
+              if (conversationId) {
+                setCurrentConversation(conversationId).then(() => {
+                  loadBranches(); // 加载分支数据
+                }).catch(error => {
+                  console.error('加载指定对话失败:', error);
+                });
+                return null; // 已经处理了对话加载，不需要进一步处理角色
+              }
+              
+              // 如果只有角色ID参数
+              if (characterId) {
+                characterIdRef.current = characterId;
+                
+                // 检查是否已经有该角色的对话
+                const characterConversations = conversations.filter(conv => 
+                  conv.messages.some(msg => msg.role === 'assistant' && msg.characterId === characterId)
+                );
+                
+                // 如果有该角色的对话，加载最新的
+                if (characterConversations.length > 0) {
+                  // 按最后更新时间排序，选择最新的对话
+                  const sortedConversations = [...characterConversations]
+                    .sort((a, b) => b.lastUpdated - a.lastUpdated);
+                  
+                  setCurrentConversation(sortedConversations[0].id).then(() => {
+                    loadBranches(); // 加载分支数据
+                  }).catch(error => {
+                    console.error('加载角色最近对话失败:', error);
+                  });
+                } else {
+                  // 没有该角色的对话，创建新的
+                  console.log('URL参数包含角色ID，启动角色聊天:', characterId);
+                  startCharacterChat(characterId).then(() => {
+                    loadBranches(); // 加载分支数据
+                  }).catch(error => {
+                    console.error('启动角色聊天失败:', error);
+                  });
+                }
+              }
+            }
+            
+            return null;
+          }}
+        </SearchParamsWrapper>
+      </Suspense>
+    );
+  }
 
   // 重新生成AI回复
   const handleRegenerateMessage = async (messageId: string) => {
@@ -1794,6 +1782,8 @@ export default function ChatPage() {
 
   return (
     <div className={`flex flex-col ${isNavbarVisible ? 'h-[calc(100vh-65px)]' : 'h-screen'}`}>
+      {/* 添加SearchParamsHandler组件来处理URL参数 */}
+      <SearchParamsHandler />
       <ChatHeader character={currentCharacter} />
       <div className="flex-1 overflow-y-auto p-4">
         {currentMessages.map((message, index) => {
