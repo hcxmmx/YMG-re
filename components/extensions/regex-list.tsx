@@ -54,7 +54,8 @@ interface RegexListProps {
   onDelete: (scriptId: string) => void;
   onToggleEnabled: (scriptId: string) => void;
   onExport: (scriptId: string) => void;
-  onImportClick: () => void;
+  onImportClick?: () => void; // 改为可选
+  batchImportComponent?: React.ReactNode; // 添加批量导入组件支持
   onCreateNew: () => void;
   onReorder?: (newOrder: RegexScript[]) => void; // 新增排序处理
 }
@@ -405,6 +406,7 @@ export function RegexList({
   onToggleEnabled,
   onExport,
   onImportClick,
+  batchImportComponent,
   onCreateNew,
   onReorder
 }: RegexListProps) {
@@ -540,20 +542,27 @@ export function RegexList({
             <ViewToggle viewMode={viewMode} onChange={setViewMode} />
           </div>
           
+          {/* 批量导入组件 */}
+          {batchImportComponent ? (
+            batchImportComponent
+          ) : onImportClick ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={onImportClick}
+                  >
+                    <Import className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>导入脚本</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : null}
+          
           <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={onImportClick}
-                >
-                  <Import className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>导入脚本</TooltipContent>
-            </Tooltip>
-            
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button

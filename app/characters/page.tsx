@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Character, CharacterImportResult } from "@/lib/types";
 import { characterStorage } from "@/lib/storage";
 import { CharacterCard } from "@/components/ui/character-card";
@@ -17,6 +17,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { useChatStore } from "@/lib/store";
+import { BatchImport, ImportResult } from "@/components/ui/batch-import";
 
 type ViewMode = 'grid' | 'list';
 
@@ -75,47 +76,49 @@ export default function CharactersPage() {
     setViewMode(mode);
   };
 
-  // 处理角色卡导入
-  const handleImportCharacter = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) {
-      return;
-    }
-
-    const file = files[0];
-    if (!file) {
-      return;
-    }
-
-    try {
-      setIsImporting(true);
-      
-      // 导入角色卡
-      const result = await characterStorage.importCharacter(file);
-      
-      if (result?.characterId) {
-        let successMessage = `角色卡导入成功！每次导入的角色都是独立的，拥有自己的对话记录。`;
+  // 处理角色卡批量导入
+  const handleBatchImportCharacter = async (files: File[]): Promise<ImportResult[]> => {
+    const results: ImportResult[] = [];
+    
+    for (const file of files) {
+      try {
+        const result = await characterStorage.importCharacter(file);
         
-        // 如果有导入的世界书，添加相关信息
-        if (result.importedWorldBooks && result.importedWorldBooks.length > 0) {
-          successMessage += `\n\n同时导入了以下世界书并自动关联到角色：\n- ${result.importedWorldBooks.join('\n- ')}`;
+        if (result?.characterId) {
+          let successMessage = `导入成功`;
+          
+          // 如果有导入的世界书，添加相关信息
+          if (result.importedWorldBooks && result.importedWorldBooks.length > 0) {
+            successMessage += `. 导入了${result.importedWorldBooks.length}个世界书并自动关联`;
+          }
+          
+          results.push({
+            success: true,
+            fileName: file.name,
+            id: result.characterId,
+            message: successMessage
+          });
+        } else {
+          results.push({
+            success: false,
+            fileName: file.name,
+            message: result?.error || '未知错误'
+          });
         }
-        
-        alert(successMessage);
-        await loadCharacters(); // 重新加载角色列表
-      } else {
-        alert(`角色卡导入失败：${result?.error || '未知错误'}`);
-      }
-    } catch (error) {
-      console.error('导入角色卡失败:', error);
-      alert('导入过程中出错，请重试');
-    } finally {
-      setIsImporting(false);
-      // 重置文件输入，允许用户导入同一个文件
-      if (importFileRef.current) {
-        importFileRef.current.value = '';
+      } catch (error) {
+        console.error('导入角色卡失败:', error);
+        results.push({
+          success: false,
+          fileName: file.name,
+          message: error instanceof Error ? error.message : '导入过程中出错'
+        });
       }
     }
+    
+    // 完成后重新加载角色列表
+    await loadCharacters();
+    
+    return results;
   };
 
   return (
@@ -128,21 +131,16 @@ export default function CharactersPage() {
             <ViewToggle viewMode={viewMode} onChange={handleViewModeChange} />
           </div>
           
-          <Button 
-            onClick={() => importFileRef.current?.click()}
-            variant="outline"
-            disabled={isImporting}
-            className="hidden sm:flex"
-          >
-            {isImporting ? '导入中...' : '导入角色卡'}
-          </Button>
-          <input
-            type="file"
-            ref={importFileRef}
-            onChange={handleImportCharacter}
-            accept=".json,.png"
-            className="hidden"
-          />
+          {/* 批量导入按钮 */}
+          <div className="hidden sm:block">
+            <BatchImport 
+              onImport={handleBatchImportCharacter}
+              accept=".json,.png"
+              buttonText="批量导入"
+              disabled={isImporting}
+            />
+          </div>
+          
           <Button onClick={handleCreateCharacter}>
             创建角色
           </Button>
@@ -152,14 +150,13 @@ export default function CharactersPage() {
       {/* 移动端专用的视图切换和导入按钮 */}
       <div className="sm:hidden flex justify-between items-center mb-4">
         <ViewToggle viewMode={viewMode} onChange={handleViewModeChange} />
-        <Button 
-          onClick={() => importFileRef.current?.click()}
-          variant="outline"
-          disabled={isImporting}
+        <BatchImport 
+          onImport={handleBatchImportCharacter}
+          accept=".json,.png"
+          buttonText="导入"
           size="sm"
-        >
-          {isImporting ? '导入中...' : '导入角色卡'}
-        </Button>
+          disabled={isImporting}
+        />
       </div>
 
       {/* 角色表单模态框 */}

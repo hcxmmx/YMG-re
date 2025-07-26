@@ -9,10 +9,11 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Plus, FileUp, Download, Trash, Edit, Link2, Users } from "lucide-react";
+import { Plus, FileUp, Download, Trash, Edit, Link2, Users, MoreHorizontal, Eye, EyeOff, BookOpen } from "lucide-react";
 import { ViewToggle } from "@/components/ui/view-toggle";
 import { useResponsiveView } from "@/lib/useResponsiveView";
 import { WorldBookListItem } from "@/components/ui/worldbook-list-item";
+import { BatchImport, ImportResult } from "@/components/ui/batch-import";
 
 type ViewMode = 'grid' | 'list';
 
@@ -49,19 +50,41 @@ export default function WorldBooksPage() {
     loadData();
   }, [loadWorldBooks, worldBooks, getLinkedCharacters]);
 
-  // 导入世界书文件
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
+  // 导入世界书文件（批量）
+  const handleBatchImport = async (files: File[]): Promise<ImportResult[]> => {
+    const results: ImportResult[] = [];
+    
+    for (const file of files) {
       try {
-        await importWorldBookFromFile(file);
-        // 重置文件选择器，允许再次导入相同的文件
-        e.target.value = '';
+        const worldBook = await importWorldBookFromFile(file);
+        // 检查导入结果是否为null
+        if (worldBook) {
+          results.push({
+            success: true,
+            fileName: file.name,
+            id: worldBook.id,
+            name: worldBook.name,
+            message: `导入成功: ${worldBook.name}`
+          });
+        } else {
+          // 处理返回null的情况
+          results.push({
+            success: false,
+            fileName: file.name,
+            message: "导入失败: 无效的世界书文件"
+          });
+        }
       } catch (error) {
         console.error("导入世界书失败", error);
-        alert("导入世界书失败");
+        results.push({
+          success: false,
+          fileName: file.name,
+          message: error instanceof Error ? error.message : "导入失败"
+        });
       }
     }
+    
+    return results;
   };
 
   // 导出世界书
@@ -115,18 +138,15 @@ export default function WorldBooksPage() {
               <Plus className="mr-2 h-4 w-4" /> 新建
             </Link>
           </Button>
-          <div className="relative">
-            <input
-              id="import-file"
-              type="file"
-              accept=".json"
-              className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-              onChange={handleImport}
-            />
-            <Button variant="outline">
-              <FileUp className="mr-2 h-4 w-4" /> 导入
-            </Button>
-          </div>
+          
+          {/* 批量导入按钮 */}
+          <BatchImport
+            onImport={handleBatchImport}
+            accept=".json"
+            buttonText="批量导入"
+            variant="outline"
+            iconPosition="left"
+          />
         </div>
       </div>
 
@@ -146,16 +166,13 @@ export default function WorldBooksPage() {
             <Button asChild>
               <Link href="/worldbooks/new">新建世界书</Link>
             </Button>
-            <div className="relative">
-              <input
-                id="import-file-empty"
-                type="file"
-                accept=".json"
-                className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-                onChange={handleImport}
-              />
-              <Button variant="outline">导入世界书</Button>
-            </div>
+            {/* 替换成批量导入组件 */}
+            <BatchImport
+              onImport={handleBatchImport}
+              accept=".json"
+              buttonText="导入世界书"
+              variant="outline"
+            />
           </div>
         </div>
       ) : viewMode === 'grid' ? (

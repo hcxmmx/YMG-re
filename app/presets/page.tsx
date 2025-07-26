@@ -8,7 +8,7 @@ import { usePromptPresetStore } from "@/lib/store";
 import { Input } from "@/components/ui/input";
 import { 
   PlusCircle, Import, Edit, Trash2, Download, ChevronRight, 
-  Sliders, Search, XCircle, Check
+  Sliders, Search, XCircle, Check, Plus
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ViewToggle } from "@/components/ui/view-toggle";
 import { useResponsiveView } from "@/lib/useResponsiveView";
 import { PresetListItem } from "@/components/ui/preset-list-item";
+import { BatchImport, ImportResult } from "@/components/ui/batch-import";
 
 type ViewMode = 'grid' | 'list';
 
@@ -50,36 +51,39 @@ export default function PresetsPage() {
         preset.description?.toLowerCase().includes(searchTerm.toLowerCase())
       );
   
-  // 处理导入
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  // 处理批量导入
+  const handleBatchImport = async (files: File[]): Promise<ImportResult[]> => {
+    const results: ImportResult[] = [];
     
-    const file = files[0];
-    try {
-      const preset = await importPresetFromFile(file);
-      if (preset) {
-        // 使用更友好的通知方式
-        const notification = document.createElement('div');
-        notification.className = 'fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded-md shadow-lg flex items-center';
-        notification.innerHTML = `<svg class="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>成功导入预设: ${preset.name}`;
-        document.body.appendChild(notification);
-        
-        setTimeout(() => {
-          notification.style.opacity = '0';
-          notification.style.transition = 'opacity 0.5s ease';
-          setTimeout(() => document.body.removeChild(notification), 500);
-        }, 3000);
+    for (const file of files) {
+      try {
+        const preset = await importPresetFromFile(file);
+        if (preset) {
+          results.push({
+            success: true,
+            fileName: file.name,
+            id: preset.id,
+            name: preset.name,
+            message: `成功导入预设: ${preset.name}`
+          });
+        } else {
+          results.push({
+            success: false,
+            fileName: file.name,
+            message: "无效的预设文件"
+          });
+        }
+      } catch (error) {
+        console.error("导入预设失败:", error);
+        results.push({
+          success: false,
+          fileName: file.name,
+          message: error instanceof Error ? error.message : "导入失败"
+        });
       }
-    } catch (error) {
-      console.error("导入预设失败:", error);
-      alert("导入预设失败");
     }
     
-    // 清空文件输入
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    return results;
   };
   
   // 处理删除
@@ -136,21 +140,16 @@ export default function PresetsPage() {
             </Button>
           )}
           
-          <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
-            <Import className="h-4 w-4 mr-1" />
-            导入
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleImport} 
-              accept=".json" 
-              className="hidden" 
-            />
-          </Button>
+          <BatchImport
+            onImport={handleBatchImport}
+            accept=".json"
+            buttonText="批量导入"
+            variant="outline"
+          />
           
           <Button variant="default">
             <Link href="/presets/new" className="flex items-center">
-              <PlusCircle className="h-4 w-4 mr-1" />
+              <Plus className="h-4 w-4 mr-1" />
               新建预设
             </Link>
           </Button>
