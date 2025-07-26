@@ -10,6 +10,8 @@ import Link from "next/link";
 import { DataExportImport, ExportOptions } from "@/components/ui/data-export-import";
 import { exportData, importData, downloadFile } from "@/lib/dataUtils";
 import { useToast } from "@/components/ui/use-toast";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 // 可用的Gemini模型列表
 const AVAILABLE_MODELS = [
@@ -73,6 +75,8 @@ export default function SettingsPage() {
   const [chatFontSize, setChatFontSize] = useState(100);
   
   const [isSaved, setIsSaved] = useState(false);
+  const [activeTab, setActiveTab] = useState("appearance");
+  const [isMobile, setIsMobile] = useState(false);
   
   // 导入导出状态
   const [isExporting, setIsExporting] = useState(false);
@@ -95,6 +99,22 @@ export default function SettingsPage() {
     setFontSize(settings.fontSize || 100);
     setChatFontSize(settings.chatFontSize || 100);
   }, [settings]);
+
+  // 检测屏幕尺寸，决定使用哪种布局
+  useEffect(() => {
+    const checkScreenSize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    // 初始检测
+    checkScreenSize();
+    
+    // 添加窗口尺寸变化监听
+    window.addEventListener('resize', checkScreenSize);
+    
+    // 清理函数
+    return () => window.removeEventListener('resize', checkScreenSize);
+  }, []);
 
   // 字体映射对象，将字体类型映射到实际CSS字体值
   const fontFamilyMap: Record<FontFamily, string> = {
@@ -348,487 +368,168 @@ export default function SettingsPage() {
     }
   };
 
-  return (
-    <div className="container mx-auto p-4 max-w-3xl">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold">设置</h1>
-        <p className="text-muted-foreground">配置您的AI对话平台</p>
-      </header>
+  // 渲染外观设置内容
+  const renderAppearanceSettings = () => (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <h2 className="text-xl font-semibold">外观设置</h2>
+        <p className="text-sm text-muted-foreground">调整应用程序的字体和文本大小</p>
+      </div>
 
-      <div className="space-y-8">
-        {/* 外观设置 */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">外观设置</h2>
-          <p className="text-sm text-muted-foreground mb-4">
-            调整应用程序的字体和文本大小，优化您的阅读体验。
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* 字体选择 */}
+        <div className="space-y-2">
+          <label htmlFor="fontFamily" className="text-sm font-medium">
+            字体
+          </label>
+          <select
+            id="fontFamily"
+            value={fontFamily}
+            onChange={handleFontFamilyChange}
+            className="w-full p-2 border rounded-md bg-background"
+          >
+            {FONT_FAMILY_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-muted-foreground">
+            选择应用程序使用的字体
           </p>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* 字体选择 */}
-            <div className="space-y-2">
-              <label htmlFor="fontFamily" className="text-sm font-medium">
-                字体
-              </label>
-              <select
-                id="fontFamily"
-                value={fontFamily}
-                onChange={handleFontFamilyChange}
-                className="w-full p-2 border rounded-md bg-background"
-              >
-                {FONT_FAMILY_OPTIONS.map(option => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground">
-                选择应用程序使用的字体。
-              </p>
-            </div>
-            
-            {/* 全局字体大小 */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <label htmlFor="fontSize" className="text-sm font-medium">
-                  全局字体大小: {fontSize}%
-                </label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <input
-                  id="fontSize"
-                  type="range"
-                  min="50"
-                  max="200"
-                  step="5"
-                  value={fontSize}
-                  onChange={(e) => handleFontSizeChange(parseInt(e.target.value))}
-                  className="w-full"
-                />
-                <input
-                  type="number"
-                  min="50"
-                  max="200"
-                  value={fontSize}
-                  onChange={(e) => handleFontSizeChange(parseInt(e.target.value))}
-                  className="w-20 h-9 px-3 py-1 border rounded-md bg-background"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                调整整个应用程序的字体大小，影响所有界面元素。
-              </p>
-            </div>
-            
-            {/* 聊天消息字体大小 */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <label htmlFor="chatFontSize" className="text-sm font-medium">
-                  聊天消息字体大小: {chatFontSize}%
-                </label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <input
-                  id="chatFontSize"
-                  type="range"
-                  min="50"
-                  max="200"
-                  step="5"
-                  value={chatFontSize}
-                  onChange={(e) => handleChatFontSizeChange(parseInt(e.target.value))}
-                  className="w-full"
-                />
-                <input
-                  type="number"
-                  min="50"
-                  max="200"
-                  value={chatFontSize}
-                  onChange={(e) => handleChatFontSizeChange(parseInt(e.target.value))}
-                  className="w-20 h-9 px-3 py-1 border rounded-md bg-background"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                单独调整聊天界面中消息文本的大小，不影响其他界面元素。
-              </p>
-            </div>
-            
-            {/* 示例文本 */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">预览效果</label>
-              <div className="p-3 border rounded-md bg-background">
-                <p className="mb-1" style={{
-                  fontFamily: fontFamilyMap[fontFamily],
-                  ...fontStyleMap[fontFamily],
-                  ...getMobileEnhancedStyle(fontFamily)
-                }}>
-                  全局文本样式预览 (当前大小: {fontSize}%)
-                </p>
-                <div className="mt-2 p-3 bg-muted rounded-md" 
-                     style={{
-                       fontFamily: fontFamilyMap[fontFamily],
-                       fontSize: `${chatFontSize}%`,
-                       ...fontStyleMap[fontFamily],
-                       ...getMobileEnhancedStyle(fontFamily)
-                     }}>
-                  <p className="mb-0">聊天消息文本样式预览 (当前大小: {chatFontSize}%)</p>
-                </div>
-                
-                {/* 增强的字体对比预览 */}
-                <div className="mt-4 border-t pt-3">
-                  <h4 className="text-sm font-medium mb-2">字体对比</h4>
-                  <div className="grid grid-cols-1 gap-2">
-                    {FONT_FAMILY_OPTIONS.map(option => (
-                      <div 
-                        key={option.value} 
-                        className={`p-2 rounded-sm ${fontFamily === option.value ? 'bg-primary/10 border border-primary/30' : 'bg-background hover:bg-secondary/50'}`}
-                        style={{
-                          fontFamily: fontFamilyMap[option.value as FontFamily],
-                          ...fontStyleMap[option.value as FontFamily],
-                          ...getMobileEnhancedStyle(option.value as FontFamily)
-                        }}
-                      >
-                        <p className="m-0">
-                          {option.label} - 这是一段示例文本，用于展示不同字体的效果。
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                拖动调整条或更改字体时会实时预览效果，点击保存设置后生效。
-              </p>
-            </div>
-          </div>
         </div>
-
-        {/* API密钥设置 */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">API密钥</h2>
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              您需要提供一个有效的Gemini API密钥才能使用此应用
-            </p>
-            <Input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="输入您的Gemini API密钥"
-              className="max-w-md"
+        
+        {/* 全局字体大小 */}
+        <div className="space-y-2">
+          <div className="flex justify-between">
+            <label htmlFor="fontSize" className="text-sm font-medium">
+              全局字体大小: {fontSize}%
+            </label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <input
+              id="fontSize"
+              type="range"
+              min="50"
+              max="200"
+              step="5"
+              value={fontSize}
+              onChange={(e) => handleFontSizeChange(parseInt(e.target.value))}
+              className="w-full"
             />
-            <p className="text-xs text-muted-foreground">
-              <a
-                href="https://ai.google.dev/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline"
-              >
-                点击这里
-              </a>{" "}
-              获取Gemini API密钥
-            </p>
-          </div>
-        </div>
-
-        {/* 模型选择 */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">模型选择</h2>
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              选择要使用的Gemini模型
-            </p>
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className="w-full max-w-md p-2 border rounded-md bg-background"
-            >
-              {AVAILABLE_MODELS.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* 生成设置 */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">生成设置</h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* 温度设置 */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <label htmlFor="temperature" className="text-sm font-medium">
-                  温度: {temperature}
-                </label>
-                <span className="text-sm text-muted-foreground">
-                  {temperature < 0.3
-                    ? "更精确"
-                    : temperature > 0.7
-                    ? "更有创意"
-                    : "平衡"}
-                </span>
-              </div>
-              <input
-                id="temperature"
-                type="range"
-                min="0"
-                max="2"
-                step="0.1"
-                value={temperature}
-                onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                className="w-full"
-              />
-              <p className="text-xs text-muted-foreground">
-                控制响应的随机性。较低的值使响应更加一致和确定，较高的值使响应更加多样化和创意。
-              </p>
-            </div>
-
-            {/* 最大令牌数 */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <label htmlFor="maxTokens" className="text-sm font-medium">
-                  最大输出长度: {maxTokens}
-                </label>
-              </div>
-              <input
-                id="maxTokens"
-                type="range"
-                min="256"
-                max="8192"
-                step="256"
-                value={maxTokens}
-                onChange={(e) => setMaxTokens(parseInt(e.target.value))}
-                className="w-full"
-              />
-              <p className="text-xs text-muted-foreground">
-                控制生成响应的最大长度。较高的值允许更长的回复，但可能增加API成本。
-              </p>
-            </div>
-
-            {/* Top-K 设置 */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <label htmlFor="topK" className="text-sm font-medium">
-                  Top-K: {topK}
-                </label>
-              </div>
-              <input
-                id="topK"
-                type="range"
-                min="1"
-                max="100"
-                step="1"
-                value={topK}
-                onChange={(e) => setTopK(parseInt(e.target.value))}
-                className="w-full"
-              />
-              <p className="text-xs text-muted-foreground">
-                每个步骤考虑的最高概率词汇数量。较低的值使输出更加聚焦，较高的值使输出更加多样化。
-              </p>
-            </div>
-
-            {/* Top-P 设置 */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <label htmlFor="topP" className="text-sm font-medium">
-                  Top-P: {topP}
-                </label>
-              </div>
-              <input
-                id="topP"
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={topP}
-                onChange={(e) => setTopP(parseFloat(e.target.value))}
-                className="w-full"
-              />
-              <p className="text-xs text-muted-foreground">
-                累积概率阈值。模型将考虑累积概率达到此阈值的词汇。较低的值使输出更加确定，较高的值使输出更加多样化。
-              </p>
-            </div>
-
-            {/* 流式响应 */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <input
-                  id="streaming"
-                  type="checkbox"
-                  checked={enableStreaming}
-                  onChange={(e) => setEnableStreaming(e.target.checked)}
-                  className="h-4 w-4"
-                />
-                <label htmlFor="streaming" className="text-sm font-medium">
-                  启用流式响应
-                </label>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                启用后，AI回复将逐字显示，提供更自然的体验。禁用后，将在完成后一次性显示整个回复。
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* 上下文控制 */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">上下文控制</h2>
-          <p className="text-sm text-muted-foreground mb-4">
-            控制模型在对话中保留的上下文数量。
-          </p>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* 上下文窗口 */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <label htmlFor="contextWindow" className="text-sm font-medium">
-                  上下文窗口大小
-                </label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <input
-                  id="contextWindow"
-                  type="range"
-                  min="0"
-                  max="1000000"
-                  step="1000"
-                  value={contextWindow}
-                  onChange={(e) => setContextWindow(parseInt(e.target.value))}
-                  className="w-full"
-                />
-                <input
-                  type="number"
-                  min="0"
-                  max="1000000"
-                  value={contextWindow}
-                  onChange={(e) => setContextWindow(parseInt(e.target.value) || 0)}
-                  className="w-24 h-9 px-3 py-1 border rounded-md bg-background"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                控制模型在对话中保留的上下文数量。0表示不限制。{contextControlMode === 'token' 
-                 ? '较低的值能降低API成本和提高响应速度，但可能会丢失较早的上下文。'
-                 : '较低的值会限制对话中保留的消息数量。'}
-              </p>
-            </div>
-
-            {/* 上下文控制模式 */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <label htmlFor="contextControlMode" className="text-sm font-medium">
-                  上下文控制模式: {contextControlMode}
-                </label>
-              </div>
-              <select
-                id="contextControlMode"
-                value={contextControlMode}
-                onChange={(e) => setContextControlMode(e.target.value as 'count' | 'token')}
-                className="w-full p-2 border rounded-md bg-background"
-              >
-                {CONTEXT_CONTROL_OPTIONS.map(option => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground">
-                选择上下文控制是基于消息数量还是Token数量。
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* 安全设置 */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">安全设置</h2>
-          <p className="text-sm text-muted-foreground mb-4">
-            控制模型对不同类型内容的过滤程度。选择"不阻止"将允许所有内容。
-          </p>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* 仇恨言论 */}
-            <div className="space-y-2">
-              <label htmlFor="hateSpeech" className="text-sm font-medium">
-                仇恨言论
-              </label>
-              <select
-                id="hateSpeech"
-                value={safetySettings.hateSpeech}
-                onChange={(e) => updateSafetySetting('hateSpeech', e.target.value as HarmBlockThreshold)}
-                className="w-full p-2 border rounded-md bg-background"
-              >
-                {SAFETY_THRESHOLD_OPTIONS.map(option => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* 骚扰内容 */}
-            <div className="space-y-2">
-              <label htmlFor="harassment" className="text-sm font-medium">
-                骚扰内容
-              </label>
-              <select
-                id="harassment"
-                value={safetySettings.harassment}
-                onChange={(e) => updateSafetySetting('harassment', e.target.value as HarmBlockThreshold)}
-                className="w-full p-2 border rounded-md bg-background"
-              >
-                {SAFETY_THRESHOLD_OPTIONS.map(option => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* 色情内容 */}
-            <div className="space-y-2">
-              <label htmlFor="sexuallyExplicit" className="text-sm font-medium">
-                色情内容
-              </label>
-              <select
-                id="sexuallyExplicit"
-                value={safetySettings.sexuallyExplicit}
-                onChange={(e) => updateSafetySetting('sexuallyExplicit', e.target.value as HarmBlockThreshold)}
-                className="w-full p-2 border rounded-md bg-background"
-              >
-                {SAFETY_THRESHOLD_OPTIONS.map(option => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* 危险内容 */}
-            <div className="space-y-2">
-              <label htmlFor="dangerousContent" className="text-sm font-medium">
-                危险内容
-              </label>
-              <select
-                id="dangerousContent"
-                value={safetySettings.dangerousContent}
-                onChange={(e) => updateSafetySetting('dangerousContent', e.target.value as HarmBlockThreshold)}
-                className="w-full p-2 border rounded-md bg-background"
-              >
-                {SAFETY_THRESHOLD_OPTIONS.map(option => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <input
+              type="number"
+              min="50"
+              max="200"
+              value={fontSize}
+              onChange={(e) => handleFontSizeChange(parseInt(e.target.value))}
+              className="w-20 h-9 px-3 py-1 border rounded-md bg-background"
+            />
           </div>
         </div>
         
+        {/* 聊天消息字体大小 */}
+        <div className="space-y-2">
+          <div className="flex justify-between">
+            <label htmlFor="chatFontSize" className="text-sm font-medium">
+              聊天消息字体大小: {chatFontSize}%
+            </label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <input
+              id="chatFontSize"
+              type="range"
+              min="50"
+              max="200"
+              step="5"
+              value={chatFontSize}
+              onChange={(e) => handleChatFontSizeChange(parseInt(e.target.value))}
+              className="w-full"
+            />
+            <input
+              type="number"
+              min="50"
+              max="200"
+              value={chatFontSize}
+              onChange={(e) => handleChatFontSizeChange(parseInt(e.target.value))}
+              className="w-20 h-9 px-3 py-1 border rounded-md bg-background"
+            />
+          </div>
+        </div>
+        
+        {/* 简化的字体预览 */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">预览效果</label>
+          <div className="p-3 border rounded-md bg-background">
+            <p style={{
+              fontFamily: fontFamilyMap[fontFamily],
+              ...fontStyleMap[fontFamily],
+            }}>
+              普通文本 ({fontSize}%)
+            </p>
+            <div className="mt-2 p-2 bg-muted rounded-md" 
+                 style={{
+                   fontFamily: fontFamilyMap[fontFamily],
+                   fontSize: `${chatFontSize}%`,
+                 }}>
+              <p className="mb-0">聊天文本 ({chatFontSize}%)</p>
+            </div>
+            
+            {/* 简化的字体样式比较 */}
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              {FONT_FAMILY_OPTIONS.slice(0, 6).map(option => (
+                <div 
+                  key={option.value} 
+                  className={`p-1 rounded-sm ${fontFamily === option.value ? 'bg-primary/10 border border-primary/30' : ''}`}
+                  style={{
+                    fontFamily: fontFamilyMap[option.value as FontFamily],
+                  }}
+                >
+                  {option.label}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // 渲染API设置内容
+  const renderApiSettings = () => (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <h2 className="text-xl font-semibold">API密钥</h2>
+        <p className="text-sm text-muted-foreground">
+          提供Gemini API密钥以使用此应用
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        <Input
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder="输入您的Gemini API密钥"
+          className="max-w-md"
+        />
+        <p className="text-xs text-muted-foreground">
+          <a
+            href="https://ai.google.dev/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline"
+          >
+            点击这里
+          </a>{" "}
+          获取Gemini API密钥
+        </p>
+        
         {/* 数据备份与恢复 */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">数据备份与恢复</h2>
+        <div className="mt-8 pt-4 border-t">
+          <h3 className="text-lg font-semibold mb-2">数据备份与恢复</h3>
           <p className="text-sm text-muted-foreground mb-4">
-            导出或导入您的应用数据，包括对话历史、角色、预设等
+            导出或导入您的应用数据
           </p>
           
           <DataExportImport 
@@ -838,18 +539,366 @@ export default function SettingsPage() {
             isImporting={isImporting}
           />
         </div>
+      </div>
+    </div>
+  );
 
-        {/* 保存按钮 */}
-        <div className="flex justify-between pt-4">
-          <Button onClick={() => router.back()} variant="outline">
-            返回
-          </Button>
-          <div className="flex items-center gap-4">
-            {isSaved && (
-              <span className="text-sm text-green-500">设置已保存</span>
-            )}
-            <Button onClick={handleSave}>保存设置</Button>
+  // 渲染模型设置内容
+  const renderModelSettings = () => (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <h2 className="text-xl font-semibold">模型设置</h2>
+        <p className="text-sm text-muted-foreground">
+          选择模型和生成参数
+        </p>
+      </div>
+
+      <div className="space-y-6">
+        {/* 模型选择 */}
+        <div className="space-y-2">
+          <label htmlFor="model" className="text-sm font-medium">模型</label>
+          <select
+            id="model"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            className="w-full max-w-md p-2 border rounded-md bg-background"
+          >
+            {AVAILABLE_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* 温度设置 */}
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <label htmlFor="temperature" className="text-sm font-medium">
+                温度: {temperature}
+              </label>
+              <span className="text-sm text-muted-foreground">
+                {temperature < 0.3
+                  ? "更精确"
+                  : temperature > 0.7
+                  ? "更有创意"
+                  : "平衡"}
+              </span>
+            </div>
+            <input
+              id="temperature"
+              type="range"
+              min="0"
+              max="2"
+              step="0.1"
+              value={temperature}
+              onChange={(e) => setTemperature(parseFloat(e.target.value))}
+              className="w-full"
+            />
           </div>
+
+          {/* 最大令牌数 */}
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <label htmlFor="maxTokens" className="text-sm font-medium">
+                最大输出长度: {maxTokens}
+              </label>
+            </div>
+            <input
+              id="maxTokens"
+              type="range"
+              min="256"
+              max="8192"
+              step="256"
+              value={maxTokens}
+              onChange={(e) => setMaxTokens(parseInt(e.target.value))}
+              className="w-full"
+            />
+          </div>
+
+          {/* Top-K 设置 */}
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <label htmlFor="topK" className="text-sm font-medium">
+                Top-K: {topK}
+              </label>
+            </div>
+            <input
+              id="topK"
+              type="range"
+              min="1"
+              max="100"
+              step="1"
+              value={topK}
+              onChange={(e) => setTopK(parseInt(e.target.value))}
+              className="w-full"
+            />
+          </div>
+
+          {/* Top-P 设置 */}
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <label htmlFor="topP" className="text-sm font-medium">
+                Top-P: {topP}
+              </label>
+            </div>
+            <input
+              id="topP"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={topP}
+              onChange={(e) => setTopP(parseFloat(e.target.value))}
+              className="w-full"
+            />
+          </div>
+
+          {/* 流式响应 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                id="streaming"
+                type="checkbox"
+                checked={enableStreaming}
+                onChange={(e) => setEnableStreaming(e.target.checked)}
+                className="h-4 w-4"
+              />
+              <label htmlFor="streaming" className="text-sm font-medium">
+                启用流式响应
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // 渲染上下文设置内容
+  const renderContextSettings = () => (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <h2 className="text-xl font-semibold">上下文控制</h2>
+        <p className="text-sm text-muted-foreground">
+          控制模型在对话中保留的上下文数量
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* 上下文窗口 */}
+        <div className="space-y-2">
+          <div className="flex justify-between">
+            <label htmlFor="contextWindow" className="text-sm font-medium">
+              上下文窗口大小
+            </label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <input
+              id="contextWindow"
+              type="range"
+              min="0"
+              max="1000000"
+              step="1000"
+              value={contextWindow}
+              onChange={(e) => setContextWindow(parseInt(e.target.value))}
+              className="w-full"
+            />
+            <input
+              type="number"
+              min="0"
+              max="1000000"
+              value={contextWindow}
+              onChange={(e) => setContextWindow(parseInt(e.target.value) || 0)}
+              className="w-24 h-9 px-3 py-1 border rounded-md bg-background"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            0表示不限制。{contextControlMode === 'token' 
+              ? '较低的值能降低API成本和提高响应速度。'
+              : '较低的值会限制保留的消息数量。'}
+          </p>
+        </div>
+
+        {/* 上下文控制模式 */}
+        <div className="space-y-2">
+          <div className="flex justify-between">
+            <label htmlFor="contextControlMode" className="text-sm font-medium">
+              上下文控制模式
+            </label>
+          </div>
+          <select
+            id="contextControlMode"
+            value={contextControlMode}
+            onChange={(e) => setContextControlMode(e.target.value as 'count' | 'token')}
+            className="w-full p-2 border rounded-md bg-background"
+          >
+            {CONTEXT_CONTROL_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+    </div>
+  );
+
+  // 渲染安全设置内容
+  const renderSafetySettings = () => (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <h2 className="text-xl font-semibold">安全设置</h2>
+        <p className="text-sm text-muted-foreground">
+          控制模型对不同类型内容的过滤程度
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* 仇恨言论 */}
+        <div className="space-y-2">
+          <label htmlFor="hateSpeech" className="text-sm font-medium">
+            仇恨言论
+          </label>
+          <select
+            id="hateSpeech"
+            value={safetySettings.hateSpeech}
+            onChange={(e) => updateSafetySetting('hateSpeech', e.target.value as HarmBlockThreshold)}
+            className="w-full p-2 border rounded-md bg-background"
+          >
+            {SAFETY_THRESHOLD_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 骚扰内容 */}
+        <div className="space-y-2">
+          <label htmlFor="harassment" className="text-sm font-medium">
+            骚扰内容
+          </label>
+          <select
+            id="harassment"
+            value={safetySettings.harassment}
+            onChange={(e) => updateSafetySetting('harassment', e.target.value as HarmBlockThreshold)}
+            className="w-full p-2 border rounded-md bg-background"
+          >
+            {SAFETY_THRESHOLD_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 色情内容 */}
+        <div className="space-y-2">
+          <label htmlFor="sexuallyExplicit" className="text-sm font-medium">
+            色情内容
+          </label>
+          <select
+            id="sexuallyExplicit"
+            value={safetySettings.sexuallyExplicit}
+            onChange={(e) => updateSafetySetting('sexuallyExplicit', e.target.value as HarmBlockThreshold)}
+            className="w-full p-2 border rounded-md bg-background"
+          >
+            {SAFETY_THRESHOLD_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 危险内容 */}
+        <div className="space-y-2">
+          <label htmlFor="dangerousContent" className="text-sm font-medium">
+            危险内容
+          </label>
+          <select
+            id="dangerousContent"
+            value={safetySettings.dangerousContent}
+            onChange={(e) => updateSafetySetting('dangerousContent', e.target.value as HarmBlockThreshold)}
+            className="w-full p-2 border rounded-md bg-background"
+          >
+            {SAFETY_THRESHOLD_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="container mx-auto p-4 max-w-3xl">
+      <header className="mb-6">
+        <h1 className="text-3xl font-bold">设置</h1>
+        <p className="text-muted-foreground">配置您的AI对话平台</p>
+      </header>
+
+      {/* 使用不同的布局方式，基于屏幕尺寸 */}
+      {isMobile ? (
+        // 移动设备上使用手风琴式折叠菜单
+        <Accordion type="single" collapsible className="space-y-2">
+          <AccordionItem value="appearance">
+            <AccordionTrigger className="text-lg font-medium">外观</AccordionTrigger>
+            <AccordionContent>{renderAppearanceSettings()}</AccordionContent>
+          </AccordionItem>
+          
+          <AccordionItem value="api">
+            <AccordionTrigger className="text-lg font-medium">API设置</AccordionTrigger>
+            <AccordionContent>{renderApiSettings()}</AccordionContent>
+          </AccordionItem>
+          
+          <AccordionItem value="model">
+            <AccordionTrigger className="text-lg font-medium">模型设置</AccordionTrigger>
+            <AccordionContent>{renderModelSettings()}</AccordionContent>
+          </AccordionItem>
+          
+          <AccordionItem value="context">
+            <AccordionTrigger className="text-lg font-medium">上下文控制</AccordionTrigger>
+            <AccordionContent>{renderContextSettings()}</AccordionContent>
+          </AccordionItem>
+          
+          <AccordionItem value="safety">
+            <AccordionTrigger className="text-lg font-medium">安全设置</AccordionTrigger>
+            <AccordionContent>{renderSafetySettings()}</AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      ) : (
+        // 桌面设备上使用标签式布局
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="grid grid-cols-5 w-full">
+            <TabsTrigger value="appearance">外观</TabsTrigger>
+            <TabsTrigger value="api">API设置</TabsTrigger>
+            <TabsTrigger value="model">模型设置</TabsTrigger>
+            <TabsTrigger value="context">上下文</TabsTrigger>
+            <TabsTrigger value="safety">安全设置</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="appearance">{renderAppearanceSettings()}</TabsContent>
+          <TabsContent value="api">{renderApiSettings()}</TabsContent>
+          <TabsContent value="model">{renderModelSettings()}</TabsContent>
+          <TabsContent value="context">{renderContextSettings()}</TabsContent>
+          <TabsContent value="safety">{renderSafetySettings()}</TabsContent>
+        </Tabs>
+      )}
+
+      {/* 保存按钮 - 始终显示在底部 */}
+      <div className="flex justify-between pt-8 mt-6 border-t">
+        <Button onClick={() => router.back()} variant="outline">
+          返回
+        </Button>
+        <div className="flex items-center gap-4">
+          {isSaved && (
+            <span className="text-sm text-green-500">设置已保存</span>
+          )}
+          <Button onClick={handleSave}>保存设置</Button>
         </div>
       </div>
     </div>
