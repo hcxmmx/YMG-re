@@ -89,7 +89,12 @@ export default function CharactersPage() {
           
           // 如果有导入的世界书，添加相关信息
           if (result.importedWorldBooks && result.importedWorldBooks.length > 0) {
-            successMessage += `. 导入了${result.importedWorldBooks.length}个世界书并自动关联`;
+            successMessage += `，导入了${result.importedWorldBooks.length}个世界书并自动关联`;
+          }
+          
+          // 如果有导入的正则脚本，添加相关信息
+          if (result.importedRegexScripts && result.importedRegexScripts.length > 0) {
+            successMessage += `，导入了${result.importedRegexScripts.length}个正则脚本并自动关联`;
           }
           
           results.push({

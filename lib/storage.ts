@@ -2479,29 +2479,56 @@ async function importRegexScriptsFromCharacterData(characterId: string, characte
   const importedScriptIds: string[] = [];
   const importedScriptNames: string[] = [];
   
-  for (const scriptData of regexScripts) {
-    try {
-      // 生成新ID避免覆盖
-      const newId = generateId();
-      
-      // 确保脚本有作用域设置，设为局部作用域
-      const script: RegexScript = {
-        ...scriptData,
-        id: newId,
-        scope: 'character', // 设置为局部作用域
-        characterIds: [characterId] // 关联到角色
-      };
-      
-      // 保存到数据库
-      await regexStorage.saveRegexScript(script);
-      
-      importedScriptIds.push(newId);
-      importedScriptNames.push(script.scriptName);
-      
-      console.log(`成功导入正则表达式脚本: ${script.scriptName}, ID: ${newId}`);
-    } catch (error) {
-      console.error('导入正则表达式脚本失败:', error);
+  try {
+    // 创建以角色名命名的文件夹
+    const folderName = `${characterName}的正则`;
+    const folderDescription = `角色"${characterName}"导入的正则脚本`;
+    
+    // 检查是否已存在同名文件夹
+    const allFolders = await regexFolderStorage.listFolders();
+    let characterFolder = allFolders.find(folder => folder.name === folderName);
+    
+    // 如果不存在，则创建新文件夹
+    if (!characterFolder) {
+      characterFolder = await regexFolderStorage.createFolder({
+        name: folderName,
+        description: folderDescription,
+        disabled: false
+      });
+      console.log(`为角色"${characterName}"创建了正则文件夹，ID: ${characterFolder.id}`);
     }
+    
+    // 获取文件夹ID
+    const folderId = characterFolder.id;
+    
+    // 导入脚本并放入文件夹
+    for (const scriptData of regexScripts) {
+      try {
+        // 生成新ID避免覆盖
+        const newId = generateId();
+        
+        // 确保脚本有作用域设置，设为局部作用域
+        const script: RegexScript = {
+          ...scriptData,
+          id: newId,
+          scope: 'character', // 设置为局部作用域
+          characterIds: [characterId], // 关联到角色
+          folderId: folderId // 放入角色专属文件夹
+        };
+        
+        // 保存到数据库
+        await regexStorage.saveRegexScript(script);
+        
+        importedScriptIds.push(newId);
+        importedScriptNames.push(script.scriptName);
+        
+        console.log(`成功导入正则表达式脚本: ${script.scriptName}, ID: ${newId}, 文件夹: ${folderName}`);
+      } catch (error) {
+        console.error('导入正则表达式脚本失败:', error);
+      }
+    }
+  } catch (error) {
+    console.error('创建角色正则文件夹失败:', error);
   }
   
   return importedScriptNames;
