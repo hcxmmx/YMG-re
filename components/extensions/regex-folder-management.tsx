@@ -29,10 +29,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { RegexFolder } from "@/lib/types";
-import { useRegexFolderStore } from "@/lib/store";
-import { FolderPlus, Edit, Trash2, Power, PowerOff, FolderOpen } from "lucide-react";
+import { useRegexFolderStore, usePromptPresetStore, usePresetFolderStore } from "@/lib/store";
+import { FolderPlus, Edit, Trash2, Power, PowerOff, FolderOpen, Link as LinkIcon, Settings } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface FolderManagementProps {
   onFolderSelect?: (folderId: string) => void;
@@ -40,17 +41,24 @@ interface FolderManagementProps {
 
 export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
   const { folders, loadFolders, createFolder, updateFolder, deleteFolder, toggleFolderEnabled } = useRegexFolderStore();
+  const { presets, loadPresets } = usePromptPresetStore();
+  const { loadPresetFolders, linkFolderToPreset, unlinkFolderFromPreset, getFoldersForPreset } = usePresetFolderStore();
+  
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isPresetDialogOpen, setIsPresetDialogOpen] = useState(false);
   const [currentFolder, setCurrentFolder] = useState<RegexFolder | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderDescription, setNewFolderDescription] = useState("");
+  const [linkedPresetIds, setLinkedPresetIds] = useState<Set<string>>(new Set());
+  const [isLoadingPresets, setIsLoadingPresets] = useState(false);
   
   // 加载文件夹
   useEffect(() => {
     loadFolders();
-  }, [loadFolders]);
+    loadPresets();
+  }, [loadFolders, loadPresets]);
   
   // 处理创建文件夹
   const handleCreateFolder = async () => {
@@ -104,6 +112,48 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
   const openDeleteDialog = (folder: RegexFolder) => {
     setCurrentFolder(folder);
     setIsDeleteDialogOpen(true);
+  };
+  
+  // 打开预设关联对话框
+  const openPresetDialog = async (folder: RegexFolder) => {
+    setCurrentFolder(folder);
+    setIsLoadingPresets(true);
+    setIsPresetDialogOpen(true);
+    
+    try {
+      // 获取与文件夹关联的预设
+      const linkedFolders = await getFoldersForPreset(folder.id);
+      const linkedIds = new Set(folder.presetIds || []);
+      setLinkedPresetIds(linkedIds);
+    } catch (error) {
+      console.error("获取文件夹关联的预设失败:", error);
+    } finally {
+      setIsLoadingPresets(false);
+    }
+  };
+  
+  // 处理预设关联变更
+  const handlePresetLinkChange = async (presetId: string, checked: boolean) => {
+    if (!currentFolder) return;
+    
+    try {
+      if (checked) {
+        await linkFolderToPreset(currentFolder.id, presetId);
+      } else {
+        await unlinkFolderFromPreset(currentFolder.id, presetId);
+      }
+      
+      // 更新关联状态
+      const folder = await useRegexFolderStore.getState().getFolder(currentFolder.id);
+      if (folder && folder.presetIds) {
+        setLinkedPresetIds(new Set(folder.presetIds));
+      }
+      
+      // 重新加载文件夹列表以更新UI
+      loadFolders();
+    } catch (error) {
+      console.error("更新文件夹关联的预设失败:", error);
+    }
   };
   
   return (
@@ -178,7 +228,12 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
                 </div>
               </CardHeader>
               <CardContent>
-                {/* 这里可以显示文件夹中的脚本数量等信息 */}
+                {/* 显示关联的预设数量 */}
+                {folder.presetIds && folder.presetIds.length > 0 && (
+                  <div className="text-xs text-muted-foreground">
+                    已关联 {folder.presetIds.length} 个预设
+                  </div>
+                )}
               </CardContent>
               <CardFooter className="flex justify-between">
                 <div>
@@ -198,6 +253,22 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
                   </TooltipProvider>
                 </div>
                 <div className="flex gap-1">
+                  {/* 预设关联按钮 */}
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openPresetDialog(folder)}
+                        >
+                          <LinkIcon className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>关联到预设</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  
                   {/* 启用/禁用按钮 */}
                   {folder.id !== 'default' && (
                     <TooltipProvider>
@@ -315,6 +386,62 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
             </Button>
             <Button variant="destructive" onClick={handleDeleteFolder}>
               删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* 预设关联对话框 */}
+      <Dialog open={isPresetDialogOpen} onOpenChange={setIsPresetDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>关联文件夹到预设</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground mb-4">
+              选择要关联的预设。切换预设时，系统将自动启用关联的文件夹中的正则脚本，禁用其他文件夹中的脚本。
+            </p>
+            
+            {isLoadingPresets ? (
+              <div className="flex justify-center py-4">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+              </div>
+            ) : presets.length === 0 ? (
+              <div className="text-center py-4 text-muted-foreground">
+                暂无可用的预设
+              </div>
+            ) : (
+              <ScrollArea className="h-[300px] pr-2">
+                <div className="space-y-2">
+                  {presets.map(preset => (
+                    <div key={preset.id} className="flex items-center space-x-2 p-2 hover:bg-accent rounded-md">
+                      <Checkbox 
+                        id={`preset-${preset.id}`}
+                        checked={linkedPresetIds.has(preset.id)}
+                        onCheckedChange={(checked) => handlePresetLinkChange(preset.id, checked === true)}
+                      />
+                      <div className="flex-1">
+                        <Label 
+                          htmlFor={`preset-${preset.id}`}
+                          className="flex flex-col cursor-pointer"
+                        >
+                          <span className="font-medium">{preset.name}</span>
+                          {preset.description && (
+                            <span className="text-xs text-muted-foreground line-clamp-1">
+                              {preset.description}
+                            </span>
+                          )}
+                        </Label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setIsPresetDialogOpen(false)}>
+              完成
             </Button>
           </DialogFooter>
         </DialogContent>
