@@ -2642,6 +2642,20 @@ export const regexFolderStorage = {
     return allScripts.filter(script => script.folderId === folderId);
   },
   
+  // 判断文件夹是否为局部正则文件夹（只包含角色专属正则）
+  async isCharacterRegexFolder(folderId: string): Promise<boolean> {
+    // 获取文件夹中的所有脚本
+    const scripts = await this.getScriptsInFolder(folderId);
+    
+    // 如果文件夹为空，不认为它是局部正则文件夹
+    if (scripts.length === 0) {
+      return false;
+    }
+    
+    // 检查是否所有脚本都是角色专属的（scope === 'character'）
+    return scripts.every(script => script.scope === 'character');
+  },
+  
   // 将正则脚本移动到指定文件夹
   async moveScriptToFolder(scriptId: string, folderId: string): Promise<RegexScript | undefined> {
     const script = await regexStorage.getRegexScript(scriptId);

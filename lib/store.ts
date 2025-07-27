@@ -3063,11 +3063,21 @@ export const usePresetFolderStore = create<PresetFolderState>()(
           const presetFolders = await get().getFoldersForPreset(presetId);
           const presetFolderIds = new Set(presetFolders.map(folder => folder.id));
           
-          // 启用预设关联的文件夹，禁用其他文件夹
+          // 启用预设关联的文件夹，禁用其他文件夹（但不影响局部正则文件夹）
           for (const folder of allFolders) {
             // 跳过默认文件夹，它始终保持启用状态
             if (folder.id === 'default') continue;
             
+            // 检查是否为局部正则文件夹（角色专属文件夹）
+            const isCharacterFolder = await regexFolderStorage.isCharacterRegexFolder(folder.id);
+            
+            // 如果是局部正则文件夹，跳过它，不改变其启用状态
+            if (isCharacterFolder) {
+              console.log(`跳过局部正则文件夹: ${folder.name} (ID: ${folder.id})`);
+              continue;
+            }
+            
+            // 对于全局正则文件夹，应用预设关联逻辑
             const shouldBeEnabled = presetFolderIds.has(folder.id);
             
             // 如果状态需要改变
@@ -3076,6 +3086,7 @@ export const usePresetFolderStore = create<PresetFolderState>()(
               await regexFolderStorage.updateFolder(folder.id, {
                 disabled: !shouldBeEnabled
               });
+              console.log(`${shouldBeEnabled ? '启用' : '禁用'}全局正则文件夹: ${folder.name} (ID: ${folder.id})`);
             }
           }
           
