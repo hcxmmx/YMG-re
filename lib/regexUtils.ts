@@ -22,6 +22,8 @@ export interface RegexScript {
   maxDepth?: number|null;// 最大深度
   scope?: 'global' | 'character'; // 作用域：全局或角色特定
   characterIds?: string[];      // 当 scope 为 'character' 时生效的角色 ID 列表
+  folderId?: string;           // 所属文件夹ID
+  presetIds?: string[];        // 关联的预设ID列表
 }
 
 /**
@@ -33,6 +35,7 @@ export interface RegexScript {
  * @param depth 消息深度 (用于深度过滤)
  * @param type 处理类型: 1=用户输入, 2=AI响应, 3=命令, 4=提示词
  * @param characterId 当前角色ID (用于角色特定正则)
+ * @param disabledFolderIds 禁用的文件夹ID列表 (用于文件夹隔离)
  * @returns 处理后的文本
  */
 export function processWithRegex(
@@ -42,7 +45,8 @@ export function processWithRegex(
   characterName: string,
   depth: number = 0,
   type: number = 2, // 默认为AI响应
-  characterId?: string // 新增参数，当前角色ID
+  characterId?: string, // 当前角色ID
+  disabledFolderIds?: Set<string> // 禁用的文件夹ID集合
 ): string {
   if (!text || !scripts || scripts.length === 0) return text;
 
@@ -53,6 +57,11 @@ export function processWithRegex(
     // 检查脚本是否启用
     if (script.disabled) return false;
     
+    // 检查脚本所在文件夹是否被禁用
+    if (disabledFolderIds && script.folderId && disabledFolderIds.has(script.folderId)) {
+      return false;
+    }
+    
     // 检查脚本是否应用于当前类型
     if (!script.placement.includes(type)) return false;
     
@@ -60,18 +69,42 @@ export function processWithRegex(
     if (script.minDepth !== undefined && script.minDepth !== null && depth < script.minDepth) return false;
     if (script.maxDepth !== undefined && script.maxDepth !== null && depth > script.maxDepth) return false;
     
-    // 检查脚本作用域
-    if (script.scope === 'character' && characterId) {
-      // 如果是角色特定的脚本，检查当前角色ID是否在列表中
-      return script.characterIds?.includes(characterId);
-    }
-    
-    // 全局脚本或未指定作用域的脚本都适用
-    return script.scope === 'global' || !script.scope;
+    return true;
   });
   
+  // 将脚本分为全局脚本和角色特定脚本
+  const globalScripts = validScripts.filter(script => 
+    script.scope === 'global' || !script.scope
+  );
+  
+  const characterScripts = validScripts.filter(script => 
+    script.scope === 'character' && 
+    characterId && 
+    script.characterIds?.includes(characterId)
+  );
+  
+  // 先应用全局脚本
+  processedText = applyScripts(processedText, globalScripts, playerName, characterName);
+  
+  // 然后应用角色特定脚本
+  processedText = applyScripts(processedText, characterScripts, playerName, characterName);
+  
+  return processedText;
+}
+
+/**
+ * 应用一组脚本到文本
+ * @param text 要处理的文本
+ * @param scripts 要应用的脚本列表
+ * @param playerName 玩家名称
+ * @param characterName 角色名称
+ * @returns 处理后的文本
+ */
+function applyScripts(text: string, scripts: RegexScript[], playerName: string, characterName: string): string {
+  let processedText = text;
+  
   // 应用每个脚本
-  for (const script of validScripts) {
+  for (const script of scripts) {
     try {
       // 准备正则表达式
       let findRegexStr = script.findRegex;

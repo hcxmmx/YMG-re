@@ -1,5 +1,5 @@
-import { openDB, DBSchema } from 'idb';
-import { Message, UserSettings, Character, Branch, PromptPreset, PromptPresetItem, PlaceholderInfo, WorldBook, WorldBookEntry, WorldBookSettings, CharacterImportResult, ApiKey, ApiKeySettings } from './types';
+import { openDB, DBSchema, deleteDB } from 'idb';
+import { Message, UserSettings, Character, Branch, PromptPreset, PromptPresetItem, PlaceholderInfo, WorldBook, WorldBookEntry, WorldBookSettings, CharacterImportResult, ApiKey, ApiKeySettings, RegexFolder } from './types';
 import { generateId, extractCharaDataFromPng } from './utils';
 import { RegexScript } from './regexUtils';
 
@@ -31,6 +31,8 @@ interface AppDB extends DBSchema {
       tags?: string[];
       createdAt: number;
       updatedAt: number;
+      regexScriptIds?: string[]; // 新增：预设关联的正则表达式脚本ID列表
+      regexFolderIds?: string[]; // 新增：预设关联的正则表达式文件夹ID列表
     };
     indexes: { 'by-name': string };
   };
@@ -78,6 +80,11 @@ interface AppDB extends DBSchema {
     value: RegexScript;
     indexes: { 'by-name': string };
   };
+  regexFolders: {
+    key: string;
+    value: RegexFolder;
+    indexes: { 'by-name': string };
+  };
   apiKeys: {
     key: string;
     value: {
@@ -107,85 +114,193 @@ interface AppDB extends DBSchema {
 
 // 初始化数据库
 export const initDB = async () => {
-  return openDB<AppDB>('ai-roleplay-db', 8, {
-    upgrade(db, oldVersion) {
-      // 版本1: 创建conversations和presets表
-      if (oldVersion < 1) {
-        // 存储对话历史
-        if (!db.objectStoreNames.contains('conversations')) {
-          const conversationStore = db.createObjectStore('conversations', { keyPath: 'id' });
-          conversationStore.createIndex('by-lastUpdated', 'lastUpdated');
+  try {
+    const db = await openDB<AppDB>('ai-roleplay-db', 9, {
+      upgrade(db, oldVersion) {
+        // 版本1: 创建conversations和presets表
+        if (oldVersion < 1) {
+          // 存储对话历史
+          if (!db.objectStoreNames.contains('conversations')) {
+            const conversationStore = db.createObjectStore('conversations', { keyPath: 'id' });
+            conversationStore.createIndex('by-lastUpdated', 'lastUpdated');
+          }
+          
+          // 存储角色预设
+          if (!db.objectStoreNames.contains('presets')) {
+            const presetStore = db.createObjectStore('presets', { keyPath: 'id' });
+            presetStore.createIndex('by-name', 'name');
+          }
         }
         
-        // 存储角色预设
-        if (!db.objectStoreNames.contains('presets')) {
-          const presetStore = db.createObjectStore('presets', { keyPath: 'id' });
-          presetStore.createIndex('by-name', 'name');
-        }
-      }
-      
-      // 版本2: 创建characters表
-      if (oldVersion < 2) {
-        if (!db.objectStoreNames.contains('characters')) {
-          const characterStore = db.createObjectStore('characters', { keyPath: 'id' });
-          characterStore.createIndex('by-name', 'name');
-        }
-      }
-      
-      // 版本3: 创建promptPresets表
-      if (oldVersion < 3) {
-        if (!db.objectStoreNames.contains('promptPresets')) {
-          const promptPresetStore = db.createObjectStore('promptPresets', { keyPath: 'id' });
-          promptPresetStore.createIndex('by-name', 'name');
-          promptPresetStore.createIndex('by-updatedAt', 'updatedAt');
-        }
-      }
-      
-      // 版本4: 创建players表
-      if (oldVersion < 4) {
-        if (!db.objectStoreNames.contains('players')) {
-          const playerStore = db.createObjectStore('players', { keyPath: 'id' });
-          playerStore.createIndex('by-name', 'name');
-          playerStore.createIndex('by-updatedAt', 'updatedAt');
-        }
-      }
-      
-      // 版本5: 创建worldBooks表
-      if (oldVersion < 5) {
-        if (!db.objectStoreNames.contains('worldBooks')) {
-          const worldBookStore = db.createObjectStore('worldBooks', { keyPath: 'id' });
-          worldBookStore.createIndex('by-name', 'name');
-        }
-      }
-      
-      // 版本6: 创建regex表
-      if (oldVersion < 6) {
-        if (!db.objectStoreNames.contains('regex')) {
-          const regexStore = db.createObjectStore('regex', { keyPath: 'id' });
-          regexStore.createIndex('by-name', 'scriptName');
-        }
-      }
-      
-      // 版本7: 更新conversations表，添加characterId字段
-      if (oldVersion < 7) {
-        // 7版本中已经处理了
-      }
-      
-      // 版本8: 创建apiKeys和apiKeySettings表
-      if (oldVersion < 8) {
-        if (!db.objectStoreNames.contains('apiKeys')) {
-          const apiKeyStore = db.createObjectStore('apiKeys', { keyPath: 'id' });
-          apiKeyStore.createIndex('by-priority', 'priority');
-          apiKeyStore.createIndex('by-name', 'name');
+        // 版本2: 创建characters表
+        if (oldVersion < 2) {
+          if (!db.objectStoreNames.contains('characters')) {
+            const characterStore = db.createObjectStore('characters', { keyPath: 'id' });
+            characterStore.createIndex('by-name', 'name');
+          }
         }
         
-        if (!db.objectStoreNames.contains('apiKeySettings')) {
-          db.createObjectStore('apiKeySettings', { keyPath: 'id' });
+        // 版本3: 创建promptPresets表
+        if (oldVersion < 3) {
+          if (!db.objectStoreNames.contains('promptPresets')) {
+            const promptPresetStore = db.createObjectStore('promptPresets', { keyPath: 'id' });
+            promptPresetStore.createIndex('by-name', 'name');
+            promptPresetStore.createIndex('by-updatedAt', 'updatedAt');
+          }
         }
+        
+        // 版本4: 创建players表
+        if (oldVersion < 4) {
+          if (!db.objectStoreNames.contains('players')) {
+            const playerStore = db.createObjectStore('players', { keyPath: 'id' });
+            playerStore.createIndex('by-name', 'name');
+            playerStore.createIndex('by-updatedAt', 'updatedAt');
+          }
+        }
+        
+        // 版本5: 创建worldBooks表
+        if (oldVersion < 5) {
+          if (!db.objectStoreNames.contains('worldBooks')) {
+            const worldBookStore = db.createObjectStore('worldBooks', { keyPath: 'id' });
+            worldBookStore.createIndex('by-name', 'name');
+          }
+        }
+        
+        // 版本6: 创建regex表
+        if (oldVersion < 6) {
+          if (!db.objectStoreNames.contains('regex')) {
+            const regexStore = db.createObjectStore('regex', { keyPath: 'id' });
+            regexStore.createIndex('by-name', 'scriptName');
+          }
+        }
+        
+        // 版本7: 更新conversations表，添加characterId字段
+        if (oldVersion < 7) {
+          // 7版本中已经处理了
+        }
+        
+        // 版本8: 创建apiKeys和apiKeySettings表
+        if (oldVersion < 8) {
+          if (!db.objectStoreNames.contains('apiKeys')) {
+            const apiKeyStore = db.createObjectStore('apiKeys', { keyPath: 'id' });
+            apiKeyStore.createIndex('by-priority', 'priority');
+            apiKeyStore.createIndex('by-name', 'name');
+          }
+          
+          if (!db.objectStoreNames.contains('apiKeySettings')) {
+            db.createObjectStore('apiKeySettings', { keyPath: 'id' });
+          }
+        }
+        
+        // 版本9: 创建regexFolders表，并更新presets表支持关联正则
+        if (oldVersion < 9) {
+          // 创建正则表达式文件夹表
+          if (!db.objectStoreNames.contains('regexFolders')) {
+            const regexFolderStore = db.createObjectStore('regexFolders', { keyPath: 'id' });
+            regexFolderStore.createIndex('by-name', 'name');
+            
+            // 创建默认的"未分类"文件夹
+            const defaultFolder = {
+              id: 'default',
+              name: '未分类',
+              description: '默认文件夹，存放未分类的正则脚本',
+              disabled: false,
+              createdAt: Date.now(),
+              updatedAt: Date.now()
+            };
+            regexFolderStore.add(defaultFolder);
+          }
+        }
+      }
+    });
+    
+    // 数据库初始化后，确保所有正则脚本都有文件夹ID
+    await updateRegexScriptsFolders(db);
+    
+    return db;
+  } catch (error) {
+    console.error("数据库初始化错误:", error);
+    // 如果是版本变更错误，尝试删除数据库并重新创建
+    if (error instanceof DOMException && error.name === 'VersionError') {
+      console.warn("检测到版本错误，尝试删除并重建数据库");
+      try {
+        await deleteDB('ai-roleplay-db');
+        return openDB<AppDB>('ai-roleplay-db', 9, {
+          upgrade(db) {
+            // 重新创建所有表
+            const conversationStore = db.createObjectStore('conversations', { keyPath: 'id' });
+            conversationStore.createIndex('by-lastUpdated', 'lastUpdated');
+            
+            const presetStore = db.createObjectStore('presets', { keyPath: 'id' });
+            presetStore.createIndex('by-name', 'name');
+            
+            const characterStore = db.createObjectStore('characters', { keyPath: 'id' });
+            characterStore.createIndex('by-name', 'name');
+            
+            const promptPresetStore = db.createObjectStore('promptPresets', { keyPath: 'id' });
+            promptPresetStore.createIndex('by-name', 'name');
+            promptPresetStore.createIndex('by-updatedAt', 'updatedAt');
+            
+            const playerStore = db.createObjectStore('players', { keyPath: 'id' });
+            playerStore.createIndex('by-name', 'name');
+            playerStore.createIndex('by-updatedAt', 'updatedAt');
+            
+            const worldBookStore = db.createObjectStore('worldBooks', { keyPath: 'id' });
+            worldBookStore.createIndex('by-name', 'name');
+            
+            const regexStore = db.createObjectStore('regex', { keyPath: 'id' });
+            regexStore.createIndex('by-name', 'scriptName');
+            
+            const apiKeyStore = db.createObjectStore('apiKeys', { keyPath: 'id' });
+            apiKeyStore.createIndex('by-priority', 'priority');
+            apiKeyStore.createIndex('by-name', 'name');
+            
+            db.createObjectStore('apiKeySettings', { keyPath: 'id' });
+            
+            const regexFolderStore = db.createObjectStore('regexFolders', { keyPath: 'id' });
+            regexFolderStore.createIndex('by-name', 'name');
+            
+            // 创建默认的"未分类"文件夹
+            const defaultFolder = {
+              id: 'default',
+              name: '未分类',
+              description: '默认文件夹，存放未分类的正则脚本',
+              disabled: false,
+              createdAt: Date.now(),
+              updatedAt: Date.now()
+            };
+            regexFolderStore.add(defaultFolder);
+          }
+        });
+      } catch (recreateError) {
+        console.error("重建数据库失败:", recreateError);
+        throw recreateError;
+      }
+    } else {
+      throw error;
+    }
+  }
+};
+
+// 辅助函数：更新正则脚本的文件夹ID
+async function updateRegexScriptsFolders(db: any) {
+  try {
+    // 获取所有正则脚本
+    const scripts = await db.getAll('regex');
+    
+    // 更新没有文件夹ID的脚本
+    for (const script of scripts) {
+      if (!script.folderId) {
+        script.folderId = 'default';
+        await db.put('regex', script);
       }
     }
-  });
-};
+    
+    console.log(`已更新 ${scripts.filter((s: RegexScript) => !s.folderId).length} 个正则脚本的文件夹ID`);
+  } catch (error) {
+    console.error("更新正则脚本文件夹ID失败:", error);
+  }
+}
 
 // 初始化主分支 - 为每个对话添加默认主分支
 export const initializeMainBranch = async (conversationId: string): Promise<string> => {
@@ -561,14 +676,24 @@ export const presetStorage = {
     firstMessage?: string;
     avatar?: string;
     tags?: string[];
+    regexScriptIds?: string[];
   }) {
     const db = await initDB();
+    
+    // 如果是新预设，添加创建时间
+    if (!preset.id) {
+      preset.id = generateId();
+    }
+    
     const now = Date.now();
-    await db.put('presets', {
+    const updatedPreset = {
       ...preset,
       createdAt: preset.id ? (await db.get('presets', preset.id))?.createdAt || now : now,
       updatedAt: now
-    });
+    };
+    
+    await db.put('presets', updatedPreset);
+    return updatedPreset;
   },
   
   async getPreset(id: string) {
@@ -1780,6 +1905,16 @@ export const regexStorage = {
       script.scope = 'global';
     }
     
+    // 确保有文件夹ID，默认为"未分类"文件夹
+    if (!script.folderId) {
+      script.folderId = 'default';
+    }
+    
+    // 确保有预设ID列表
+    if (!script.presetIds) {
+      script.presetIds = [];
+    }
+    
     await db.put('regex', script);
     return script;
   },
@@ -1838,6 +1973,78 @@ export const regexStorage = {
     return script;
   },
   
+  // 关联正则表达式脚本到预设
+  async linkToPreset(scriptId: string, presetId: string): Promise<RegexScript | undefined> {
+    const db = await initDB();
+    const script = await db.get('regex', scriptId);
+    
+    if (!script) {
+      console.error(`找不到正则表达式脚本: ${scriptId}`);
+      return undefined;
+    }
+    
+    // 初始化或更新预设ID列表
+    if (!script.presetIds) {
+      script.presetIds = [];
+    }
+    
+    // 如果未关联，则添加预设ID
+    if (!script.presetIds.includes(presetId)) {
+      script.presetIds.push(presetId);
+      await db.put('regex', script);
+      console.log(`正则表达式脚本 ${script.scriptName} (${scriptId}) 已关联到预设 ${presetId}`);
+      
+      // 同时更新预设的regexScriptIds
+      await this.updatePresetRegexScripts(presetId);
+    }
+    
+    return script;
+  },
+  
+  // 取消关联正则表达式脚本与预设
+  async unlinkFromPreset(scriptId: string, presetId: string): Promise<RegexScript | undefined> {
+    const db = await initDB();
+    const script = await db.get('regex', scriptId);
+    
+    if (!script) {
+      console.error(`找不到正则表达式脚本: ${scriptId}`);
+      return undefined;
+    }
+    
+    // 如果预设ID存在于列表中，则移除
+    if (script.presetIds && script.presetIds.includes(presetId)) {
+      script.presetIds = script.presetIds.filter(id => id !== presetId);
+      await db.put('regex', script);
+      console.log(`正则表达式脚本 ${script.scriptName} (${scriptId}) 已取消与预设 ${presetId} 的关联`);
+      
+      // 同时更新预设的regexScriptIds
+      await this.updatePresetRegexScripts(presetId);
+    }
+    
+    return script;
+  },
+  
+  // 更新预设的正则脚本ID列表
+  async updatePresetRegexScripts(presetId: string): Promise<void> {
+    const db = await initDB();
+    const preset = await db.get('presets', presetId);
+    
+    if (!preset) {
+      console.error(`找不到预设: ${presetId}`);
+      return;
+    }
+    
+    // 获取所有关联到该预设的脚本ID
+    const allScripts = await this.listRegexScripts();
+    const scriptIds = allScripts
+      .filter(script => script.presetIds && script.presetIds.includes(presetId))
+      .map(script => script.id);
+    
+    // 更新预设的regexScriptIds字段
+    preset.regexScriptIds = scriptIds;
+    await db.put('presets', preset);
+  },
+  
   async getRegexScript(id: string) {
     const db = await initDB();
     return db.get('regex', id);
@@ -1850,6 +2057,18 @@ export const regexStorage = {
   
   async deleteRegexScript(id: string) {
     const db = await initDB();
+    
+    // 获取脚本信息，用于更新关联
+    const script = await db.get('regex', id);
+    if (script) {
+      // 如果脚本关联了预设，更新预设的regexScriptIds
+      if (script.presetIds && script.presetIds.length > 0) {
+        for (const presetId of script.presetIds) {
+          await this.unlinkFromPreset(id, presetId);
+        }
+      }
+    }
+    
     await db.delete('regex', id);
   },
   
@@ -1898,6 +2117,38 @@ export const regexStorage = {
       script.scope === 'character' && 
       script.characterIds && 
       script.characterIds.includes(characterId)
+    );
+  },
+  
+  // 获取预设关联的所有正则表达式脚本
+  async getRegexScriptsForPreset(presetId: string): Promise<RegexScript[]> {
+    const db = await initDB();
+    const allScripts = await db.getAll('regex');
+    
+    // 过滤出与指定预设关联的脚本
+    return allScripts.filter(script => 
+      script.presetIds && 
+      script.presetIds.includes(presetId)
+    );
+  },
+  
+  // 获取所有活动的正则表达式脚本（考虑文件夹禁用状态）
+  async getActiveRegexScripts(): Promise<RegexScript[]> {
+    const db = await initDB();
+    const allScripts = await db.getAll('regex');
+    const folders = await regexFolderStorage.listFolders();
+    
+    // 创建禁用文件夹ID的集合
+    const disabledFolderIds = new Set(
+      folders
+        .filter(folder => folder.disabled)
+        .map(folder => folder.id)
+    );
+    
+    // 过滤出活动的脚本（不在禁用文件夹中且自身未禁用）
+    return allScripts.filter(script => 
+      !script.disabled && 
+      (!script.folderId || !disabledFolderIds.has(script.folderId))
     );
   }
 };
@@ -2255,3 +2506,218 @@ async function importRegexScriptsFromCharacterData(characterId: string, characte
   
   return importedScriptNames;
 }
+
+// 正则表达式文件夹存储接口
+export const regexFolderStorage = {
+  // 创建文件夹
+  async createFolder(folderData: Partial<RegexFolder>): Promise<RegexFolder> {
+    const db = await initDB();
+    
+    // 创建新文件夹
+    const folder: RegexFolder = {
+      id: folderData.id || generateId(),
+      name: folderData.name || '新文件夹',
+      description: folderData.description || '',
+      parentId: folderData.parentId,
+      disabled: folderData.disabled || false,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      presetIds: folderData.presetIds || []
+    };
+    
+    await db.put('regexFolders', folder);
+    return folder;
+  },
+  
+  // 更新文件夹
+  async updateFolder(id: string, updates: Partial<RegexFolder>): Promise<RegexFolder | undefined> {
+    const db = await initDB();
+    const folder = await db.get('regexFolders', id);
+    
+    if (!folder) {
+      console.error(`找不到文件夹: ${id}`);
+      return undefined;
+    }
+    
+    // 保护默认文件夹不被删除或重命名
+    if (id === 'default' && (updates.name || updates.description)) {
+      // 允许更新禁用状态，但不允许修改名称和描述
+      const updatedFolder = {
+        ...folder,
+        disabled: updates.disabled !== undefined ? updates.disabled : folder.disabled,
+        updatedAt: Date.now()
+      };
+      
+      await db.put('regexFolders', updatedFolder);
+      return updatedFolder;
+    }
+    
+    // 更新文件夹信息
+    const updatedFolder = {
+      ...folder,
+      ...updates,
+      updatedAt: Date.now()
+    };
+    
+    await db.put('regexFolders', updatedFolder);
+    return updatedFolder;
+  },
+  
+  // 删除文件夹
+  async deleteFolder(id: string): Promise<void> {
+    const db = await initDB();
+    
+    // 保护默认文件夹不被删除
+    if (id === 'default') {
+      console.error('默认文件夹不能被删除');
+      return;
+    }
+    
+    // 获取该文件夹中的所有正则脚本
+    const allScripts = await regexStorage.listRegexScripts();
+    const scriptsInFolder = allScripts.filter(script => script.folderId === id);
+    
+    // 将文件夹中的脚本移动到默认文件夹
+    for (const script of scriptsInFolder) {
+      script.folderId = 'default';
+      await regexStorage.saveRegexScript(script);
+    }
+    
+    // 删除文件夹
+    await db.delete('regexFolders', id);
+  },
+  
+  // 获取文件夹
+  async getFolder(id: string): Promise<RegexFolder | undefined> {
+    const db = await initDB();
+    return db.get('regexFolders', id);
+  },
+  
+  // 获取所有文件夹
+  async listFolders(): Promise<RegexFolder[]> {
+    const db = await initDB();
+    return db.getAll('regexFolders');
+  },
+  
+  // 启用文件夹
+  async enableFolder(id: string): Promise<RegexFolder | undefined> {
+    return this.updateFolder(id, { disabled: false });
+  },
+  
+  // 禁用文件夹
+  async disableFolder(id: string): Promise<RegexFolder | undefined> {
+    return this.updateFolder(id, { disabled: true });
+  },
+  
+  // 获取文件夹中的所有正则脚本
+  async getScriptsInFolder(folderId: string): Promise<RegexScript[]> {
+    const allScripts = await regexStorage.listRegexScripts();
+    return allScripts.filter(script => script.folderId === folderId);
+  },
+  
+  // 将正则脚本移动到指定文件夹
+  async moveScriptToFolder(scriptId: string, folderId: string): Promise<RegexScript | undefined> {
+    const script = await regexStorage.getRegexScript(scriptId);
+    if (!script) {
+      console.error(`找不到正则脚本: ${scriptId}`);
+      return undefined;
+    }
+    
+    // 检查目标文件夹是否存在
+    const folder = await this.getFolder(folderId);
+    if (!folder) {
+      console.error(`找不到目标文件夹: ${folderId}`);
+      return undefined;
+    }
+    
+    // 更新脚本的文件夹ID
+    script.folderId = folderId;
+    return await regexStorage.saveRegexScript(script);
+  },
+  
+  // 关联文件夹到预设
+  async linkToPreset(folderId: string, presetId: string): Promise<RegexFolder | undefined> {
+    const db = await initDB();
+    const folder = await db.get('regexFolders', folderId);
+    
+    if (!folder) {
+      console.error(`找不到文件夹: ${folderId}`);
+      return undefined;
+    }
+    
+    // 初始化或更新预设ID列表
+    if (!folder.presetIds) {
+      folder.presetIds = [];
+    }
+    
+    // 如果未关联，则添加预设ID
+    if (!folder.presetIds.includes(presetId)) {
+      folder.presetIds.push(presetId);
+      folder.updatedAt = Date.now();
+      await db.put('regexFolders', folder);
+      console.log(`文件夹 ${folder.name} (${folderId}) 已关联到预设 ${presetId}`);
+      
+      // 同时更新预设的regexFolderIds
+      await this.updatePresetRegexFolders(presetId);
+    }
+    
+    return folder;
+  },
+  
+  // 取消关联文件夹与预设
+  async unlinkFromPreset(folderId: string, presetId: string): Promise<RegexFolder | undefined> {
+    const db = await initDB();
+    const folder = await db.get('regexFolders', folderId);
+    
+    if (!folder) {
+      console.error(`找不到文件夹: ${folderId}`);
+      return undefined;
+    }
+    
+    // 如果预设ID存在于列表中，则移除
+    if (folder.presetIds && folder.presetIds.includes(presetId)) {
+      folder.presetIds = folder.presetIds.filter(id => id !== presetId);
+      folder.updatedAt = Date.now();
+      await db.put('regexFolders', folder);
+      console.log(`文件夹 ${folder.name} (${folderId}) 已取消与预设 ${presetId} 的关联`);
+      
+      // 同时更新预设的regexFolderIds
+      await this.updatePresetRegexFolders(presetId);
+    }
+    
+    return folder;
+  },
+  
+  // 更新预设的正则文件夹ID列表
+  async updatePresetRegexFolders(presetId: string): Promise<void> {
+    const db = await initDB();
+    const preset = await db.get('presets', presetId);
+    
+    if (!preset) {
+      console.error(`找不到预设: ${presetId}`);
+      return;
+    }
+    
+    // 获取所有关联到该预设的文件夹ID
+    const allFolders = await this.listFolders();
+    const folderIds = allFolders
+      .filter(folder => folder.presetIds && folder.presetIds.includes(presetId))
+      .map(folder => folder.id);
+    
+    // 更新预设的regexFolderIds字段
+    preset.regexFolderIds = folderIds;
+    await db.put('presets', preset);
+  },
+  
+  // 获取预设关联的所有文件夹
+  async getFoldersForPreset(presetId: string): Promise<RegexFolder[]> {
+    const db = await initDB();
+    const allFolders = await db.getAll('regexFolders');
+    
+    // 过滤出与指定预设关联的文件夹
+    return allFolders.filter(folder => 
+      folder.presetIds && 
+      folder.presetIds.includes(presetId)
+    );
+  }
+};

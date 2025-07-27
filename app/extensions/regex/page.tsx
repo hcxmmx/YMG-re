@@ -1,18 +1,37 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useRegexStore } from '@/lib/store';
+import { useRegexStore, useRegexFolderStore, useCharacterStore } from '@/lib/store';
 import { RegexEditor } from '@/components/extensions/regex-editor';
 import { RegexList } from '@/components/extensions/regex-list';
+import { FolderManagement } from '@/components/extensions/regex-folder-management';
+import { BatchFolderActions } from '@/components/extensions/regex-batch-actions';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RegexScript } from '@/lib/regexUtils';
 import { BatchImport, ImportResult } from '@/components/ui/batch-import';
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { RegexFolder } from '@/lib/types';
+import { Button } from '@/components/ui/button';
+
+// 视图类型定义
+type ViewMode = 'all' | 'global' | 'character' | 'folder' | 'preset';
 
 export default function RegexPage() {
   const [activeTab, setActiveTab] = useState<string>("list");
   const [editingScriptId, setEditingScriptId] = useState<string | null>(null);
   const [currentScript, setCurrentScript] = useState<RegexScript | undefined>(undefined);
+  const [viewMode, setViewMode] = useState<ViewMode>('all');
+  const [selectedFolderId, setSelectedFolderId] = useState<string>("all");
+  const [selectedCharacterId, setSelectedCharacterId] = useState<string>("all");
   
+  // 从 store 获取数据
   const { 
     scripts, 
     loadScripts,
@@ -26,10 +45,46 @@ export default function RegexPage() {
     getScript
   } = useRegexStore();
   
-  // 加载脚本列表
+  const {
+    folders,
+    loadFolders
+  } = useRegexFolderStore();
+  
+  const {
+    characters,
+    loadCharacters
+  } = useCharacterStore();
+  
+  // 加载数据
   useEffect(() => {
     loadScripts();
-  }, [loadScripts]);
+    loadFolders();
+    loadCharacters();
+  }, [loadScripts, loadFolders, loadCharacters]);
+  
+  // 过滤脚本
+  const filteredScripts = (() => {
+    switch (viewMode) {
+      case 'global':
+        return scripts.filter(script => script.scope === 'global' || !script.scope);
+      case 'character':
+        if (selectedCharacterId !== "all") {
+          return scripts.filter(script => 
+            script.scope === 'character' && 
+            script.characterIds?.includes(selectedCharacterId)
+          );
+        }
+        return scripts.filter(script => script.scope === 'character');
+      case 'folder':
+        if (selectedFolderId !== "all") {
+          return scripts.filter(script => script.folderId === selectedFolderId);
+        }
+        return scripts;
+      case 'all':
+      default:
+        return scripts;
+    }
+  })();
   
   // 处理编辑
   const handleEditScript = (scriptId: string) => {
@@ -54,7 +109,9 @@ export default function RegexPage() {
       markdownOnly: false,
       promptOnly: false,
       runOnEdit: false,
-      substituteRegex: 0
+      substituteRegex: 0,
+      scope: 'global',
+      folderId: 'default'
     });
     setEditingScriptId(null);
     setActiveTab("edit");
@@ -122,6 +179,13 @@ export default function RegexPage() {
     
     return results;
   };
+  
+  // 处理文件夹选择
+  const handleFolderSelect = (folderId: string) => {
+    setViewMode('folder');
+    setSelectedFolderId(folderId || "all");
+    setActiveTab('list');
+  };
 
   return (
     <div className="container mx-auto p-4">
@@ -130,14 +194,87 @@ export default function RegexPage() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-4">
           <TabsTrigger value="list">脚本列表</TabsTrigger>
+          <TabsTrigger value="folders">文件夹管理</TabsTrigger>
           <TabsTrigger value="edit" disabled={activeTab !== "edit"}>
             {editingScriptId ? "编辑脚本" : "新建脚本"}
           </TabsTrigger>
         </TabsList>
         
         <TabsContent value="list">
+          {/* 视图选择器和操作按钮 */}
+          <div className="flex flex-wrap justify-between items-end gap-4 mb-4">
+            <div className="flex flex-wrap gap-4">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="view-mode">视图模式</Label>
+                <Select 
+                  value={viewMode} 
+                  onValueChange={(value) => setViewMode(value as ViewMode)}
+                >
+                  <SelectTrigger id="view-mode" className="w-[180px]">
+                    <SelectValue placeholder="选择视图模式" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部脚本</SelectItem>
+                    <SelectItem value="global">全局脚本</SelectItem>
+                    <SelectItem value="character">角色脚本</SelectItem>
+                    <SelectItem value="folder">按文件夹</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {viewMode === 'folder' && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="folder-select">选择文件夹</Label>
+                  <Select 
+                    value={selectedFolderId} 
+                    onValueChange={setSelectedFolderId}
+                  >
+                    <SelectTrigger id="folder-select" className="w-[180px]">
+                      <SelectValue placeholder="选择文件夹" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">全部文件夹</SelectItem>
+                      {folders.map(folder => (
+                        <SelectItem key={folder.id} value={folder.id}>
+                          {folder.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              
+              {viewMode === 'character' && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="character-select">选择角色</Label>
+                  <Select 
+                    value={selectedCharacterId} 
+                    onValueChange={setSelectedCharacterId}
+                  >
+                    <SelectTrigger id="character-select" className="w-[180px]">
+                      <SelectValue placeholder="选择角色" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">全部角色</SelectItem>
+                      {characters.map(character => (
+                        <SelectItem key={character.id} value={character.id}>
+                          {character.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+            
+            <div className="flex gap-2">
+              <BatchFolderActions />
+              <Button onClick={handleCreateNewScript}>新建脚本</Button>
+            </div>
+          </div>
+          
           <RegexList 
-            scripts={scripts}
+            scripts={filteredScripts}
             onEdit={handleEditScript}
             onDelete={async (id) => {
               try {
@@ -174,6 +311,10 @@ export default function RegexPage() {
             onCreateNew={handleCreateNewScript}
             onReorder={handleReorderScripts}
           />
+        </TabsContent>
+        
+        <TabsContent value="folders">
+          <FolderManagement onFolderSelect={handleFolderSelect} />
         </TabsContent>
         
         <TabsContent value="edit">

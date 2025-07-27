@@ -109,6 +109,8 @@ export interface Preset {
   tags?: string[];
   createdAt: number;
   updatedAt: number;
+  regexScriptIds?: string[]; // 关联的正则表达式脚本ID列表
+  regexFolderIds?: string[]; // 关联的正则表达式文件夹ID列表
 }
 
 // 提示词预设条目
@@ -176,6 +178,18 @@ export interface Player {
   avatar?: string;
   createdAt: number;
   updatedAt: number;
+}
+
+// 正则表达式文件夹类型
+export interface RegexFolder {
+  id: string;                 // 文件夹ID
+  name: string;               // 文件夹名称
+  description?: string;       // 文件夹描述（可选）
+  parentId?: string;          // 父文件夹ID（可选，支持嵌套）
+  disabled: boolean;          // 是否禁用（隔离）文件夹
+  createdAt: number;          // 创建时间
+  updatedAt: number;          // 更新时间
+  presetIds?: string[];       // 关联的预设ID列表
 }
 
 // 世界书类型

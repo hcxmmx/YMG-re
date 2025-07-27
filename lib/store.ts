@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { UserSettings, Message, Conversation, Character, Branch } from './types';
 import { HarmBlockThreshold } from './types';
-import { conversationStorage, characterStorage, initializeMainBranch } from './storage';
+import { conversationStorage, characterStorage, initializeMainBranch, presetStorage } from './storage';
 import { generateId } from './utils';
 import { openDB } from 'idb';
 import { createJSONStorage } from 'zustand/middleware';
@@ -17,6 +17,8 @@ import { regexStorage } from './storage';
 import { devtools } from 'zustand/middleware';
 import { apiKeyStorage } from './storage';
 import { ApiKey, ApiKeySettings } from './types';
+import { RegexFolder } from './types';
+import { regexFolderStorage } from './storage';
 
 // 用户设置存储
 interface SettingsState {
@@ -1253,6 +1255,15 @@ export const usePromptPresetStore = create<PromptPresetState>()(
             topP: preset.topP ?? 0.95,
           };
           
+          // 应用预设关联的正则文件夹
+          try {
+            const presetFolderStore = usePresetFolderStore.getState();
+            await presetFolderStore.applyPresetFolders(id);
+            console.log("已应用预设关联的正则文件夹");
+          } catch (error) {
+            console.error("应用预设关联的正则文件夹失败:", error);
+          }
+          
           // 批量应用所有更改，确保状态更新是原子操作
           await Promise.all([
             // 1. 更新聊天状态中的系统提示词
@@ -2303,23 +2314,38 @@ export const useRegexStore = create<RegexState>()(
       applyRegexToMessage: async (text: string, playerName: string, characterName: string, depth = 0, type = 2, characterId?: string) => {
         const { scripts } = get();
         
-        // 导入处理函数
+        // 导入处理函数和存储
         const { processWithRegex } = require('./regexUtils');
+        const { regexStorage, regexFolderStorage } = require('./storage');
         
-        // 如果有角色ID，获取角色关联的正则表达式
-        let characterScripts: RegexScript[] = [];
-        if (characterId) {
-          try {
-            characterScripts = await regexStorage.getRegexScriptsForCharacter(characterId);
-          } catch (error) {
-            console.error('获取角色关联的正则表达式失败:', error);
+        try {
+          // 获取所有禁用的文件夹
+          const folders = await regexFolderStorage.listFolders();
+          const disabledFolderIds = new Set(
+            folders
+              .filter((folder: RegexFolder) => folder.disabled)
+              .map((folder: RegexFolder) => folder.id)
+          );
+          
+          // 获取角色关联的正则表达式
+          let characterScripts: RegexScript[] = [];
+          if (characterId) {
+            try {
+              characterScripts = await regexStorage.getRegexScriptsForCharacter(characterId);
+            } catch (error) {
+              console.error('获取角色关联的正则表达式失败:', error);
+            }
           }
+          
+          // 合并全局脚本和角色特定脚本
+          const allScripts = [...scripts, ...characterScripts];
+          
+          // 处理文本，传入禁用的文件夹ID集合
+          return processWithRegex(text, allScripts, playerName, characterName, depth, type, characterId, disabledFolderIds);
+        } catch (error) {
+          console.error('应用正则表达式处理失败:', error);
+          return text; // 发生错误时返回原始文本
         }
-        
-        // 合并全局脚本和角色特定脚本
-        const allScripts = [...scripts, ...characterScripts];
-        
-        return processWithRegex(text, allScripts, playerName, characterName, depth, type, characterId);
       },
       
       // 重新排序脚本
@@ -2591,4 +2617,458 @@ export const useCharacterStore = create<CharacterState>()(
       return characters.find(character => character.id === id);
     }
   })
+);
+
+// 正则表达式文件夹状态存储
+interface RegexFolderState {
+  folders: RegexFolder[];
+  isLoading: boolean;
+  error: string | null;
+  
+  // 操作方法
+  loadFolders: () => Promise<void>;
+  getFolder: (id: string) => RegexFolder | undefined;
+  createFolder: (folder: Partial<RegexFolder>) => Promise<RegexFolder>;
+  updateFolder: (id: string, updates: Partial<RegexFolder>) => Promise<void>;
+  deleteFolder: (id: string) => Promise<void>;
+  toggleFolderEnabled: (id: string) => Promise<void>;
+  moveScriptToFolder: (scriptId: string, folderId: string) => Promise<void>;
+  getScriptsInFolder: (folderId: string) => Promise<RegexScript[]>;
+}
+
+export const useRegexFolderStore = create<RegexFolderState>()(
+  devtools(
+    (set, get) => ({
+      folders: [],
+      isLoading: false,
+      error: null,
+      
+      // 加载文件夹
+      loadFolders: async () => {
+        try {
+          set({ isLoading: true });
+          const folders = await regexFolderStorage.listFolders();
+          set({ folders, isLoading: false, error: null });
+        } catch (error) {
+          console.error("加载正则表达式文件夹失败:", error);
+          set({ error: "加载文件夹失败", isLoading: false });
+        }
+      },
+      
+      // 获取指定文件夹
+      getFolder: (id: string) => {
+        const { folders } = get();
+        return folders.find(folder => folder.id === id);
+      },
+      
+      // 创建文件夹
+      createFolder: async (folder: Partial<RegexFolder>) => {
+        try {
+          set({ isLoading: true });
+          const newFolder = await regexFolderStorage.createFolder(folder);
+          
+          set(state => ({
+            folders: [...state.folders, newFolder],
+            isLoading: false,
+            error: null
+          }));
+          
+          return newFolder;
+        } catch (error) {
+          console.error("创建正则表达式文件夹失败:", error);
+          set({ error: "创建文件夹失败", isLoading: false });
+          throw error;
+        }
+      },
+      
+      // 更新文件夹
+      updateFolder: async (id: string, updates: Partial<RegexFolder>) => {
+        try {
+          set({ isLoading: true });
+          const updatedFolder = await regexFolderStorage.updateFolder(id, updates);
+          
+          if (updatedFolder) {
+            set(state => ({
+              folders: state.folders.map(folder => 
+                folder.id === id ? updatedFolder : folder
+              ),
+              isLoading: false,
+              error: null
+            }));
+          }
+        } catch (error) {
+          console.error("更新正则表达式文件夹失败:", error);
+          set({ error: "更新文件夹失败", isLoading: false });
+        }
+      },
+      
+      // 删除文件夹
+      deleteFolder: async (id: string) => {
+        try {
+          set({ isLoading: true });
+          await regexFolderStorage.deleteFolder(id);
+          
+          set(state => ({
+            folders: state.folders.filter(folder => folder.id !== id),
+            isLoading: false,
+            error: null
+          }));
+        } catch (error) {
+          console.error("删除正则表达式文件夹失败:", error);
+          set({ error: "删除文件夹失败", isLoading: false });
+        }
+      },
+      
+      // 切换文件夹启用状态
+      toggleFolderEnabled: async (id: string) => {
+        try {
+          const folder = get().folders.find(f => f.id === id);
+          if (!folder) return;
+          
+          const updatedFolder = await regexFolderStorage[folder.disabled ? 'enableFolder' : 'disableFolder'](id);
+          
+          if (updatedFolder) {
+            set(state => ({
+              folders: state.folders.map(f => 
+                f.id === id ? updatedFolder : f
+              )
+            }));
+          }
+        } catch (error) {
+          console.error("切换正则表达式文件夹状态失败:", error);
+          set({ error: "切换文件夹状态失败" });
+        }
+      },
+      
+      // 将脚本移动到文件夹
+      moveScriptToFolder: async (scriptId: string, folderId: string) => {
+        try {
+          set({ isLoading: true });
+          await regexFolderStorage.moveScriptToFolder(scriptId, folderId);
+          set({ isLoading: false });
+        } catch (error) {
+          console.error("移动正则表达式脚本失败:", error);
+          set({ error: "移动脚本失败", isLoading: false });
+        }
+      },
+      
+      // 获取文件夹中的脚本
+      getScriptsInFolder: async (folderId: string) => {
+        try {
+          return await regexFolderStorage.getScriptsInFolder(folderId);
+        } catch (error) {
+          console.error("获取文件夹中的脚本失败:", error);
+          set({ error: "获取文件夹中的脚本失败" });
+          return [];
+        }
+      }
+    }),
+    { name: 'regex-folder-store' }
+  )
+);
+
+// 预设与正则表达式关联状态存储
+interface PresetRegexState {
+  // 状态
+  presetScripts: Record<string, string[]>; // 预设ID -> 关联的脚本ID列表
+  isLoading: boolean;
+  error: string | null;
+  
+  // 操作方法
+  loadPresetScripts: (presetId: string) => Promise<void>;
+  linkScriptToPreset: (scriptId: string, presetId: string) => Promise<void>;
+  unlinkScriptFromPreset: (scriptId: string, presetId: string) => Promise<void>;
+  getScriptsForPreset: (presetId: string) => Promise<RegexScript[]>;
+  applyPresetRegex: (presetId: string) => Promise<void>; // 切换预设时应用关联的正则
+}
+
+export const usePresetRegexStore = create<PresetRegexState>()(
+  devtools(
+    (set, get) => ({
+      presetScripts: {},
+      isLoading: false,
+      error: null,
+      
+      // 加载预设关联的脚本
+      loadPresetScripts: async (presetId: string) => {
+        try {
+          set({ isLoading: true });
+          
+          // 获取预设
+          const preset = await presetStorage.getPreset(presetId);
+          if (!preset || !preset.regexScriptIds) {
+            set(state => ({
+              presetScripts: {
+                ...state.presetScripts,
+                [presetId]: []
+              },
+              isLoading: false
+            }));
+            return;
+          }
+          
+          // 更新状态
+          set(state => ({
+            presetScripts: {
+              ...state.presetScripts,
+              [presetId]: preset.regexScriptIds || []
+            },
+            isLoading: false
+          }));
+        } catch (error) {
+          console.error("加载预设关联的正则表达式失败:", error);
+          set({ error: "加载预设关联的正则表达式失败", isLoading: false });
+        }
+      },
+      
+      // 关联脚本到预设
+      linkScriptToPreset: async (scriptId: string, presetId: string) => {
+        try {
+          set({ isLoading: true });
+          
+          // 调用存储方法关联
+          await regexStorage.linkToPreset(scriptId, presetId);
+          
+          // 重新加载预设的脚本
+          await get().loadPresetScripts(presetId);
+          
+          set({ isLoading: false });
+        } catch (error) {
+          console.error("关联正则表达式到预设失败:", error);
+          set({ error: "关联正则表达式到预设失败", isLoading: false });
+        }
+      },
+      
+      // 取消关联脚本与预设
+      unlinkScriptFromPreset: async (scriptId: string, presetId: string) => {
+        try {
+          set({ isLoading: true });
+          
+          // 调用存储方法取消关联
+          await regexStorage.unlinkFromPreset(scriptId, presetId);
+          
+          // 重新加载预设的脚本
+          await get().loadPresetScripts(presetId);
+          
+          set({ isLoading: false });
+        } catch (error) {
+          console.error("取消关联正则表达式与预设失败:", error);
+          set({ error: "取消关联正则表达式与预设失败", isLoading: false });
+        }
+      },
+      
+      // 获取预设关联的脚本
+      getScriptsForPreset: async (presetId: string) => {
+        try {
+          // 如果缓存中没有，先加载
+          if (!get().presetScripts[presetId]) {
+            await get().loadPresetScripts(presetId);
+          }
+          
+          // 获取脚本ID列表
+          const scriptIds = get().presetScripts[presetId] || [];
+          
+          // 获取脚本详情
+          const scripts = await Promise.all(
+            scriptIds.map(id => regexStorage.getRegexScript(id))
+          );
+          
+          // 过滤掉未找到的脚本
+          return scripts.filter(script => script !== undefined) as RegexScript[];
+        } catch (error) {
+          console.error("获取预设关联的正则表达式失败:", error);
+          return [];
+        }
+      },
+      
+      // 应用预设关联的正则（切换预设时调用）
+      applyPresetRegex: async (presetId: string) => {
+        try {
+          set({ isLoading: true });
+          
+          // 获取所有正则脚本
+          const allScripts = await regexStorage.listRegexScripts();
+          
+          // 获取预设关联的脚本ID
+          const presetScripts = await get().getScriptsForPreset(presetId);
+          const presetScriptIds = new Set(presetScripts.map(script => script.id));
+          
+          // 启用预设关联的脚本，禁用其他全局脚本
+          for (const script of allScripts) {
+            // 只处理全局脚本，不处理角色特定脚本
+            if (script.scope === 'character') continue;
+            
+            const shouldBeEnabled = presetScriptIds.has(script.id);
+            
+            // 如果状态需要改变
+            if (script.disabled === shouldBeEnabled) {
+              // 更新脚本状态
+              await regexStorage.saveRegexScript({
+                ...script,
+                disabled: !shouldBeEnabled
+              });
+            }
+          }
+          
+          // 重新加载正则脚本列表
+          const { loadScripts } = useRegexStore.getState();
+          await loadScripts();
+          
+          set({ isLoading: false });
+        } catch (error) {
+          console.error("应用预设关联的正则表达式失败:", error);
+          set({ error: "应用预设关联的正则表达式失败", isLoading: false });
+        }
+      }
+    }),
+    { name: 'preset-regex-store' }
+  )
+);
+
+// 预设与正则文件夹关联状态存储
+interface PresetFolderState {
+  // 状态
+  presetFolders: Record<string, string[]>; // 预设ID -> 关联的文件夹ID列表
+  isLoading: boolean;
+  error: string | null;
+  
+  // 操作方法
+  loadPresetFolders: (presetId: string) => Promise<void>;
+  linkFolderToPreset: (folderId: string, presetId: string) => Promise<void>;
+  unlinkFolderFromPreset: (folderId: string, presetId: string) => Promise<void>;
+  getFoldersForPreset: (presetId: string) => Promise<RegexFolder[]>;
+  applyPresetFolders: (presetId: string) => Promise<void>; // 切换预设时应用关联的文件夹
+}
+
+export const usePresetFolderStore = create<PresetFolderState>()(
+  devtools(
+    (set, get) => ({
+      presetFolders: {},
+      isLoading: false,
+      error: null,
+      
+      // 加载预设关联的文件夹
+      loadPresetFolders: async (presetId: string) => {
+        try {
+          set({ isLoading: true });
+          
+          // 获取预设
+          const preset = await presetStorage.getPreset(presetId);
+          if (!preset || !preset.regexFolderIds) {
+            set(state => ({
+              presetFolders: {
+                ...state.presetFolders,
+                [presetId]: []
+              },
+              isLoading: false
+            }));
+            return;
+          }
+          
+          // 更新状态
+          set(state => ({
+            presetFolders: {
+              ...state.presetFolders,
+              [presetId]: preset.regexFolderIds || []
+            },
+            isLoading: false
+          }));
+        } catch (error) {
+          console.error("加载预设关联的文件夹失败:", error);
+          set({ error: "加载预设关联的文件夹失败", isLoading: false });
+        }
+      },
+      
+      // 关联文件夹到预设
+      linkFolderToPreset: async (folderId: string, presetId: string) => {
+        try {
+          set({ isLoading: true });
+          
+          // 调用存储方法关联
+          await regexFolderStorage.linkToPreset(folderId, presetId);
+          
+          // 重新加载预设的文件夹
+          await get().loadPresetFolders(presetId);
+          
+          set({ isLoading: false });
+        } catch (error) {
+          console.error("关联文件夹到预设失败:", error);
+          set({ error: "关联文件夹到预设失败", isLoading: false });
+        }
+      },
+      
+      // 取消关联文件夹与预设
+      unlinkFolderFromPreset: async (folderId: string, presetId: string) => {
+        try {
+          set({ isLoading: true });
+          
+          // 调用存储方法取消关联
+          await regexFolderStorage.unlinkFromPreset(folderId, presetId);
+          
+          // 重新加载预设的文件夹
+          await get().loadPresetFolders(presetId);
+          
+          set({ isLoading: false });
+        } catch (error) {
+          console.error("取消关联文件夹与预设失败:", error);
+          set({ error: "取消关联文件夹与预设失败", isLoading: false });
+        }
+      },
+      
+      // 获取预设关联的文件夹
+      getFoldersForPreset: async (presetId: string) => {
+        try {
+          // 如果缓存中没有，先加载
+          if (!get().presetFolders[presetId]) {
+            await get().loadPresetFolders(presetId);
+          }
+          
+          return await regexFolderStorage.getFoldersForPreset(presetId);
+        } catch (error) {
+          console.error("获取预设关联的文件夹失败:", error);
+          return [];
+        }
+      },
+      
+      // 应用预设关联的文件夹（切换预设时调用）
+      applyPresetFolders: async (presetId: string) => {
+        try {
+          set({ isLoading: true });
+          
+          // 获取所有文件夹
+          const allFolders = await regexFolderStorage.listFolders();
+          
+          // 获取预设关联的文件夹ID
+          const presetFolders = await get().getFoldersForPreset(presetId);
+          const presetFolderIds = new Set(presetFolders.map(folder => folder.id));
+          
+          // 启用预设关联的文件夹，禁用其他文件夹
+          for (const folder of allFolders) {
+            // 跳过默认文件夹，它始终保持启用状态
+            if (folder.id === 'default') continue;
+            
+            const shouldBeEnabled = presetFolderIds.has(folder.id);
+            
+            // 如果状态需要改变
+            if (folder.disabled === shouldBeEnabled) {
+              // 更新文件夹状态
+              await regexFolderStorage.updateFolder(folder.id, {
+                disabled: !shouldBeEnabled
+              });
+            }
+          }
+          
+          // 重新加载文件夹列表
+          const { loadFolders } = useRegexFolderStore.getState();
+          await loadFolders();
+          
+          set({ isLoading: false });
+        } catch (error) {
+          console.error("应用预设关联的文件夹失败:", error);
+          set({ error: "应用预设关联的文件夹失败", isLoading: false });
+        }
+      }
+    }),
+    { name: 'preset-folder-store' }
+  )
 );

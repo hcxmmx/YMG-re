@@ -12,8 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { RegexScript } from "@/lib/regexUtils";
 import { generateId } from "@/lib/utils";
-import { usePlayerStore, useChatStore } from "@/lib/store";
-import { Character } from "@/lib/types";
+import { usePlayerStore, useChatStore, useRegexFolderStore } from "@/lib/store";
+import { Character, RegexFolder } from "@/lib/types";
 
 interface RegexEditorProps {
   script?: RegexScript;
@@ -29,6 +29,9 @@ export function RegexEditor({ script, onSave, onCancel }: RegexEditorProps) {
   // 获取角色列表用于局部正则关联
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loadingCharacters, setLoadingCharacters] = useState<boolean>(false);
+  
+  // 获取文件夹列表
+  const { folders, loadFolders } = useRegexFolderStore();
   
   // 加载角色数据
   useEffect(() => {
@@ -47,7 +50,8 @@ export function RegexEditor({ script, onSave, onCancel }: RegexEditorProps) {
     };
 
     loadCharacters();
-  }, []);
+    loadFolders();
+  }, [loadFolders]);
   
   // 编辑状态
   const [editScript, setEditScript] = useState<RegexScript>(() => {
@@ -69,7 +73,8 @@ export function RegexEditor({ script, onSave, onCancel }: RegexEditorProps) {
       minDepth: null,
       maxDepth: null,
       scope: 'global', // 默认为全局作用域
-      characterIds: []
+      characterIds: [],
+      folderId: 'default' // 默认文件夹
     };
   });
   
@@ -341,6 +346,29 @@ export function RegexEditor({ script, onSave, onCancel }: RegexEditorProps) {
               在应用替换前从匹配文本中移除的字符串，每行一个
             </p>
           </div>
+        </div>
+
+        {/* 文件夹设置 */}
+        <div className="space-y-2">
+          <Label htmlFor="folderId">所属文件夹</Label>
+          <Select
+            value={editScript.folderId || 'default'}
+            onValueChange={(value) => handleChange("folderId", value)}
+          >
+            <SelectTrigger id="folderId" className="w-full">
+              <SelectValue placeholder="选择文件夹" />
+            </SelectTrigger>
+            <SelectContent>
+              {folders.map((folder) => (
+                <SelectItem key={folder.id} value={folder.id}>
+                  {folder.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">
+            选择此正则脚本所属的文件夹
+          </p>
         </div>
 
         {/* 作用域设置 */}
