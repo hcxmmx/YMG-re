@@ -2135,6 +2135,7 @@ interface RegexState {
   scripts: RegexScript[];
   isLoading: boolean;
   error: string | null;
+  regexUpdateTimestamp: number; // 添加时间戳状态，用于触发消息重新处理
   
   // 操作方法
   loadScripts: () => Promise<void>;
@@ -2149,6 +2150,12 @@ interface RegexState {
   
   // 应用正则表达式
   applyRegexToMessage: (text: string, playerName: string, characterName: string, depth?: number, type?: number, characterId?: string) => Promise<string>;
+  
+  // 更新正则应用状态 - 用于强制刷新正则应用状态
+  updateRegexApplicationState: () => void;
+  
+  // 设置更新时间戳 - 用于触发消息重新处理
+  setRegexUpdateTimestamp: (timestamp: number) => void;
 }
 
 export const useRegexStore = create<RegexState>()(
@@ -2157,6 +2164,7 @@ export const useRegexStore = create<RegexState>()(
       scripts: [],
       isLoading: false,
       error: null,
+      regexUpdateTimestamp: 0, // 添加时间戳状态，用于触发消息重新处理
       
       // 加载脚本
       loadScripts: async () => {
@@ -2319,13 +2327,15 @@ export const useRegexStore = create<RegexState>()(
         const { regexStorage, regexFolderStorage } = require('./storage');
         
         try {
-          // 获取所有禁用的文件夹
+          // 每次都重新获取最新的文件夹状态
           const folders = await regexFolderStorage.listFolders();
           const disabledFolderIds = new Set(
             folders
               .filter((folder: RegexFolder) => folder.disabled)
               .map((folder: RegexFolder) => folder.id)
           );
+          
+          console.log('应用正则表达式处理，禁用的文件夹IDs:', Array.from(disabledFolderIds));
           
           // 获取角色关联的正则表达式
           let characterScripts: RegexScript[] = [];
@@ -2367,6 +2377,17 @@ export const useRegexStore = create<RegexState>()(
           console.error("重新排序正则表达式脚本失败:", error);
           set({ error: "重新排序脚本失败", isLoading: false });
         }
+      },
+      
+      // 更新正则应用状态 - 用于强制刷新正则应用状态
+      updateRegexApplicationState: () => {
+        // 这里可以添加任何你想要执行的逻辑来强制刷新正则应用状态
+        console.log('正则应用状态已更新');
+      },
+      
+      // 设置更新时间戳 - 用于触发消息重新处理
+      setRegexUpdateTimestamp: (timestamp: number) => {
+        set({ regexUpdateTimestamp: timestamp });
       }
     })
   )
@@ -3061,6 +3082,28 @@ export const usePresetFolderStore = create<PresetFolderState>()(
           // 重新加载文件夹列表
           const { loadFolders } = useRegexFolderStore.getState();
           await loadFolders();
+          
+          // 重新加载正则脚本列表，确保它们能感知到文件夹状态变化
+          const { loadScripts } = useRegexStore.getState();
+          await loadScripts();
+          
+          // 强制更新正则应用状态 - 这将触发一个状态变化，使得依赖于此状态的组件重新渲染
+          const regexStore = useRegexStore.getState();
+          // 更新一个辅助状态，以便触发消息组件重新处理
+          regexStore.updateRegexApplicationState();
+          
+          // 获取当前对话中的所有消息
+          const chatStore = useChatStore.getState();
+          const currentMessages = chatStore.currentMessages;
+          
+          // 如果有当前对话，强制重新处理所有消息
+          if (currentMessages && currentMessages.length > 0) {
+            console.log("预设切换: 强制重新处理所有消息");
+            
+            // 触发一个状态更新，使得所有消息组件重新渲染
+            // 这是通过更新一个辅助状态来实现的
+            regexStore.setRegexUpdateTimestamp(Date.now());
+          }
           
           set({ isLoading: false });
         } catch (error) {

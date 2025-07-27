@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
-import { useSettingsStore, usePromptPresetStore, useChatStore } from "@/lib/store";
+import { useSettingsStore, usePromptPresetStore, useChatStore, useRegexStore } from "@/lib/store";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
@@ -145,6 +145,10 @@ export function ChatSettings() {
           }
         }
         
+        // 强制刷新正则应用状态
+        const regexStore = useRegexStore.getState();
+        regexStore.setRegexUpdateTimestamp(Date.now());
+        
         // 添加延迟，确保状态已更新
         await new Promise(resolve => setTimeout(resolve, 100));
         
@@ -179,7 +183,12 @@ export function ChatSettings() {
       console.log(`预设应用完成: ${preset.name}`);
       
       // 添加额外延迟，确保状态已稳定
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // 强制刷新正则应用状态
+      const regexStore = useRegexStore.getState();
+      regexStore.updateRegexApplicationState();
+      regexStore.setRegexUpdateTimestamp(Date.now());
       
       setApplySuccess(true);
       setTimeout(() => setApplySuccess(false), 2000);
