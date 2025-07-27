@@ -965,7 +965,7 @@ export default function ChatPage() {
     // 应用正则表达式处理用户输入
     try {
       const { applyRegexToMessage } = useRegexStore.getState();
-      processedContent = applyRegexToMessage(processedContent, playerName, characterName, 0, 1, currentCharacter?.id); // 类型1=用户输入，传入角色ID
+      processedContent = await applyRegexToMessage(processedContent, playerName, characterName, 0, 1, currentCharacter?.id); // 类型1=用户输入，传入角色ID
     } catch (error) {
       console.error("应用正则表达式处理用户输入时出错:", error);
     }
@@ -1242,7 +1242,7 @@ export default function ChatPage() {
           let processedResponse = accumulatedContent;
           try {
             const { applyRegexToMessage } = useRegexStore.getState();
-            processedResponse = applyRegexToMessage(accumulatedContent, playerName, characterName, 0, 2, currentCharacter?.id); // 类型2=AI响应，传入角色ID
+            processedResponse = await applyRegexToMessage(accumulatedContent, playerName, characterName, 0, 2, currentCharacter?.id); // 类型2=AI响应，传入角色ID
           } catch (error) {
             console.error("应用正则表达式处理AI响应时出错:", error);
           }
@@ -1292,7 +1292,7 @@ export default function ChatPage() {
           let processedResponse = data.text;
           try {
             const { applyRegexToMessage } = useRegexStore.getState();
-            processedResponse = applyRegexToMessage(data.text, playerName, characterName, 0, 2, currentCharacter?.id); // 类型2=AI响应，传入角色ID
+            processedResponse = await applyRegexToMessage(data.text, playerName, characterName, 0, 2, currentCharacter?.id); // 类型2=AI响应，传入角色ID
           } catch (error) {
             console.error("应用正则表达式处理AI响应时出错:", error);
           }

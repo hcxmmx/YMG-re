@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import { Message as MessageType, Character } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -217,8 +217,11 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
+  const [processedContent, setProcessedContent] = useState(message.content); // 初始值设为原始内容
   const { uiSettings } = useSettingsStore();
   const { updateMessage, deleteMessage, currentMessages, createBranch, branches } = useChatStore();
+  const playerStore = usePlayerStore();
+  const { scripts } = useRegexStore();
   
   // 分支创建对话框状态
   const [isBranchDialogOpen, setIsBranchDialogOpen] = useState(false);
@@ -227,10 +230,6 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
   // 获取UI设置
   const { showResponseTime, showCharCount, showMessageNumber, enableQuoteHighlight, quoteHighlightColor } = uiSettings;
   
-  // 订阅正则脚本变化，确保脚本变更时消息能够重新渲染
-  // 注意：只使用scripts.length作为依赖，因为我们只关心脚本的启用/禁用状态变化
-  const { scripts } = useRegexStore();
-
   // 根据角色确定消息的样式
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
@@ -371,6 +370,42 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
     setIsBranchDialogOpen(false);
     setBranchName("");
   };
+
+  // 处理消息内容
+  useEffect(() => {
+    const processMessage = async () => {
+      try {
+        // 获取当前玩家和角色名称用于宏替换
+        const currentPlayer = playerStore.getCurrentPlayer();
+        const playerName = currentPlayer?.name || "玩家";
+        const characterName = character?.name || "AI";
+        
+        // 应用宏替换到消息内容
+        let content = replaceMacros(
+          message.content, 
+          playerName, 
+          characterName
+        );
+        
+        // 应用正则表达式处理
+        try {
+          const { applyRegexToMessage } = useRegexStore.getState();
+          // 根据消息角色选择处理类型：1=用户输入, 2=AI响应
+          const type = isUser ? 1 : 2;
+          content = await applyRegexToMessage(content, playerName, characterName, 0, type, message.characterId);
+        } catch (error) {
+          console.error("应用正则表达式处理失败:", error);
+        }
+        
+        setProcessedContent(content);
+      } catch (error) {
+        console.error("处理消息内容失败:", error);
+        setProcessedContent(message.content); // 出错时使用原始内容
+      }
+    };
+    
+    processMessage();
+  }, [message.content, message.characterId, character, isUser, scripts.length, playerStore]);
 
   // 如果是系统消息，则使用特殊样式
   if (isSystem) {
@@ -545,78 +580,51 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
               ) : (
                 <>
                   {/* 应用宏替换和正则处理后显示消息内容 */}
-                  {(() => {
-                    // 获取当前玩家和角色名称用于宏替换
-                    const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
-                    const playerName = currentPlayer?.name || "玩家";
-                    const characterName = character?.name || "AI";
-                    
-                    // 应用宏替换到消息内容
-                    let processedContent = replaceMacros(
-                      message.content, 
-                      playerName, 
-                      characterName
-                    );
-                    
-                    // 应用正则表达式处理
-                    try {
-                      const { applyRegexToMessage } = useRegexStore.getState();
-                      // 根据消息角色选择处理类型：1=用户输入, 2=AI响应
-                      const type = isUser ? 1 : 2;
-                      processedContent = applyRegexToMessage(processedContent, playerName, characterName, 0, type);
-                    } catch (error) {
-                      console.error("应用正则表达式处理失败:", error);
-                    }
-                    
-                    // 使用ReactMarkdown渲染处理后的内容，添加引号高亮支持
-                    return (
-                      <div className="chat-message-content">
-                        <ReactMarkdown 
-                          className="break-words"
-                          components={enableQuoteHighlight ? {
-                            p: ({node, children, ...props}) => {
-                              return <p {...props}><QuoteHighlight>{children}</QuoteHighlight></p>;
-                            },
-                            li: ({node, children, ...props}) => {
-                              return <li {...props}><QuoteHighlight>{children}</QuoteHighlight></li>;
-                            },
-                            h1: ({node, children, ...props}) => {
-                              return <h1 {...props}><QuoteHighlight>{children}</QuoteHighlight></h1>;
-                            },
-                            h2: ({node, children, ...props}) => {
-                              return <h2 {...props}><QuoteHighlight>{children}</QuoteHighlight></h2>;
-                            },
-                            h3: ({node, children, ...props}) => {
-                              return <h3 {...props}><QuoteHighlight>{children}</QuoteHighlight></h3>;
-                            },
-                            h4: ({node, children, ...props}) => {
-                              return <h4 {...props}><QuoteHighlight>{children}</QuoteHighlight></h4>;
-                            },
-                            h5: ({node, children, ...props}) => {
-                              return <h5 {...props}><QuoteHighlight>{children}</QuoteHighlight></h5>;
-                            },
-                            h6: ({node, children, ...props}) => {
-                              return <h6 {...props}><QuoteHighlight>{children}</QuoteHighlight></h6>;
-                            },
-                            blockquote: ({node, children, ...props}) => {
-                              return <blockquote {...props}><QuoteHighlight>{children}</QuoteHighlight></blockquote>;
-                            },
-                            strong: ({node, children, ...props}) => {
-                              return <strong {...props}><QuoteHighlight>{children}</QuoteHighlight></strong>;
-                            },
-                            em: ({node, children, ...props}) => {
-                              return <em {...props}><QuoteHighlight>{children}</QuoteHighlight></em>;
-                            },
-                            span: ({node, children, ...props}) => {
-                              return <span {...props}><QuoteHighlight>{children}</QuoteHighlight></span>;
-                            }
-                          } : {}}
-                        >
-                          {processedContent}
-                        </ReactMarkdown>
-                      </div>
-                    );
-                  })()}
+                  <div className="chat-message-content">
+                    <ReactMarkdown 
+                      className="break-words"
+                      components={enableQuoteHighlight ? {
+                        p: ({node, children, ...props}) => {
+                          return <p {...props}><QuoteHighlight>{children}</QuoteHighlight></p>;
+                        },
+                        li: ({node, children, ...props}) => {
+                          return <li {...props}><QuoteHighlight>{children}</QuoteHighlight></li>;
+                        },
+                        h1: ({node, children, ...props}) => {
+                          return <h1 {...props}><QuoteHighlight>{children}</QuoteHighlight></h1>;
+                        },
+                        h2: ({node, children, ...props}) => {
+                          return <h2 {...props}><QuoteHighlight>{children}</QuoteHighlight></h2>;
+                        },
+                        h3: ({node, children, ...props}) => {
+                          return <h3 {...props}><QuoteHighlight>{children}</QuoteHighlight></h3>;
+                        },
+                        h4: ({node, children, ...props}) => {
+                          return <h4 {...props}><QuoteHighlight>{children}</QuoteHighlight></h4>;
+                        },
+                        h5: ({node, children, ...props}) => {
+                          return <h5 {...props}><QuoteHighlight>{children}</QuoteHighlight></h5>;
+                        },
+                        h6: ({node, children, ...props}) => {
+                          return <h6 {...props}><QuoteHighlight>{children}</QuoteHighlight></h6>;
+                        },
+                        blockquote: ({node, children, ...props}) => {
+                          return <blockquote {...props}><QuoteHighlight>{children}</QuoteHighlight></blockquote>;
+                        },
+                        strong: ({node, children, ...props}) => {
+                          return <strong {...props}><QuoteHighlight>{children}</QuoteHighlight></strong>;
+                        },
+                        em: ({node, children, ...props}) => {
+                          return <em {...props}><QuoteHighlight>{children}</QuoteHighlight></em>;
+                        },
+                        span: ({node, children, ...props}) => {
+                          return <span {...props}><QuoteHighlight>{children}</QuoteHighlight></span>;
+                        }
+                      } : {}}
+                    >
+                      {processedContent}
+                    </ReactMarkdown>
+                  </div>
                 </>
               )}
             </div>

@@ -47,6 +47,7 @@ interface AppDB extends DBSchema {
       createdAt: number;
       updatedAt: number;
       worldBookIds?: string[]; // 新增：角色关联的世界书ID列表
+      regexScriptIds?: string[]; // 新增：角色关联的正则表达式脚本ID列表
     };
     indexes: { 'by-name': string };
   };
@@ -596,6 +597,8 @@ export const characterStorage = {
     alternateGreetings?: string[];
     avatar?: string;
     tags?: string[];
+    worldBookIds?: string[];
+    regexScriptIds?: string[];
   }) {
     const db = await initDB();
     const now = Date.now();
@@ -651,7 +654,8 @@ export const characterStorage = {
         firstMessage: "",
         alternateGreetings: [],
         tags: [],
-        worldBookIds: [] // 添加世界书ID字段
+        worldBookIds: [], // 添加世界书ID字段
+        regexScriptIds: [] // 添加正则表达式脚本ID字段
       };
       
       // 处理角色名称
@@ -837,16 +841,45 @@ export const characterStorage = {
         characterData.worldBookIds = worldBookIds;
       }
       
+      // 导入角色卡附带的正则表达式脚本
+      let regexScriptIds: string[] = [];
+      let importedRegexScriptNames: string[] = [];
+      
+      // 检查角色卡中是否包含正则表达式数据
+      const regexScripts = data.extensions?.regex_scripts || data.data?.extensions?.regex_scripts;
+      
+      if (regexScripts && Array.isArray(regexScripts) && regexScripts.length > 0) {
+        // 导入正则表达式脚本并关联到角色
+        importedRegexScriptNames = await importRegexScriptsFromCharacterData(newId, characterData.name, regexScripts);
+        
+        // 获取导入脚本的ID
+        const importedScripts = await Promise.all(
+          importedRegexScriptNames.map(async (scriptName) => {
+            const scripts = await regexStorage.listRegexScripts();
+            return scripts.find(s => s.scriptName === scriptName && s.characterIds?.includes(newId));
+          })
+        );
+        
+        // 过滤出有效的脚本ID
+        regexScriptIds = importedScripts.filter(Boolean).map(script => script?.id).filter(Boolean) as string[];
+        
+        // 添加到角色数据
+        if (regexScriptIds.length > 0) {
+          characterData.regexScriptIds = regexScriptIds;
+        }
+      }
+      
       // 保存角色数据
       await this.saveCharacter({
         ...characterData,
         id: newId
       });
       
-      // 返回导入结果，包括角色ID和导入的世界书信息
+      // 返回导入结果，包括角色ID、导入的世界书和正则表达式脚本信息
       return {
         characterId: newId,
-        importedWorldBooks: importedWorldBookNames.length > 0 ? importedWorldBookNames : null
+        importedWorldBooks: importedWorldBookNames.length > 0 ? importedWorldBookNames : null,
+        importedRegexScripts: importedRegexScriptNames.length > 0 ? importedRegexScriptNames : null
       };
     } catch (error) {
       console.error('导入JSON角色卡失败:', error);
@@ -878,7 +911,8 @@ export const characterStorage = {
         firstMessage: "",
         alternateGreetings: [],
         tags: [],
-        worldBookIds: [] // 添加世界书ID字段
+        worldBookIds: [], // 添加世界书ID字段
+        regexScriptIds: [] // 添加正则表达式脚本ID字段
       };
       
       // 处理角色名称
@@ -962,6 +996,9 @@ export const characterStorage = {
         console.error('处理角色头像失败:', error);
       }
       
+      // 生成新ID避免覆盖
+      const newId = generateId();
+      
       // 导入角色卡附带的世界书
       let worldBookIds: string[] = [];
       let importedWorldBookNames: string[] = [];
@@ -1044,8 +1081,35 @@ export const characterStorage = {
         characterData.worldBookIds = worldBookIds;
       }
       
-      // 生成新ID并保存角色
-      const newId = generateId();
+      // 导入角色卡附带的正则表达式脚本
+      let regexScriptIds: string[] = [];
+      let importedRegexScriptNames: string[] = [];
+      
+      // 检查角色卡中是否包含正则表达式数据
+      const regexScripts = data.extensions?.regex_scripts || data.data?.extensions?.regex_scripts;
+      
+      if (regexScripts && Array.isArray(regexScripts) && regexScripts.length > 0) {
+        // 导入正则表达式脚本并关联到角色
+        importedRegexScriptNames = await importRegexScriptsFromCharacterData(newId, characterData.name, regexScripts);
+        
+        // 获取导入脚本的ID
+        const importedScripts = await Promise.all(
+          importedRegexScriptNames.map(async (scriptName) => {
+            const scripts = await regexStorage.listRegexScripts();
+            return scripts.find(s => s.scriptName === scriptName && s.characterIds?.includes(newId));
+          })
+        );
+        
+        // 过滤出有效的脚本ID
+        regexScriptIds = importedScripts.filter(Boolean).map(script => script?.id).filter(Boolean) as string[];
+        
+        // 添加到角色数据
+        if (regexScriptIds.length > 0) {
+          characterData.regexScriptIds = regexScriptIds;
+        }
+      }
+      
+      // 保存角色
       await this.saveCharacter({
         ...characterData,
         id: newId
@@ -1061,7 +1125,8 @@ export const characterStorage = {
       // 返回导入结果
       return {
         characterId: newId,
-        importedWorldBooks: importedWorldBookNames.length > 0 ? importedWorldBookNames : null
+        importedWorldBooks: importedWorldBookNames.length > 0 ? importedWorldBookNames : null,
+        importedRegexScripts: importedRegexScriptNames.length > 0 ? importedRegexScriptNames : null
       };
     } catch (error) {
       console.error('导入PNG角色卡失败:', error);
@@ -1719,6 +1784,60 @@ export const regexStorage = {
     return script;
   },
   
+  // 关联正则表达式脚本到角色
+  async linkToCharacter(scriptId: string, characterId: string): Promise<RegexScript | undefined> {
+    const db = await initDB();
+    const script = await db.get('regex', scriptId);
+    
+    if (!script) {
+      console.error(`找不到正则表达式脚本: ${scriptId}`);
+      return undefined;
+    }
+    
+    // 设置为角色作用域
+    script.scope = 'character';
+    
+    // 初始化或更新角色ID列表
+    if (!script.characterIds) {
+      script.characterIds = [];
+    }
+    
+    // 如果未关联，则添加角色ID
+    if (!script.characterIds.includes(characterId)) {
+      script.characterIds.push(characterId);
+      await db.put('regex', script);
+      console.log(`正则表达式脚本 ${script.scriptName} (${scriptId}) 已关联到角色 ${characterId}`);
+    }
+    
+    return script;
+  },
+  
+  // 取消关联正则表达式脚本与角色
+  async unlinkFromCharacter(scriptId: string, characterId: string): Promise<RegexScript | undefined> {
+    const db = await initDB();
+    const script = await db.get('regex', scriptId);
+    
+    if (!script) {
+      console.error(`找不到正则表达式脚本: ${scriptId}`);
+      return undefined;
+    }
+    
+    // 如果角色ID存在于列表中，则移除
+    if (script.characterIds && script.characterIds.includes(characterId)) {
+      script.characterIds = script.characterIds.filter(id => id !== characterId);
+      
+      // 如果没有关联角色，则转换为全局作用域
+      if (script.characterIds.length === 0) {
+        script.scope = 'global';
+      }
+      
+      await db.put('regex', script);
+      console.log(`正则表达式脚本 ${script.scriptName} (${scriptId}) 已取消与角色 ${characterId} 的关联`);
+    }
+    
+    return script;
+  },
+  
   async getRegexScript(id: string) {
     const db = await initDB();
     return db.get('regex', id);
@@ -1767,6 +1886,19 @@ export const regexStorage = {
       console.error("导入正则表达式脚本失败:", error);
       return null;
     }
+  },
+  
+  // 获取角色关联的所有正则表达式脚本
+  async getRegexScriptsForCharacter(characterId: string): Promise<RegexScript[]> {
+    const db = await initDB();
+    const allScripts = await db.getAll('regex');
+    
+    // 过滤出与指定角色关联的脚本
+    return allScripts.filter(script => 
+      script.scope === 'character' && 
+      script.characterIds && 
+      script.characterIds.includes(characterId)
+    );
   }
 };
 
@@ -2084,3 +2216,42 @@ export const dataExport = {
     }
   }
 }; 
+
+// 从角色卡数据导入正则表达式脚本
+async function importRegexScriptsFromCharacterData(characterId: string, characterName: string, regexScripts: any[]): Promise<string[]> {
+  if (!regexScripts || !Array.isArray(regexScripts) || regexScripts.length === 0) {
+    return [];
+  }
+
+  console.log(`发现角色卡中的正则表达式数据，共 ${regexScripts.length} 个脚本，开始导入...`);
+  
+  const importedScriptIds: string[] = [];
+  const importedScriptNames: string[] = [];
+  
+  for (const scriptData of regexScripts) {
+    try {
+      // 生成新ID避免覆盖
+      const newId = generateId();
+      
+      // 确保脚本有作用域设置，设为局部作用域
+      const script: RegexScript = {
+        ...scriptData,
+        id: newId,
+        scope: 'character', // 设置为局部作用域
+        characterIds: [characterId] // 关联到角色
+      };
+      
+      // 保存到数据库
+      await regexStorage.saveRegexScript(script);
+      
+      importedScriptIds.push(newId);
+      importedScriptNames.push(script.scriptName);
+      
+      console.log(`成功导入正则表达式脚本: ${script.scriptName}, ID: ${newId}`);
+    } catch (error) {
+      console.error('导入正则表达式脚本失败:', error);
+    }
+  }
+  
+  return importedScriptNames;
+}

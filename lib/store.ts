@@ -1240,7 +1240,7 @@ export const usePromptPresetStore = create<PromptPresetState>()(
             const chatStore = useChatStore.getState();
             const characterName = chatStore.currentCharacter?.name || "AI";
             
-            systemPrompt = applyRegexToMessage(systemPrompt, playerName, characterName, 0, 4);
+            systemPrompt = await applyRegexToMessage(systemPrompt, playerName, characterName, 0, 4);
           } catch (error) {
             console.error("应用正则表达式处理提示词时出错:", error);
           }
@@ -2137,7 +2137,7 @@ interface RegexState {
   reorderScripts: (newScripts: RegexScript[]) => Promise<void>;
   
   // 应用正则表达式
-  applyRegexToMessage: (text: string, playerName: string, characterName: string, depth?: number, type?: number, characterId?: string) => string;
+  applyRegexToMessage: (text: string, playerName: string, characterName: string, depth?: number, type?: number, characterId?: string) => Promise<string>;
 }
 
 export const useRegexStore = create<RegexState>()(
@@ -2300,13 +2300,26 @@ export const useRegexStore = create<RegexState>()(
       },
       
       // 应用正则表达式处理
-      applyRegexToMessage: (text: string, playerName: string, characterName: string, depth = 0, type = 2, characterId?: string) => {
+      applyRegexToMessage: async (text: string, playerName: string, characterName: string, depth = 0, type = 2, characterId?: string) => {
         const { scripts } = get();
         
         // 导入处理函数
         const { processWithRegex } = require('./regexUtils');
         
-        return processWithRegex(text, scripts, playerName, characterName, depth, type, characterId);
+        // 如果有角色ID，获取角色关联的正则表达式
+        let characterScripts: RegexScript[] = [];
+        if (characterId) {
+          try {
+            characterScripts = await regexStorage.getRegexScriptsForCharacter(characterId);
+          } catch (error) {
+            console.error('获取角色关联的正则表达式失败:', error);
+          }
+        }
+        
+        // 合并全局脚本和角色特定脚本
+        const allScripts = [...scripts, ...characterScripts];
+        
+        return processWithRegex(text, allScripts, playerName, characterName, depth, type, characterId);
       },
       
       // 重新排序脚本

@@ -157,12 +157,14 @@ export interface Character {
   createdAt?: number;
   updatedAt?: number;
   worldBookIds?: string[]; // 关联的世界书ID列表
+  regexScriptIds?: string[]; // 关联的正则表达式脚本ID列表
   // 注意: 系统提示词(systemPrompt)将在未来的预设模块中处理，而不是直接存储在角色信息中
 }
 
 export interface CharacterImportResult {
   characterId: string | null;
   importedWorldBooks?: string[] | null;
+  importedRegexScripts?: string[] | null;  // 添加导入的正则表达式脚本信息
   error?: string;
 }
 
