@@ -20,6 +20,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRegexStore, useRegexFolderStore, useCharacterStore } from "@/lib/store";
 import { Character, RegexFolder } from "@/lib/types";
 import { RegexScript } from "@/lib/regexUtils";
@@ -44,6 +46,9 @@ export function BatchFolderActions({ onComplete }: BatchFolderActionsProps) {
   const [targetFolderId, setTargetFolderId] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("folder");
+  const [selectedScriptIds, setSelectedScriptIds] = useState<Set<string>>(new Set());
+  const [selectAllChecked, setSelectAllChecked] = useState(false);
   
   // 重置状态
   const resetState = () => {
@@ -53,6 +58,9 @@ export function BatchFolderActions({ onComplete }: BatchFolderActionsProps) {
     setSelectedCharacterIds([]);
     setTargetFolderId("");
     setResult(null);
+    setActiveTab("folder");
+    setSelectedScriptIds(new Set());
+    setSelectAllChecked(false);
   };
   
   // 处理对话框打开
@@ -74,9 +82,56 @@ export function BatchFolderActions({ onComplete }: BatchFolderActionsProps) {
     });
   };
   
+  // 处理脚本选择变更
+  const handleScriptChange = (scriptId: string, checked: boolean) => {
+    setSelectedScriptIds(prev => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(scriptId);
+      } else {
+        newSet.delete(scriptId);
+      }
+      return newSet;
+    });
+  };
+  
+  // 处理全选/取消全选
+  const handleSelectAllChange = (checked: boolean) => {
+    setSelectAllChecked(checked);
+    if (checked) {
+      // 全选当前显示的脚本
+      const scriptsToSelect = scripts.filter(script => {
+        if (activeTab === "folder" && selectedFolderId) {
+          return script.folderId === selectedFolderId;
+        } else if (activeTab === "global") {
+          return script.scope === "global" || !script.scope;
+        } else if (activeTab === "character") {
+          return script.scope === "character";
+        }
+        return true;
+      });
+      setSelectedScriptIds(new Set(scriptsToSelect.map(s => s.id)));
+    } else {
+      // 取消全选
+      setSelectedScriptIds(new Set());
+    }
+  };
+  
+  // 获取当前显示的脚本
+  const getVisibleScripts = () => {
+    if (activeTab === "folder" && selectedFolderId) {
+      return scripts.filter(script => script.folderId === selectedFolderId);
+    } else if (activeTab === "global") {
+      return scripts.filter(script => script.scope === "global" || !script.scope);
+    } else if (activeTab === "character") {
+      return scripts.filter(script => script.scope === "character");
+    }
+    return scripts;
+  };
+  
   // 执行批量操作
   const handleExecuteBatchAction = async () => {
-    if (!selectedFolderId) {
+    if (activeTab === "folder" && !selectedFolderId) {
       setResult({
         success: false,
         message: "请选择源文件夹"
@@ -84,13 +139,13 @@ export function BatchFolderActions({ onComplete }: BatchFolderActionsProps) {
       return;
     }
     
-    // 获取文件夹中的脚本
-    const folderScripts = scripts.filter(script => script.folderId === selectedFolderId);
+    // 获取选中的脚本
+    const selectedScripts = scripts.filter(script => selectedScriptIds.has(script.id));
     
-    if (folderScripts.length === 0) {
+    if (selectedScripts.length === 0) {
       setResult({
         success: false,
-        message: "所选文件夹中没有脚本"
+        message: "请至少选择一个脚本"
       });
       return;
     }
@@ -103,7 +158,7 @@ export function BatchFolderActions({ onComplete }: BatchFolderActionsProps) {
       switch (actionType) {
         case "scope":
           // 批量设置作用域
-          for (const script of folderScripts) {
+          for (const script of selectedScripts) {
             const updatedScript = { ...script, scope: selectedScope };
             
             // 如果设置为全局作用域，清空角色ID列表
@@ -119,7 +174,7 @@ export function BatchFolderActions({ onComplete }: BatchFolderActionsProps) {
           
           setResult({
             success: true,
-            message: `已成功将 ${folderScripts.length} 个脚本的作用域设置为 ${selectedScope === "global" ? "全局" : "局部"}`
+            message: `已成功将 ${selectedScripts.length} 个脚本的作用域设置为 ${selectedScope === "global" ? "全局" : "局部"}`
           });
           break;
           
@@ -133,14 +188,14 @@ export function BatchFolderActions({ onComplete }: BatchFolderActionsProps) {
             return;
           }
           
-          for (const script of folderScripts) {
+          for (const script of selectedScripts) {
             const updatedScript = { ...script, folderId: targetFolderId };
             await updateScript(script.id, updatedScript);
           }
           
           setResult({
             success: true,
-            message: `已成功将 ${folderScripts.length} 个脚本移动到新文件夹`
+            message: `已成功将 ${selectedScripts.length} 个脚本移动到新文件夹`
           });
           break;
           
@@ -149,6 +204,11 @@ export function BatchFolderActions({ onComplete }: BatchFolderActionsProps) {
             success: false,
             message: "未知的操作类型"
           });
+      }
+      
+      // 调用完成回调
+      if (onComplete) {
+        onComplete();
       }
     } catch (error) {
       console.error("批量操作失败:", error);
@@ -166,30 +226,88 @@ export function BatchFolderActions({ onComplete }: BatchFolderActionsProps) {
       <DialogTrigger asChild>
         <Button variant="outline">批量操作</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>文件夹批量操作</DialogTitle>
+          <DialogTitle>批量操作正则脚本</DialogTitle>
         </DialogHeader>
         
         <div className="space-y-4 py-4">
-          {/* 源文件夹选择 */}
+          {/* 选择脚本来源 */}
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="mb-4">
+              <TabsTrigger value="folder">按文件夹</TabsTrigger>
+              <TabsTrigger value="global">全局脚本</TabsTrigger>
+              <TabsTrigger value="character">角色脚本</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="folder">
+              <div className="space-y-2">
+                <Label htmlFor="source-folder">选择源文件夹</Label>
+                <Select
+                  value={selectedFolderId}
+                  onValueChange={setSelectedFolderId}
+                >
+                  <SelectTrigger id="source-folder">
+                    <SelectValue placeholder="选择要操作的文件夹" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {folders.map(folder => (
+                      <SelectItem key={folder.id} value={folder.id}>
+                        {folder.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </TabsContent>
+          </Tabs>
+          
+          {/* 脚本选择列表 */}
           <div className="space-y-2">
-            <Label htmlFor="source-folder">选择源文件夹</Label>
-            <Select
-              value={selectedFolderId}
-              onValueChange={setSelectedFolderId}
-            >
-              <SelectTrigger id="source-folder">
-                <SelectValue placeholder="选择要操作的文件夹" />
-              </SelectTrigger>
-              <SelectContent>
-                {folders.map(folder => (
-                  <SelectItem key={folder.id} value={folder.id}>
-                    {folder.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center justify-between">
+              <Label>选择要操作的脚本</Label>
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="select-all"
+                  checked={selectAllChecked}
+                  onCheckedChange={handleSelectAllChange}
+                />
+                <Label htmlFor="select-all" className="text-sm">全选</Label>
+              </div>
+            </div>
+            
+            <ScrollArea className="h-[200px] border rounded-md p-2">
+              {getVisibleScripts().length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground">
+                  {activeTab === "folder" && !selectedFolderId
+                    ? "请先选择一个文件夹"
+                    : "没有找到符合条件的脚本"}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {getVisibleScripts().map(script => (
+                    <div key={script.id} className="flex items-center space-x-2 p-2 hover:bg-muted/50 rounded-md">
+                      <Checkbox 
+                        id={`script-${script.id}`}
+                        checked={selectedScriptIds.has(script.id)}
+                        onCheckedChange={(checked) => handleScriptChange(script.id, checked === true)}
+                      />
+                      <Label htmlFor={`script-${script.id}`} className="flex-1 cursor-pointer">
+                        <div className="font-medium">{script.scriptName}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {script.scope === "character" ? "局部" : "全局"} · 
+                          {script.disabled ? " 已禁用" : " 已启用"}
+                        </div>
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+            
+            <div className="text-xs text-muted-foreground">
+              已选择 {selectedScriptIds.size} 个脚本
+            </div>
           </div>
           
           {/* 操作类型选择 */}
@@ -236,24 +354,26 @@ export function BatchFolderActions({ onComplete }: BatchFolderActionsProps) {
               {selectedScope === "character" && (
                 <div className="border rounded-md p-4">
                   <h4 className="text-sm font-medium mb-2">选择应用的角色</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                    {characters.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">暂无角色可选择</p>
-                    ) : (
-                      characters.map((character) => (
-                        <div key={character.id} className="flex items-center space-x-2">
-                          <Checkbox 
-                            id={`batch-char-${character.id}`}
-                            checked={selectedCharacterIds.includes(character.id)}
-                            onCheckedChange={(checked) => handleCharacterChange(character.id, checked === true)}
-                          />
-                          <Label htmlFor={`batch-char-${character.id}`} className="truncate">
-                            {character.name}
-                          </Label>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                  <ScrollArea className="h-[150px]">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {characters.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">暂无角色可选择</p>
+                      ) : (
+                        characters.map((character) => (
+                          <div key={character.id} className="flex items-center space-x-2">
+                            <Checkbox 
+                              id={`batch-char-${character.id}`}
+                              checked={selectedCharacterIds.includes(character.id)}
+                              onCheckedChange={(checked) => handleCharacterChange(character.id, checked === true)}
+                            />
+                            <Label htmlFor={`batch-char-${character.id}`} className="truncate">
+                              {character.name}
+                            </Label>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </ScrollArea>
                   <p className="text-xs text-muted-foreground mt-2">
                     {selectedCharacterIds.length === 0 
                       ? "未选择角色，这些正则将不会应用于任何角色" 
@@ -279,7 +399,7 @@ export function BatchFolderActions({ onComplete }: BatchFolderActionsProps) {
                     <SelectItem 
                       key={folder.id} 
                       value={folder.id}
-                      disabled={folder.id === selectedFolderId}
+                      disabled={folder.id === selectedFolderId && activeTab === "folder"}
                     >
                       {folder.name}
                     </SelectItem>
@@ -315,7 +435,7 @@ export function BatchFolderActions({ onComplete }: BatchFolderActionsProps) {
           </Button>
           <Button 
             onClick={handleExecuteBatchAction}
-            disabled={isProcessing || !selectedFolderId || (actionType === "move" && !targetFolderId)}
+            disabled={isProcessing || selectedScriptIds.size === 0 || (actionType === "move" && !targetFolderId)}
           >
             {isProcessing ? "处理中..." : "执行"}
           </Button>

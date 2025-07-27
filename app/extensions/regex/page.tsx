@@ -6,6 +6,7 @@ import { RegexEditor } from '@/components/extensions/regex-editor';
 import { RegexList } from '@/components/extensions/regex-list';
 import { FolderManagement } from '@/components/extensions/regex-folder-management';
 import { BatchFolderActions } from '@/components/extensions/regex-batch-actions';
+import { FolderBatchImport } from '@/components/extensions/regex-folder-import';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RegexScript } from '@/lib/regexUtils';
 import { BatchImport, ImportResult } from '@/components/ui/batch-import';
@@ -314,6 +315,14 @@ export default function RegexPage() {
         </TabsContent>
         
         <TabsContent value="folders">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold">文件夹管理</h2>
+            <div className="flex gap-2">
+              <FolderBatchImport 
+                onComplete={() => loadScripts()}
+              />
+            </div>
+          </div>
           <FolderManagement onFolderSelect={handleFolderSelect} />
         </TabsContent>
         

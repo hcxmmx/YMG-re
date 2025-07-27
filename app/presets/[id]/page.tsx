@@ -21,6 +21,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 import { useResponsiveView } from "@/lib/useResponsiveView";
 import { ViewToggle } from "@/components/ui/view-toggle";
+import { RegexPresetFolders } from "@/components/extensions/regex-preset-folders";
 import {
   DndContext,
   closestCenter,
@@ -548,9 +549,10 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
       </div>
       
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="basic">基本信息</TabsTrigger>
           <TabsTrigger value="prompts">提示词管理</TabsTrigger>
+          <TabsTrigger value="regex">正则关联</TabsTrigger>
         </TabsList>
         
         {/* 基本信息标签页 */}
@@ -739,6 +741,10 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
               </div>
             )}
           </Card>
+        </TabsContent>
+        
+        <TabsContent value="regex" className="space-y-4">
+          <RegexPresetFolders presetId={id} onUpdate={() => loadPresets()} />
         </TabsContent>
       </Tabs>
       
