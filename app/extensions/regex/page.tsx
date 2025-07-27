@@ -350,7 +350,7 @@ export default function RegexPage() {
         
         <TabsContent value="folders">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">文件夹管理</h2>
+          <h2 className="text-xl font-bold">文件夹管理</h2>
             <div className="flex gap-2">
               <FolderBatchImport 
                 onComplete={() => loadScripts()}

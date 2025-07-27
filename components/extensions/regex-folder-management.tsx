@@ -54,12 +54,19 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
   const [newFolderType, setNewFolderType] = useState<"global" | "character">("global");
   const [linkedPresetIds, setLinkedPresetIds] = useState<Set<string>>(new Set());
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
+  const [viewMode, setViewMode] = useState<"all" | "global" | "character">("all");
   
   // 加载文件夹
   useEffect(() => {
     loadFolders();
     loadPresets();
   }, [loadFolders, loadPresets]);
+  
+  // 过滤文件夹
+  const filteredFolders = folders.filter(folder => {
+    if (viewMode === "all") return true;
+    return folder.type === viewMode;
+  });
   
   // 处理创建文件夹
   const handleCreateFolder = async () => {
@@ -84,7 +91,8 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
     
     await updateFolder(currentFolder.id, {
       name: newFolderName.trim(),
-      description: newFolderDescription.trim()
+      description: newFolderDescription.trim(),
+      type: newFolderType
     });
     
     setIsEditDialogOpen(false);
@@ -108,6 +116,7 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
     setCurrentFolder(folder);
     setNewFolderName(folder.name);
     setNewFolderDescription(folder.description || "");
+    setNewFolderType(folder.type);
     setIsEditDialogOpen(true);
   };
   
@@ -162,7 +171,31 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold">文件夹管理</h2>
+        <div className="flex items-center gap-4">
+          <div className="flex gap-2">
+            <Button 
+              variant={viewMode === "all" ? "default" : "outline"} 
+              size="sm"
+              onClick={() => setViewMode("all")}
+            >
+              全部
+            </Button>
+            <Button 
+              variant={viewMode === "global" ? "default" : "outline"} 
+              size="sm"
+              onClick={() => setViewMode("global")}
+            >
+              全局文件夹
+            </Button>
+            <Button 
+              variant={viewMode === "character" ? "default" : "outline"} 
+              size="sm"
+              onClick={() => setViewMode("character")}
+            >
+              角色文件夹
+            </Button>
+          </div>
+        </div>
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button>
@@ -218,7 +251,7 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
       
       <ScrollArea className="h-[500px] pr-4">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {folders.map((folder) => (
+          {filteredFolders.map((folder) => (
             <Card 
               key={folder.id} 
               className={`${folder.disabled ? 'opacity-70' : ''}`}
@@ -379,6 +412,17 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
                 placeholder="输入文件夹描述（可选）"
                 rows={3}
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-folder-type">文件夹类型</Label>
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="edit-folder-type"
+                  checked={newFolderType === "global"}
+                  onCheckedChange={(checked) => setNewFolderType(checked ? "global" : "character")}
+                />
+                <Label htmlFor="edit-folder-type">全局文件夹</Label>
+              </div>
             </div>
           </div>
           <DialogFooter>
