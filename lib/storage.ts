@@ -200,11 +200,12 @@ export const initDB = async () => {
             regexFolderStore.createIndex('by-name', 'name');
             
             // 创建默认的"未分类"文件夹
-            const defaultFolder = {
+            const defaultFolder: RegexFolder = {
               id: 'default',
               name: '未分类',
               description: '默认文件夹，存放未分类的正则脚本',
               disabled: false,
+              type: 'global' as const, // 明确指定为全局类型
               createdAt: Date.now(),
               updatedAt: Date.now()
             };
@@ -261,11 +262,12 @@ export const initDB = async () => {
             regexFolderStore.createIndex('by-name', 'name');
             
             // 创建默认的"未分类"文件夹
-            const defaultFolder = {
+            const defaultFolder: RegexFolder = {
               id: 'default',
               name: '未分类',
               description: '默认文件夹，存放未分类的正则脚本',
               disabled: false,
+              type: 'global' as const, // 明确指定为全局类型
               createdAt: Date.now(),
               updatedAt: Date.now()
             };
@@ -2493,7 +2495,8 @@ async function importRegexScriptsFromCharacterData(characterId: string, characte
       characterFolder = await regexFolderStorage.createFolder({
         name: folderName,
         description: folderDescription,
-        disabled: false
+        disabled: false,
+        type: 'character' // 设置为角色专属文件夹类型
       });
       console.log(`为角色"${characterName}"创建了正则文件夹，ID: ${characterFolder.id}`);
     }
@@ -2547,6 +2550,7 @@ export const regexFolderStorage = {
       description: folderData.description || '',
       parentId: folderData.parentId,
       disabled: folderData.disabled || false,
+      type: folderData.type || 'global', // 默认为全局文件夹
       createdAt: Date.now(),
       updatedAt: Date.now(),
       presetIds: folderData.presetIds || []

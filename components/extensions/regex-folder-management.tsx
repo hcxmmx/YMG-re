@@ -51,6 +51,7 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
   const [currentFolder, setCurrentFolder] = useState<RegexFolder | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderDescription, setNewFolderDescription] = useState("");
+  const [newFolderType, setNewFolderType] = useState<"global" | "character">("global");
   const [linkedPresetIds, setLinkedPresetIds] = useState<Set<string>>(new Set());
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
   
@@ -67,11 +68,13 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
     await createFolder({
       name: newFolderName.trim(),
       description: newFolderDescription.trim(),
-      disabled: false
+      disabled: false,
+      type: newFolderType
     });
     
     setNewFolderName("");
     setNewFolderDescription("");
+    setNewFolderType("global");
     setIsCreateDialogOpen(false);
   };
   
@@ -191,6 +194,17 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
                   rows={3}
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="folder-type">文件夹类型</Label>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="folder-type"
+                    checked={newFolderType === "global"}
+                    onCheckedChange={(checked) => setNewFolderType(checked ? "global" : "character")}
+                  />
+                  <Label htmlFor="folder-type">全局文件夹</Label>
+                </div>
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
@@ -222,9 +236,14 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
                       {folder.description || "无描述"}
                     </CardDescription>
                   </div>
-                  {folder.disabled && (
-                    <Badge variant="secondary">已禁用</Badge>
-                  )}
+                  <div className="flex flex-col gap-1 items-end">
+                    {folder.disabled && (
+                      <Badge variant="secondary">已禁用</Badge>
+                    )}
+                    <Badge variant={folder.type === 'global' ? 'default' : 'outline'} className="ml-2">
+                      {folder.type === 'global' ? '全局' : '角色'}
+                    </Badge>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>

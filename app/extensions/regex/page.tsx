@@ -30,6 +30,7 @@ export default function RegexPage() {
   const [currentScript, setCurrentScript] = useState<RegexScript | undefined>(undefined);
   const [viewMode, setViewMode] = useState<ViewMode>('all');
   const [selectedFolderId, setSelectedFolderId] = useState<string>("all");
+  const [selectedFolderType, setSelectedFolderType] = useState<"all" | "global" | "character">("all");
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>("all");
   
   // 从 store 获取数据
@@ -79,6 +80,20 @@ export default function RegexPage() {
       case 'folder':
         if (selectedFolderId !== "all") {
           return scripts.filter(script => script.folderId === selectedFolderId);
+        }
+        // 如果是"全部文件夹"，则按文件夹类型筛选
+        const globalFolderIds = folders
+          .filter(folder => folder.type === 'global')
+          .map(folder => folder.id);
+        const characterFolderIds = folders
+          .filter(folder => folder.type === 'character')
+          .map(folder => folder.id);
+          
+        // 根据选择的文件夹类型筛选脚本
+        if (selectedFolderType === 'global') {
+          return scripts.filter(script => globalFolderIds.includes(script.folderId || 'default'));
+        } else if (selectedFolderType === 'character') {
+          return scripts.filter(script => characterFolderIds.includes(script.folderId || 'default'));
         }
         return scripts;
       case 'all':
@@ -240,6 +255,25 @@ export default function RegexPage() {
                           {folder.name}
                         </SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              
+              {viewMode === 'folder' && selectedFolderId === "all" && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="folder-type-select">文件夹类型</Label>
+                  <Select 
+                    value={selectedFolderType} 
+                    onValueChange={(value) => setSelectedFolderType(value as "all" | "global" | "character")}
+                  >
+                    <SelectTrigger id="folder-type-select" className="w-[180px]">
+                      <SelectValue placeholder="选择文件夹类型" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">全部类型</SelectItem>
+                      <SelectItem value="global">全局文件夹</SelectItem>
+                      <SelectItem value="character">角色文件夹</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

@@ -3068,12 +3068,9 @@ export const usePresetFolderStore = create<PresetFolderState>()(
             // 跳过默认文件夹，它始终保持启用状态
             if (folder.id === 'default') continue;
             
-            // 检查是否为局部正则文件夹（角色专属文件夹）
-            const isCharacterFolder = await regexFolderStorage.isCharacterRegexFolder(folder.id);
-            
-            // 如果是局部正则文件夹，跳过它，不改变其启用状态
-            if (isCharacterFolder) {
-              console.log(`跳过局部正则文件夹: ${folder.name} (ID: ${folder.id})`);
+            // 如果是角色专属文件夹，跳过它，不改变其启用状态
+            if (folder.type === 'character') {
+              console.log(`跳过角色专属文件夹: ${folder.name} (ID: ${folder.id})`);
               continue;
             }
             
