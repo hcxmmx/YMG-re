@@ -20,6 +20,8 @@ export interface RegexScript {
   substituteRegex: number; // 宏替换模式: 0=不替换, 1=原始, 2=转义
   minDepth?: number|null;// 最小深度
   maxDepth?: number|null;// 最大深度
+  scope?: 'global' | 'character'; // 作用域：全局或角色特定
+  characterIds?: string[];      // 当 scope 为 'character' 时生效的角色 ID 列表
 }
 
 /**
@@ -30,6 +32,7 @@ export interface RegexScript {
  * @param characterName 角色名称 (用于宏替换)
  * @param depth 消息深度 (用于深度过滤)
  * @param type 处理类型: 1=用户输入, 2=AI响应, 3=命令, 4=提示词
+ * @param characterId 当前角色ID (用于角色特定正则)
  * @returns 处理后的文本
  */
 export function processWithRegex(
@@ -38,7 +41,8 @@ export function processWithRegex(
   playerName: string, 
   characterName: string,
   depth: number = 0,
-  type: number = 2 // 默认为AI响应
+  type: number = 2, // 默认为AI响应
+  characterId?: string // 新增参数，当前角色ID
 ): string {
   if (!text || !scripts || scripts.length === 0) return text;
 
@@ -56,7 +60,14 @@ export function processWithRegex(
     if (script.minDepth !== undefined && script.minDepth !== null && depth < script.minDepth) return false;
     if (script.maxDepth !== undefined && script.maxDepth !== null && depth > script.maxDepth) return false;
     
-    return true;
+    // 检查脚本作用域
+    if (script.scope === 'character' && characterId) {
+      // 如果是角色特定的脚本，检查当前角色ID是否在列表中
+      return script.characterIds?.includes(characterId);
+    }
+    
+    // 全局脚本或未指定作用域的脚本都适用
+    return script.scope === 'global' || !script.scope;
   });
   
   // 应用每个脚本

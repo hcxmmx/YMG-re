@@ -2137,7 +2137,7 @@ interface RegexState {
   reorderScripts: (newScripts: RegexScript[]) => Promise<void>;
   
   // 应用正则表达式
-  applyRegexToMessage: (text: string, playerName: string, characterName: string, depth?: number, type?: number) => string;
+  applyRegexToMessage: (text: string, playerName: string, characterName: string, depth?: number, type?: number, characterId?: string) => string;
 }
 
 export const useRegexStore = create<RegexState>()(
@@ -2300,13 +2300,13 @@ export const useRegexStore = create<RegexState>()(
       },
       
       // 应用正则表达式处理
-      applyRegexToMessage: (text: string, playerName: string, characterName: string, depth = 0, type = 2) => {
+      applyRegexToMessage: (text: string, playerName: string, characterName: string, depth = 0, type = 2, characterId?: string) => {
         const { scripts } = get();
         
         // 导入处理函数
         const { processWithRegex } = require('./regexUtils');
         
-        return processWithRegex(text, scripts, playerName, characterName, depth, type);
+        return processWithRegex(text, scripts, playerName, characterName, depth, type, characterId);
       },
       
       // 重新排序脚本
@@ -2541,4 +2541,41 @@ export const useApiKeyStore = create<ApiKeyState>()(
     }),
     { name: 'api-key-store' }
   )
+);
+
+// 角色状态存储
+interface CharacterState {
+  characters: Character[];
+  isLoading: boolean;
+  error: string | null;
+  
+  // 操作方法
+  loadCharacters: () => Promise<void>;
+  getCharacter: (id: string) => Character | undefined;
+}
+
+export const useCharacterStore = create<CharacterState>()(
+  (set, get) => ({
+    characters: [],
+    isLoading: false,
+    error: null,
+    
+    // 加载角色
+    loadCharacters: async () => {
+      try {
+        set({ isLoading: true });
+        const characters = await characterStorage.listCharacters();
+        set({ characters, isLoading: false, error: null });
+      } catch (error) {
+        console.error("加载角色失败:", error);
+        set({ error: "加载角色失败", isLoading: false });
+      }
+    },
+    
+    // 获取指定角色
+    getCharacter: (id: string) => {
+      const { characters } = get();
+      return characters.find(character => character.id === id);
+    }
+  })
 );

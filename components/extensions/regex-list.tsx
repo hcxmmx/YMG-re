@@ -126,6 +126,11 @@ function SortableScriptItem({
             </CardTitle>
             
             <div className="flex gap-1">
+              {/* 作用域标签 */}
+              <Badge variant={script.scope === 'character' ? 'secondary' : 'outline'} className="text-xs">
+                {script.scope === 'character' ? '局部' : '全局'}
+              </Badge>
+              
               {/* 应用位置标签 */}
               {script.placement.includes(1) && (
                 <Badge variant="outline" className="text-xs">用户</Badge>
@@ -169,6 +174,13 @@ function SortableScriptItem({
         <div className="text-sm text-muted-foreground mt-1 mb-2 line-clamp-1">
           {script.findRegex}
         </div>
+        
+        {/* 显示关联角色信息（仅当作用域为"局部"时） */}
+        {script.scope === 'character' && script.characterIds && script.characterIds.length > 0 && (
+          <div className="text-xs text-muted-foreground mb-2">
+            应用于 {script.characterIds.length} 个角色
+          </div>
+        )}
         
         <div className="flex items-center justify-end gap-1 mt-2">
           <TooltipProvider>
@@ -310,6 +322,11 @@ function SimplifiedScriptItem({
           </span>
         </div>
         <div className="flex flex-wrap gap-1 mt-1">
+          {/* 作用域标签 */}
+          <Badge variant={script.scope === 'character' ? 'secondary' : 'outline'} className="text-xs flex-shrink-0 px-1 py-0">
+            {script.scope === 'character' ? '局部' : '全局'}
+          </Badge>
+          
           {/* 应用位置标签 */}
           {script.placement.includes(1) && (
             <Badge variant="outline" className="text-xs flex-shrink-0 px-1 py-0">用户</Badge>
@@ -322,6 +339,13 @@ function SimplifiedScriptItem({
           )}
           {script.placement.includes(4) && (
             <Badge variant="outline" className="text-xs flex-shrink-0 px-1 py-0">提示词</Badge>
+          )}
+          
+          {/* 关联角色数量（仅当作用域为"局部"时） */}
+          {script.scope === 'character' && script.characterIds && script.characterIds.length > 0 && (
+            <span className="text-xs text-muted-foreground ml-1">
+              ({script.characterIds.length} 角色)
+            </span>
           )}
         </div>
       </div>

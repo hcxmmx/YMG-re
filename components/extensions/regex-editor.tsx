@@ -9,9 +9,11 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { RegexScript } from "@/lib/regexUtils";
 import { generateId } from "@/lib/utils";
-import { usePlayerStore } from "@/lib/store";
+import { usePlayerStore, useChatStore } from "@/lib/store";
+import { Character } from "@/lib/types";
 
 interface RegexEditorProps {
   script?: RegexScript;
@@ -23,6 +25,29 @@ export function RegexEditor({ script, onSave, onCancel }: RegexEditorProps) {
   // 获取当前玩家和角色名称用于测试
   const { players, currentPlayerId } = usePlayerStore();
   const currentPlayer = players.find(player => player.id === currentPlayerId);
+  
+  // 获取角色列表用于局部正则关联
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [loadingCharacters, setLoadingCharacters] = useState<boolean>(false);
+  
+  // 加载角色数据
+  useEffect(() => {
+    const loadCharacters = async () => {
+      setLoadingCharacters(true);
+      try {
+        // 从lib/storage中直接获取角色数据
+        const { characterStorage } = await import('@/lib/storage');
+        const chars = await characterStorage.listCharacters();
+        setCharacters(chars);
+      } catch (error) {
+        console.error('加载角色列表失败:', error);
+      } finally {
+        setLoadingCharacters(false);
+      }
+    };
+
+    loadCharacters();
+  }, []);
   
   // 编辑状态
   const [editScript, setEditScript] = useState<RegexScript>(() => {
@@ -42,7 +67,9 @@ export function RegexEditor({ script, onSave, onCancel }: RegexEditorProps) {
       runOnEdit: true,
       substituteRegex: 0,
       minDepth: null,
-      maxDepth: null
+      maxDepth: null,
+      scope: 'global', // 默认为全局作用域
+      characterIds: []
     };
   });
   
@@ -85,6 +112,33 @@ export function RegexEditor({ script, onSave, onCancel }: RegexEditorProps) {
     }
     
     handleChange("placement", newPlacement);
+  };
+
+  // 处理作用域变更
+  const handleScopeChange = (value: string) => {
+    handleChange("scope", value as 'global' | 'character');
+    
+    // 如果切换到全局作用域，清空角色ID列表
+    if (value === 'global') {
+      handleChange("characterIds", []);
+    }
+  };
+  
+  // 处理角色选择变更
+  const handleCharacterChange = (characterId: string, checked: boolean) => {
+    let newCharacterIds = [...(editScript.characterIds || [])];
+    
+    if (checked) {
+      // 添加角色ID
+      if (!newCharacterIds.includes(characterId)) {
+        newCharacterIds.push(characterId);
+      }
+    } else {
+      // 移除角色ID
+      newCharacterIds = newCharacterIds.filter(id => id !== characterId);
+    }
+    
+    handleChange("characterIds", newCharacterIds);
   };
   
   // 运行测试
@@ -287,6 +341,57 @@ export function RegexEditor({ script, onSave, onCancel }: RegexEditorProps) {
               在应用替换前从匹配文本中移除的字符串，每行一个
             </p>
           </div>
+        </div>
+
+        {/* 作用域设置 */}
+        <div className="space-y-4">
+          <h3 className="text-sm font-medium">作用域</h3>
+          <RadioGroup
+            value={editScript.scope || 'global'}
+            onValueChange={handleScopeChange}
+            className="flex flex-col space-y-2"
+          >
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="global" id="scope-global" />
+              <Label htmlFor="scope-global">全局 (应用于所有角色)</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="character" id="scope-character" />
+              <Label htmlFor="scope-character">局部 (仅应用于指定角色)</Label>
+            </div>
+          </RadioGroup>
+          
+          {/* 当选择"局部"作用域时，显示角色选择 */}
+          {editScript.scope === 'character' && (
+            <div className="mt-4 border rounded-md p-4">
+              <h4 className="text-sm font-medium mb-2">选择应用的角色</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                {loadingCharacters ? (
+                  <p className="text-sm text-muted-foreground">加载角色中...</p>
+                ) : characters.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">暂无角色可选择</p>
+                ) : (
+                  characters.map((character) => (
+                    <div key={character.id} className="flex items-center space-x-2">
+                      <Checkbox 
+                        id={`char-${character.id}`}
+                        checked={(editScript.characterIds || []).includes(character.id)}
+                        onCheckedChange={(checked) => handleCharacterChange(character.id, checked === true)}
+                      />
+                      <Label htmlFor={`char-${character.id}`} className="truncate">
+                        {character.name}
+                      </Label>
+                    </div>
+                  ))
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                {(editScript.characterIds || []).length === 0 
+                  ? "未选择角色，该正则将不会应用于任何角色" 
+                  : `已选择 ${(editScript.characterIds || []).length} 个角色`}
+              </p>
+            </div>
+          )}
         </div>
         
         {/* 应用位置 */}

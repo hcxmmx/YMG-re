@@ -1701,6 +1701,20 @@ export const promptPresetStorage = {
 export const regexStorage = {
   async saveRegexScript(script: RegexScript) {
     const db = await initDB();
+    
+    // 确保有作用域设置，默认为全局
+    if (!script.scope) {
+      script.scope = 'global';
+    }
+    
+    // 如果是全局作用域，确保没有角色ID列表
+    if (script.scope === 'global') {
+      script.characterIds = [];
+    } else if (script.scope === 'character' && (!script.characterIds || script.characterIds.length === 0)) {
+      // 如果是角色作用域但没有关联角色，设为全局
+      script.scope = 'global';
+    }
+    
     await db.put('regex', script);
     return script;
   },
