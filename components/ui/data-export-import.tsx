@@ -17,6 +17,8 @@ export type DataCategory =
   | 'players'
   | 'worldBooks'
   | 'regexScripts'
+  | 'regexFolders'
+  | 'apiKeys'
   | 'settings';
 
 // 导出选项接口
@@ -28,6 +30,8 @@ export interface ExportOptions {
   players: boolean;
   worldBooks: boolean;
   regexScripts: boolean;
+  regexFolders: boolean;
+  apiKeys: boolean;
   settings: boolean;
 }
 
@@ -56,6 +60,8 @@ export function DataExportImport({
     players: true,
     worldBooks: true,
     regexScripts: true,
+    regexFolders: true,
+    apiKeys: true,
     settings: true
   });
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -78,6 +84,8 @@ export function DataExportImport({
       players: checked,
       worldBooks: checked,
       regexScripts: checked,
+      regexFolders: checked,
+      apiKeys: checked,
       settings: checked
     });
   };
@@ -251,6 +259,24 @@ export function DataExportImport({
                   onCheckedChange={(checked) => handleOptionChange('regexScripts', checked === true)}
                 />
                 <Label htmlFor="export-regexScripts">正则脚本</Label>
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="export-regexFolders" 
+                  checked={exportOptions.regexFolders}
+                  onCheckedChange={(checked) => handleOptionChange('regexFolders', checked === true)}
+                />
+                <Label htmlFor="export-regexFolders">正则文件夹</Label>
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="export-apiKeys" 
+                  checked={exportOptions.apiKeys}
+                  onCheckedChange={(checked) => handleOptionChange('apiKeys', checked === true)}
+                />
+                <Label htmlFor="export-apiKeys">API密钥</Label>
               </div>
               
               <div className="flex items-center space-x-2">

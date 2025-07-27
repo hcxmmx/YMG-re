@@ -60,6 +60,22 @@ export async function exportData(options: ExportOptions): Promise<Blob> {
     exportData.regexScripts = regexScripts;
   }
 
+  // 导出正则文件夹
+  if (options.regexFolders) {
+    const regexFolders = await db.getAll('regexFolders');
+    exportData.regexFolders = regexFolders;
+  }
+
+  // 导出API密钥
+  if (options.apiKeys) {
+    const apiKeys = await db.getAll('apiKeys');
+    const apiKeySettings = await db.get('apiKeySettings', 'settings');
+    exportData.apiKeys = {
+      keys: apiKeys,
+      settings: apiKeySettings
+    };
+  }
+
   // 导出设置
   if (options.settings) {
     const settings = useSettingsStore.getState().settings;
@@ -162,6 +178,29 @@ export async function importData(file: File): Promise<{
         await db.put('regex', regexScript);
       }
       importedCategories.push('正则脚本');
+    }
+
+    // 导入正则文件夹
+    if (data.regexFolders && Array.isArray(data.regexFolders)) {
+      await db.clear('regexFolders');
+      for (const regexFolder of data.regexFolders) {
+        await db.put('regexFolders', regexFolder);
+      }
+      importedCategories.push('正则文件夹');
+    }
+
+    // 导入API密钥
+    if (data.apiKeys) {
+      if (data.apiKeys.keys) {
+        await db.clear('apiKeys');
+        for (const apiKey of data.apiKeys.keys) {
+          await db.put('apiKeys', apiKey);
+        }
+      }
+      if (data.apiKeys.settings) {
+        await db.put('apiKeySettings', data.apiKeys.settings);
+      }
+      importedCategories.push('API密钥');
     }
 
     // 导入设置
