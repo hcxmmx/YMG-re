@@ -1830,7 +1830,7 @@ export default function ChatPage() {
   }, [cancelRequest]);
 
   return (
-    <div className={`flex flex-col ${isNavbarVisible ? 'h-[calc(100vh-65px)]' : 'h-screen'}`}>
+    <div className={`flex flex-col ${isNavbarVisible ? 'dvh-fix h-[calc(100dvh-65px)]' : 'dvh-fix h-screen'}`}>
       {/* 添加SearchParamsHandler组件来处理URL参数 */}
       <SearchParamsHandler />
       <ChatHeader character={currentCharacter} />

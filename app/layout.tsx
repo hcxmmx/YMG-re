@@ -64,6 +64,29 @@ export default function RootLayout({
     }
   }, [uiSettings]);
 
+  // 动态设置视口高度，解决iOS PWA键盘问题
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // 设置CSS变量--vh为视口高度的1%
+      const setVhVariable = () => {
+        const vh = window.innerHeight * 0.01;
+        document.documentElement.style.setProperty('--vh', `${vh}px`);
+      };
+      
+      // 初始设置
+      setVhVariable();
+      
+      // 监听窗口大小变化（包括键盘弹出）
+      window.addEventListener('resize', setVhVariable);
+      window.addEventListener('orientationchange', setVhVariable);
+      
+      return () => {
+        window.removeEventListener('resize', setVhVariable);
+        window.removeEventListener('orientationchange', setVhVariable);
+      };
+    }
+  }, []);
+
   // 应用字体设置
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -129,7 +152,7 @@ export default function RootLayout({
     <html lang="zh-CN" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
         <meta name="theme-color" content="#000000" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
@@ -151,7 +174,7 @@ export default function RootLayout({
             toggleNavbar, 
             setNavbarVisible: setIsNavbarVisible 
           }}>
-            <div className="flex flex-col min-h-screen">
+            <div className="flex flex-col dvh-fix">
               <div 
                 className={`transition-all duration-300 ease-in-out ${
                   isNavbarVisible ? "translate-y-0" : "-translate-y-full h-0 overflow-hidden"

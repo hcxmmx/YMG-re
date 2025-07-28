@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, ChangeEvent, FormEvent } from "react";
+import { useState, useRef, ChangeEvent, FormEvent, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send, Image, File, FileText } from "lucide-react";
@@ -35,6 +35,26 @@ export function ChatInput({
   const [files, setFiles] = useState<FileData[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isPWA, setIsPWA] = useState(false);
+
+  // 检测设备和运行环境
+  useEffect(() => {
+    // 检测是否是iOS设备
+    const checkIsIOS = () => {
+      const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+      return /iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream;
+    };
+    
+    // 检测是否是PWA模式
+    const checkIsPWA = () => {
+      return (window.navigator as any).standalone === true || 
+             window.matchMedia('(display-mode: standalone)').matches;
+    };
+    
+    setIsIOS(checkIsIOS());
+    setIsPWA(checkIsPWA());
+  }, []);
 
   // 判断是否可以发送消息
   // 注意：这里处理两种情况 - 1) 有新消息内容 2) 空输入框但可以请求回复
@@ -179,8 +199,21 @@ export function ChatInput({
     }
   };
 
+  // 处理输入框获得焦点，特别针对iOS PWA环境
+  const handleInputFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    if (isIOS && isPWA) {
+      // 仅针对iOS PWA环境应用特殊处理
+      setTimeout(() => {
+        // 滚动到视图中央
+        e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // 轻微滚动以激活键盘
+        window.scrollTo(0, window.scrollY + 1);
+      }, 100);
+    }
+  };
+
   return (
-    <form onSubmit={handleSubmit} className="w-full p-3">
+    <form onSubmit={handleSubmit} className="w-full p-3 chat-input-container">
       {files.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-3 max-h-32 overflow-y-auto">
           {files.map((file, index) => (
@@ -218,6 +251,7 @@ export function ChatInput({
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={handleInputFocus}
           placeholder={canRequestReply ? "输入新消息或按发送键请求回复..." : "输入消息..."}
           className="flex-1"
           disabled={disabled}

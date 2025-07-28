@@ -37,6 +37,9 @@
     /* 字体相关变量 */
     --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     --chat-font-size: 100%;
+    
+    /* 动态视口高度变量 */
+    --vh: 1vh;
   }
  
   .dark {
@@ -100,6 +103,56 @@
     font-family: inherit !important;
   }
 } 
+
+/* 使用CSS变量处理动态高度 */
+.dvh-fix {
+  min-height: 100dvh; /* 优先使用现代dvh单位 */
+  min-height: calc(var(--vh, 1vh) * 100); /* 回退方案 */
+  height: 100dvh; /* 优先使用现代dvh单位 */
+  height: calc(var(--vh, 1vh) * 100); /* 回退方案 */
+}
+
+/* 修复h-screen和min-h-screen的问题 */
+.h-screen {
+  height: 100dvh;
+  height: calc(var(--vh, 1vh) * 100);
+}
+
+.min-h-screen {
+  min-height: 100dvh;
+  min-height: calc(var(--vh, 1vh) * 100);
+}
+
+/* 处理特殊的动态高度计算 */
+.h-\[calc\(100vh-65px\)\] {
+  height: calc(100dvh - 65px);
+  height: calc((var(--vh, 1vh) * 100) - 65px);
+}
+
+/* 处理iOS PWA特有问题的CSS */
+@supports (-webkit-touch-callout: none) {
+  /* 输入控件优化 - 无需侵入性地修改全局布局 */
+  input, textarea {
+    /* 最小16px字体避免iOS缩放 */
+    font-size: 16px; 
+    /* 增强用户选择体验 */
+    -webkit-user-select: text;
+    user-select: text;
+    /* 移除默认的点击高亮效果 */
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* iOS PWA聊天输入区域优化 */
+  .chat-input-container {
+    /* 确保内容在iOS键盘上方可见 */
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  
+  /* 适配iOS底部安全区域 */
+  .ios-safe-area-padding {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+}
 
 /* 引号高亮样式 - 只保留悬停效果 */
 .quote-highlight:hover {
