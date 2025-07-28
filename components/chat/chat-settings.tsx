@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Settings } from "lucide-react";
+import { Settings, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
@@ -12,6 +12,7 @@ import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { conversationStorage } from "@/lib/storage";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // 可用的Gemini模型列表
 const AVAILABLE_MODELS = [
@@ -44,6 +45,15 @@ export function ChatSettings() {
   const [applySuccess, setApplySuccess] = useState(false);
   // 预设加载状态
   const [presetsLoaded, setPresetsLoaded] = useState(false);
+  // 预设是否被修改
+  const [presetModified, setPresetModified] = useState(false);
+  // 当前预设的原始参数
+  const [originalPresetParams, setOriginalPresetParams] = useState<{
+    temperature?: number;
+    maxTokens?: number;
+    topK?: number;
+    topP?: number;
+  } | null>(null);
 
   // 当全局设置变化时更新本地设置
   useEffect(() => {
@@ -76,6 +86,25 @@ export function ChatSettings() {
     };
     loadPresetsData();
   }, [loadPresets]);
+  
+  // 当预设变更时，更新原始参数
+  useEffect(() => {
+    if (currentPresetId) {
+      const preset = getPreset(currentPresetId);
+      if (preset) {
+        setOriginalPresetParams({
+          temperature: preset.temperature,
+          maxTokens: preset.maxTokens,
+          topK: preset.topK,
+          topP: preset.topP,
+        });
+        setPresetModified(false); // 重置修改状态
+      }
+    } else {
+      setOriginalPresetParams(null);
+      setPresetModified(false);
+    }
+  }, [currentPresetId, getPreset]);
 
   // 更新设置
   const handleSettingChange = (key: string, value: any) => {
@@ -87,14 +116,42 @@ export function ChatSettings() {
     // 根据设置类型更新到对应的存储
     if (['model', 'temperature', 'maxTokens', 'topK', 'topP', 'enableStreaming'].includes(key)) {
       updateSettings({ [key]: value });
+      
+      // 检查是否修改了预设的核心参数
+      if (currentPresetId && ['temperature', 'maxTokens', 'topK', 'topP'].includes(key)) {
+        const preset = getPreset(currentPresetId);
+        if (preset) {
+          // 比较当前值和预设原始值
+          if (preset[key as keyof typeof preset] !== value) {
+            setPresetModified(true);
+          } else {
+            // 检查其他参数是否被修改
+            const coreParams = ['temperature', 'maxTokens', 'topK', 'topP'];
+            const isAnyParamModified = coreParams.some(param => {
+              if (param === key) return false; // 跳过当前正在修改的参数
+              const paramKey = param as keyof typeof preset;
+              return preset[paramKey] !== localSettings[param as keyof typeof localSettings];
+            });
+            setPresetModified(isAnyParamModified);
+          }
+        }
+      }
     } else if (['showResponseTime', 'showCharCount', 'showMessageNumber', 'enableQuoteHighlight', 'quoteHighlightColor'].includes(key)) {
       updateUISettings({ [key]: value });
     }
+  };
+  
+  // 恢复预设默认参数
+  const handleRestorePresetDefaults = () => {
+    if (!currentPresetId || !originalPresetParams) return;
     
-    // 取消预设选择（因为用户手动修改了设置）
-    if (!isInitialLoad && key !== 'currentPresetId') {
-      usePromptPresetStore.getState().setCurrentPresetId(null);
-    }
+    // 恢复到预设的原始参数
+    updateSettings(originalPresetParams);
+    setLocalSettings(prev => ({
+      ...prev,
+      ...originalPresetParams
+    }));
+    setPresetModified(false);
   };
   
   // 处理预设切换
@@ -154,6 +211,10 @@ export function ChatSettings() {
         
         setApplySuccess(true);
         setTimeout(() => setApplySuccess(false), 2000);
+        
+        // 重置修改状态和原始参数
+        setPresetModified(false);
+        setOriginalPresetParams(null);
       } catch (error) {
         console.error("重置预设失败:", error);
       } finally {
@@ -181,6 +242,17 @@ export function ChatSettings() {
       // 应用预设，等待完成
       await applyPreset(presetId);
       console.log(`预设应用完成: ${preset.name}`);
+      
+      // 保存预设原始参数
+      setOriginalPresetParams({
+        temperature: preset.temperature,
+        maxTokens: preset.maxTokens,
+        topK: preset.topK,
+        topP: preset.topP,
+      });
+      
+      // 重置修改标记
+      setPresetModified(false);
       
       // 添加额外延迟，确保状态已稳定
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -214,7 +286,7 @@ export function ChatSettings() {
           size="icon" 
           className={cn(
             "shrink-0", 
-            currentPresetId ? "text-primary" : ""
+            currentPresetId ? (presetModified ? "text-amber-500" : "text-primary") : ""
           )}
         >
           <Settings className="h-5 w-5" />
@@ -227,12 +299,35 @@ export function ChatSettings() {
           
           {/* 预设选择 */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">预设</label>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">预设</label>
+              {currentPresetId && presetModified && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-8 px-2 text-amber-500"
+                        onClick={handleRestorePresetDefaults}
+                      >
+                        <RotateCcw className="h-4 w-4 mr-1" />
+                        <span className="text-xs">恢复默认</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>恢复预设的原始参数</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </div>
             <div className="relative">
               <select 
                 className={cn(
                   "w-full rounded-md border border-input bg-background px-3 py-2 text-sm",
-                  isApplying ? "opacity-50" : ""
+                  isApplying ? "opacity-50" : "",
+                  presetModified ? "border-amber-500" : ""
                 )}
                 value={currentPresetId || ""}
                 onChange={(e) => handlePresetChange(e.target.value)}
@@ -241,7 +336,7 @@ export function ChatSettings() {
                 <option value="">-- 无预设（自定义设置）--</option>
                 {presets.map((preset) => (
                   <option key={preset.id} value={preset.id}>
-                    {preset.name}
+                    {preset.name} {presetModified && currentPresetId === preset.id ? "(已修改)" : ""}
                   </option>
                 ))}
               </select>
