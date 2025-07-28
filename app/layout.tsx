@@ -122,6 +122,18 @@ export default function RootLayout({
   
   return (
     <html lang="zh-CN" suppressHydrationWarning>
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="theme-color" content="#000000" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="云妙馆" />
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="icon" href="/icons/icon-956x956.png" />
+        <link rel="apple-touch-icon" href="/icons/icon-956x956.png" />
+      </head>
       <body className={inter.className}>
         <ThemeProvider
           attribute="class"

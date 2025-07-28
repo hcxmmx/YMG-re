@@ -12,6 +12,7 @@ import { exportData, importData, downloadFile } from "@/lib/dataUtils";
 import { useToast } from "@/components/ui/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { PWAInstallPrompt } from "@/components/ui/pwa-install-prompt";
 
 // 可用的Gemini模型列表
 const AVAILABLE_MODELS = [
@@ -524,6 +525,15 @@ export default function SettingsPage() {
           </a>{" "}
           获取Gemini API密钥
         </p>
+        
+        {/* 应用安装 */}
+        <div className="mt-8 pt-4 border-t">
+          <h3 className="text-lg font-semibold mb-2">应用安装</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            将此应用安装到您的设备，以获得离线使用体验和更好的性能
+          </p>
+          <PWAInstallPrompt className="mt-2" />
+        </div>
         
         {/* 数据备份与恢复 */}
         <div className="mt-8 pt-4 border-t">
