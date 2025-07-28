@@ -101,7 +101,14 @@ export default function SettingsPage() {
     setContextControlMode(settings.contextControlMode || 'token');
     // 加载字体设置
     setFontFamily(settings.fontFamily || 'system');
-    setFontSize(settings.fontSize || 100);
+    
+    // 设置字体大小，如果是移动设备且没有保存过设置，则使用80%
+    if (window.innerWidth < 768 && !localStorage.getItem('fontSize')) {
+      setFontSize(80);
+    } else {
+      setFontSize(settings.fontSize || 100);
+    }
+    
     setChatFontSize(settings.chatFontSize || 100);
     
     // 加载PWA设置
@@ -128,6 +135,14 @@ export default function SettingsPage() {
     // 清理函数
     return () => window.removeEventListener('resize', checkScreenSize);
   }, []);
+
+  // 当屏幕尺寸变化时，为移动设备设置默认字体大小
+  useEffect(() => {
+    if (isMobile && !settings.fontSize) {
+      // 仅在初次加载且没有用户保存的设置时设置默认值
+      setFontSize(80);
+    }
+  }, [isMobile, settings.fontSize]);
 
   // 字体映射对象，将字体类型映射到实际CSS字体值
   const fontFamilyMap: Record<FontFamily, string> = {
@@ -648,7 +663,7 @@ export default function SettingsPage() {
               id="maxTokens"
               type="range"
               min="256"
-              max="8192"
+              max="Infinity"
               step="256"
               value={maxTokens}
               onChange={(e) => setMaxTokens(parseInt(e.target.value))}

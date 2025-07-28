@@ -47,7 +47,7 @@ export const useSettingsStore = create<SettingsState>()(
         theme: 'system',
         language: 'zh-CN',
         enableStreaming: true,
-        maxTokens: 1024,
+        maxTokens: 65535,
         temperature: 0.7,
         topK: 40,
         topP: 0.95,
@@ -63,7 +63,7 @@ export const useSettingsStore = create<SettingsState>()(
         contextControlMode: 'token', // 默认使用token计数方式
         // 字体设置
         fontFamily: 'system', // 默认使用系统字体
-        fontSize: 100, // 默认100%的全局字体大小
+        fontSize: typeof window !== 'undefined' && window.innerWidth < 768 ? 80 : 100, // 移动设备默认80%，桌面100%
         chatFontSize: 100, // 默认100%的聊天消息字体大小
       },
       uiSettings: {
