@@ -2,8 +2,9 @@
 const withPWA = require('next-pwa')({
   dest: 'public',
   register: true,
-  skipWaiting: true,
+  skipWaiting: false, // 不自动跳过等待，让用户决定是否更新
   disable: process.env.NODE_ENV === 'development',
+  buildExcludes: [/middleware-manifest\.json$/], // 避免一些常见的冲突文件
 });
 
 const nextConfig = {

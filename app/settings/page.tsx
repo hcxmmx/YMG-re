@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { PWAInstallPrompt } from "@/components/ui/pwa-install-prompt";
+import { Switch } from "@/components/ui/switch";
 
 // 可用的Gemini模型列表
 const AVAILABLE_MODELS = [
@@ -75,6 +76,9 @@ export default function SettingsPage() {
   const [fontSize, setFontSize] = useState(100);
   const [chatFontSize, setChatFontSize] = useState(100);
   
+  // PWA自动更新设置
+  const [pwaAutoUpdate, setPwaAutoUpdate] = useState(false);
+  
   const [isSaved, setIsSaved] = useState(false);
   const [activeTab, setActiveTab] = useState("appearance");
   const [isMobile, setIsMobile] = useState(false);
@@ -99,6 +103,14 @@ export default function SettingsPage() {
     setFontFamily(settings.fontFamily || 'system');
     setFontSize(settings.fontSize || 100);
     setChatFontSize(settings.chatFontSize || 100);
+    
+    // 加载PWA设置
+    try {
+      const autoUpdatePref = localStorage.getItem('pwa-auto-update');
+      setPwaAutoUpdate(autoUpdatePref === 'true');
+    } catch (e) {
+      console.error('Failed to load PWA settings:', e);
+    }
   }, [settings]);
 
   // 检测屏幕尺寸，决定使用哪种布局
@@ -265,10 +277,13 @@ export default function SettingsPage() {
       chatFontSize,
     });
 
-    // 确保字体设置也被保存到localStorage以便更可靠地应用
+    // 确保字体设置也被保存到localStorage
     localStorage.setItem('fontFamily', fontFamily);
     localStorage.setItem('fontSize', String(fontSize));
     localStorage.setItem('chatFontSize', String(chatFontSize));
+    
+    // 保存PWA自动更新设置
+    localStorage.setItem('pwa-auto-update', String(pwaAutoUpdate));
 
     // 强制应用字体设置
     const fontValue = fontFamilyMap[fontFamily];
@@ -533,6 +548,20 @@ export default function SettingsPage() {
             将此应用安装到您的设备，以获得离线使用体验和更好的性能
           </p>
           <PWAInstallPrompt className="mt-2" />
+          
+          {/* PWA自动更新设置 */}
+          <div className="mt-4 flex items-center justify-between">
+            <div>
+              <p className="font-medium">PWA自动更新</p>
+              <p className="text-xs text-muted-foreground">
+                有更新时自动应用，无需手动确认
+              </p>
+            </div>
+            <Switch 
+              checked={pwaAutoUpdate}
+              onCheckedChange={setPwaAutoUpdate}
+            />
+          </div>
         </div>
         
         {/* 数据备份与恢复 */}

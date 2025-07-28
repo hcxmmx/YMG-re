@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 interface PWAInstallPromptProps {
@@ -15,12 +15,15 @@ export function PWAInstallPrompt({ className = "" }: PWAInstallPromptProps) {
   const [showIOSInstructions, setShowIOSInstructions] = useState(false);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     // 检查是否为iOS设备
     const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
     setIsIOS(iOS);
 
     // 检查应用是否已经以PWA模式安装
-    if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true) {
+    if (window.matchMedia('(display-mode: standalone)').matches || 
+        (window.navigator as any).standalone === true) {
       setIsInstalled(true);
       return;
     }
@@ -106,12 +109,10 @@ export function PWAInstallPrompt({ className = "" }: PWAInstallPromptProps) {
         </div>
       ) : (
         <div className="space-y-2">
-          <p className="text-sm">此应用可以安装，但您的浏览器尚未触发安装提示。您可能需要：</p>
-          <ul className="list-disc pl-5 text-sm">
-            <li>在生产环境中访问此网站</li>
-            <li>使用Chrome或Edge浏览器</li>
-            <li>多次访问此网站</li>
-          </ul>
+          <p className="text-sm">您的浏览器支持安装此应用，但尚未触发安装提示。</p>
+          <p className="text-sm text-muted-foreground">
+            多次访问此网站或使用Chrome/Edge浏览器可能会触发安装提示。
+          </p>
         </div>
       )}
     </div>
