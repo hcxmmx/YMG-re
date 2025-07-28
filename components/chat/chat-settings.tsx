@@ -115,8 +115,8 @@ export function ChatSettings() {
         // 更新设置为默认值
         const settingsStore = useSettingsStore.getState();
         const defaultSettings = {
-          temperature: 0.7,
-          maxTokens: 1024,
+          temperature: 1,
+          maxTokens: 65535,
           topK: 40,
           topP: 0.95,
         };
@@ -310,13 +310,24 @@ export function ChatSettings() {
               <label className="text-sm font-medium">最大输出长度</label>
               <span className="text-sm text-muted-foreground">{localSettings.maxTokens}</span>
             </div>
-            <Slider 
-              value={[localSettings.maxTokens]}
-              min={256}
-              max={8192}
-              step={256}
-              onValueChange={(value) => handleSettingChange('maxTokens', value[0])}
-            />
+            <div className="flex items-center space-x-2">
+              <Slider 
+                value={[localSettings.maxTokens]}
+                min={256}
+                max={1000000}
+                step={256}
+                onValueChange={(value) => handleSettingChange('maxTokens', value[0])}
+                className="flex-grow"
+              />
+              <Input
+                type="number"
+                min={256}
+                max={1000000}
+                value={localSettings.maxTokens}
+                onChange={(e) => handleSettingChange('maxTokens', parseInt(e.target.value) || 65535)}
+                className="w-20 h-8"
+              />
+            </div>
           </div>
           
           {/* Top-K 设置 */}

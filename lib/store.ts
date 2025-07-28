@@ -48,7 +48,7 @@ export const useSettingsStore = create<SettingsState>()(
         language: 'zh-CN',
         enableStreaming: true,
         maxTokens: 65535,
-        temperature: 0.7,
+        temperature: 1,
         topK: 40,
         topP: 0.95,
         model: 'gemini-2.5-pro',

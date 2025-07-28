@@ -659,16 +659,29 @@ export default function SettingsPage() {
                 最大输出长度: {maxTokens}
               </label>
             </div>
-            <input
-              id="maxTokens"
-              type="range"
-              min="256"
-              max="Infinity"
-              step="256"
-              value={maxTokens}
-              onChange={(e) => setMaxTokens(parseInt(e.target.value))}
-              className="w-full"
-            />
+            <div className="flex items-center space-x-2">
+              <input
+                id="maxTokens"
+                type="range"
+                min="256"
+                max="1000000"
+                step="256"
+                value={maxTokens}
+                onChange={(e) => setMaxTokens(parseInt(e.target.value))}
+                className="w-full"
+              />
+              <input
+                type="number"
+                min="256"
+                max="1000000"
+                value={maxTokens}
+                onChange={(e) => setMaxTokens(parseInt(e.target.value) || 65535)}
+                className="w-24 h-9 px-3 py-1 border rounded-md bg-background"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              较大的值可能会导致响应时间增加
+            </p>
           </div>
 
           {/* Top-K 设置 */}
