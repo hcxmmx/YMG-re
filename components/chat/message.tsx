@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
+import rehypeRaw from 'rehype-raw';
 import { Message as MessageType, Character } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Copy, Check, Clock, Hash, BarChart2, Trash2, Edit, RefreshCw, User, ChevronLeft, ChevronRight, GitBranch, AlertCircle, FileText } from "lucide-react";
@@ -75,8 +76,13 @@ function TypingIndicator({
   );
 }
 
-// 引号高亮处理组件
+// 引号高亮处理组件 - 已禁用，直接返回原始内容
 function QuoteHighlight({ children }: { children: React.ReactNode }) {
+  // 直接返回原始内容，不进行任何处理
+  return <>{children}</>;
+  
+  // 以下代码已被禁用
+  /*
   // 检查是否启用引号高亮
   const highlightColor = getQuoteHighlightColor();
   
@@ -106,14 +112,12 @@ function QuoteHighlight({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
   
-  // 检测文本中是否包含花括号，如果包含则不应用引号高亮
-  // 这是为了防止误将花括号内容识别为引号
-  if (textContent.includes('{') || textContent.includes('}')) {
-    return <>{children}</>;
-  }
+  // 不应用任何特殊处理
+  return <>{children}</>;
+  */
   
-  // 解析文本，识别引号和引号内容
-  const segments = parseTextWithQuotes(textContent);
+  // 以下代码不会执行
+  const segments = [];
   
   // 如果没有解析出任何段落，或者只有一个普通文本段落，直接返回原文
   if (segments.length === 0 || (segments.length === 1 && segments[0].type === 'text')) {
@@ -177,38 +181,9 @@ function QuoteHighlight({ children }: { children: React.ReactNode }) {
   return (
     <>
       {groupedSegments.map((group, groupIndex) => {
-        if (group.isQuote) {
-          // 引号组 - 应用高亮样式
-          const content = group.segments.map(seg => seg.content).join('');
-          return (
-            <span 
-              key={`quote-${groupIndex}`}
-              style={{
-                backgroundColor: `${highlightColor}20`,
-                color: highlightColor,
-                boxShadow: `inset 0 -1px 0 ${highlightColor}30`,
-                borderRadius: '0.25rem',
-                padding: '0.125rem 0.25rem',
-                margin: '0 0.0625rem',
-                display: 'inline',
-                whiteSpace: 'pre-wrap',
-                boxDecorationBreak: 'clone',
-                WebkitBoxDecorationBreak: 'clone',
-                // 移除可能导致问题的模糊效果
-                // backdropFilter: 'blur(4px)',
-                // WebkitBackdropFilter: 'blur(4px)',
-                transition: 'all 0.2s ease-in-out',
-              }}
-              className="quote-highlight"
-            >
-              {content}
-            </span>
-          );
-        } else {
-          // 普通文本组 - 不应用样式
+                  // 不再区分引号和普通文本，所有文本都使用同样的渲染方式
           const content = group.segments.map(seg => seg.content).join('');
           return <span key={`text-${groupIndex}`}>{content}</span>;
-        }
       })}
     </>
   );
@@ -438,7 +413,13 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
   if (isSystem) {
     return (
       <div className="py-2 px-4 rounded-lg bg-muted text-muted-foreground text-sm mb-4">
-        <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{message.content}</ReactMarkdown>
+        <ReactMarkdown 
+          remarkPlugins={[remarkGfm, remarkBreaks]} 
+          rehypePlugins={[rehypeRaw]} 
+          components={{}}
+        >
+          {message.content}
+        </ReactMarkdown>
       </div>
     );
   }
@@ -612,44 +593,8 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                         <ReactMarkdown 
                           className="break-words"
                           remarkPlugins={[remarkGfm, remarkBreaks]}
-                          components={enableQuoteHighlight ? {
-                            p: ({node, children, ...props}) => {
-                              return <p {...props}><QuoteHighlight>{children}</QuoteHighlight></p>;
-                            },
-                            li: ({node, children, ...props}) => {
-                              return <li {...props}><QuoteHighlight>{children}</QuoteHighlight></li>;
-                            },
-                            h1: ({node, children, ...props}) => {
-                              return <h1 {...props}><QuoteHighlight>{children}</QuoteHighlight></h1>;
-                            },
-                            h2: ({node, children, ...props}) => {
-                              return <h2 {...props}><QuoteHighlight>{children}</QuoteHighlight></h2>;
-                            },
-                            h3: ({node, children, ...props}) => {
-                              return <h3 {...props}><QuoteHighlight>{children}</QuoteHighlight></h3>;
-                            },
-                            h4: ({node, children, ...props}) => {
-                              return <h4 {...props}><QuoteHighlight>{children}</QuoteHighlight></h4>;
-                            },
-                            h5: ({node, children, ...props}) => {
-                              return <h5 {...props}><QuoteHighlight>{children}</QuoteHighlight></h5>;
-                            },
-                            h6: ({node, children, ...props}) => {
-                              return <h6 {...props}><QuoteHighlight>{children}</QuoteHighlight></h6>;
-                            },
-                            blockquote: ({node, children, ...props}) => {
-                              return <blockquote {...props}><QuoteHighlight>{children}</QuoteHighlight></blockquote>;
-                            },
-                            strong: ({node, children, ...props}) => {
-                              return <strong {...props}><QuoteHighlight>{children}</QuoteHighlight></strong>;
-                            },
-                            em: ({node, children, ...props}) => {
-                              return <em {...props}><QuoteHighlight>{children}</QuoteHighlight></em>;
-                            },
-                            span: ({node, children, ...props}) => {
-                              return <span {...props}><QuoteHighlight>{children}</QuoteHighlight></span>;
-                            }
-                          } : {}}
+                          rehypePlugins={[rehypeRaw]}
+                          components={{}}
                         >
                           {processedContent}
                         </ReactMarkdown>

@@ -182,6 +182,42 @@
   margin-bottom: 0.5em;
 }
 
+/* 添加pre标签和代码块的样式 */
+.chat-message-content pre,
+.chat-message-content code {
+  font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
+  white-space: pre-wrap;
+  background-color: rgba(0, 0, 0, 0.05);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+.chat-message-content pre {
+  padding: 1em;
+  margin: 0.5em 0;
+  overflow: auto;
+}
+
+/* HTML元素样式支持 */
+.chat-message-content details {
+  margin: 1em 0;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  padding: 0.5em;
+}
+
+.chat-message-content summary {
+  cursor: pointer;
+  font-weight: bold;
+  padding: 0.5em 0;
+}
+
+.chat-message-content details[open] summary {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  margin-bottom: 0.5em;
+}
+
 /* 确保Markdown元素的字体大小也能被覆盖 */
 .chat-message-text p,
 .chat-message-text li,
