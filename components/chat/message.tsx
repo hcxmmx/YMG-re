@@ -262,9 +262,11 @@ interface MessageProps {
   character?: Character | null;
   onEdit?: (messageId: string, content: string) => void;
   onRegenerate?: (messageId: string) => void;
+  isGeneratingVariant?: boolean;
+  isRegenerating?: boolean;  // 添加是否正在重新生成标志
 }
 
-export function Message({ message, character, onEdit, onRegenerate }: MessageProps) {
+export function Message({ message, character, onEdit, onRegenerate, isGeneratingVariant, isRegenerating }: MessageProps) {
   const [showRaw, setShowRaw] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -283,6 +285,9 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
     currentPresetId: state.currentPresetId
   }));
   
+  // 判断是否有任何生成过程正在进行
+  const isProcessing = isGeneratingVariant || isRegenerating;
+
   // 分支创建对话框状态
   const [isBranchDialogOpen, setIsBranchDialogOpen] = useState(false);
   const [branchName, setBranchName] = useState("");
@@ -343,7 +348,7 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
   
   // 重新生成回复 - 完全重写
   const handleRegenerate = () => {
-    if (onRegenerate && isAssistant) {
+    if (onRegenerate && isAssistant && !isProcessing) {
       // 清除控制台以便更清晰地跟踪
       console.clear();
       console.log('[重新生成] 开始处理，消息ID:', message.id);
@@ -354,6 +359,8 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
       } catch (error) {
         console.error('[重新生成] 调用失败:', error);
       }
+    } else if (isProcessing) {
+      console.log('[重新生成] 忽略请求：正在处理中');
     }
   };
 
@@ -387,8 +394,13 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
   
   // 切换回复变体 - 完全重写
   const handleSwitchResponse = (direction: 'prev' | 'next') => {
-    // 如果不是AI消息，直接退出
-    if (!isAssistant) return;
+    // 如果不是AI消息或正在处理中，直接退出
+    if (!isAssistant || isProcessing) {
+      console.log('[变体切换] 忽略请求：', 
+        !isAssistant ? '不是AI消息' : 
+        isProcessing ? '正在处理中' : '未知原因');
+      return;
+    }
     
     // 清除控制台以便更清晰地跟踪
     console.clear();
@@ -406,8 +418,14 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
       originalContent: message.content.substring(0, 30) + '...'
     });
 
-    // 如果没有变体，生成新变体
-    if (alternates.length === 0) {
+    // 如果没有变体且点击了左切换按钮，不做任何操作
+    if (alternates.length === 0 && direction === 'prev') {
+      console.log('[变体切换] 没有变体可切换');
+      return;
+    }
+    
+    // 如果没有变体且点击了右切换按钮，生成新变体
+    if (alternates.length === 0 && direction === 'next') {
       console.log('[变体切换] 没有现有变体，生成新变体');
       if (onRegenerate) {
         onRegenerate(`variant:${message.id}`);
@@ -908,9 +926,10 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                   // 立即调用处理函数
                   handleRegenerate();
                 }}
-                className="flex items-center gap-0.5 p-1 rounded hover:bg-muted/30"
-                title="重新生成回复"
+                className={`flex items-center gap-0.5 p-1 rounded hover:bg-muted/30 ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                title={isProcessing ? "正在处理中，请稍候" : "重新生成回复"}
                 data-action="regenerate"
+                disabled={isProcessing}
               >
                 <RefreshCw size={12} />
                 <span className="text-xs">重新生成</span>
@@ -931,9 +950,13 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                     // 立即调用处理函数
                     handleSwitchResponse('prev');
                   }}
-                  className="p-1 rounded hover:bg-muted/30"
-                  title="上一个回复变体"
+                  className={`p-1 rounded hover:bg-muted/30 ${
+                    // 只在处理过程中时禁用
+                    isProcessing ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                  title={isProcessing ? "正在处理中，请稍候" : "上一个回复变体"}
                   data-action="prev-variant"
+                  disabled={isProcessing}
                 >
                   <ChevronLeft size={12} />
                 </button>
@@ -948,9 +971,10 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                     // 立即调用处理函数
                     handleSwitchResponse('next');
                   }}
-                  className="p-1 rounded hover:bg-muted/30"
-                  title="下一个回复变体/生成新变体"
+                  className={`p-1 rounded hover:bg-muted/30 ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  title={isProcessing ? "正在处理中，请稍候" : "下一个回复变体/生成新变体"}
                   data-action="next-variant"
+                  disabled={isProcessing}
                 >
                   <ChevronRight size={12} />
                 </button>

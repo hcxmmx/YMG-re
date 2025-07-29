@@ -1919,6 +1919,8 @@ export default function ChatPage() {
                 message={message}
                 onRegenerate={handleMessageAction}
                 character={message.role === 'assistant' ? currentCharacter : undefined}
+                isGeneratingVariant={isLoading && loadingType === 'variant' && loadingMessageId === message.id}
+                isRegenerating={isLoading && loadingType === 'regenerate' && loadingMessageId === message.id}
               />
               {/* 显示消息特定的加载指示器 */}
               {isMessageLoading && (
