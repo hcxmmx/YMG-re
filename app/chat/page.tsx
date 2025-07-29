@@ -807,6 +807,22 @@ export default function ChatPage() {
                 }
 
                 accumulatedContent += parsed.text;
+                // 使用updateMessage更新消息内容，并添加时间戳用于调试
+                console.log(`[生成变体] 更新流式内容，时间: ${new Date().toISOString()}, 新增内容: "${parsed.text}"`);
+
+                // 当前所有变体（不包括原始内容）
+                const currentStreamingVariants = messageToAddVariant.alternateResponses || [];
+                
+                // 立即更新消息以显示当前累积的内容
+                updateMessage({
+                  ...messageToAddVariant,
+                  content: accumulatedContent, // 实时更新内容
+                  alternateResponses: currentStreamingVariants, // 保持现有变体数组
+                  currentResponseIndex: currentStreamingVariants.length + 1, // 设置索引为当前正在生成的变体
+                  originalContent: messageToAddVariant.originalContent || originalContent, // 保留原始内容
+                  timestamp: new Date(),
+                  responseTime: Date.now() - responseStartTimeRef.current, // 实时响应时间
+                });
               }
             } catch (e) {
               // 解析失败，记录错误但不中断流程

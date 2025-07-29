@@ -836,22 +836,11 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                       // 计算总回复数量（原始回复 + 所有变体）
                       const totalReplies = (message.alternateResponses?.length || 0) + 1;
                       
-                      // 当前索引为0表示显示原始回复
-                      if (currentResponseIndex === 0) {
-                        return (
-                          <>
-                            <span className="bg-blue-100 dark:bg-blue-900 px-1 rounded text-xs">原始</span>
-                            <span>{totalReplies}</span>
-                          </>
-                        );
-                      } 
-                      
-                      // 否则显示当前变体索引
+                      // 显示简单的数字索引格式 (1/N, 2/N, 3/N...)
                       return (
-                        <>
-                          <span className="bg-purple-100 dark:bg-purple-900 px-1 rounded text-xs">变体{currentResponseIndex}</span>
-                          <span>{totalReplies}</span>
-                        </>
+                        <span className="px-1 rounded text-xs">
+                          {currentResponseIndex + 1}/{totalReplies}
+                        </span>
                       );
                     })()}
                   </span>
@@ -928,8 +917,8 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
               </button>
             )}
             
-            {/* 切换回复变体 - 仅对AI消息显示（移除isFirstMessage条件以允许所有AI消息使用变体） */}
-            {isAssistant && (
+            {/* 切换回复变体 - 仅对非第一条AI消息显示 */}
+            {isAssistant && !isFirstMessage && (
               <div className="flex items-center gap-0.5">
                 <button
                   onClick={(e) => {
