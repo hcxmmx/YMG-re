@@ -302,10 +302,9 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
     character.alternateGreetings.length > 0;
     
   // 回复变体相关
-  const alternates = message.alternateResponses || [];
-  const hasAlternateResponses = isAssistant && alternates.length > 0;
+  const hasAlternateResponses = isAssistant && message.alternateResponses && message.alternateResponses.length > 0;
   const currentResponseIndex = message.currentResponseIndex || 0;
-  const responseCount = hasAlternateResponses ? alternates.length + 1 : 1; // +1 表示原始回复
+  const responseCount = hasAlternateResponses ? message.alternateResponses!.length + 1 : 1; // +1 表示原始回复
   
   // 提取错误信息
   const hasError = !!message.errorDetails;
@@ -341,19 +340,12 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
     }
   };
   
-  // 重新生成回复 - 完全重写
+  // 重新生成回复
   const handleRegenerate = () => {
     if (onRegenerate && isAssistant) {
-      // 清除控制台以便更清晰地跟踪
-      console.clear();
-      console.log('[重新生成] 开始处理，消息ID:', message.id);
-      
-      // 直接调用重新生成回调
-      try {
-        onRegenerate(message.id);
-      } catch (error) {
-        console.error('[重新生成] 调用失败:', error);
-      }
+      console.log('调用重新生成回调，消息ID:', message.id);
+      // 确保明确传递消息ID
+      onRegenerate(message.id);
     }
   };
 
@@ -385,109 +377,80 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
     });
   };
   
-  // 切换回复变体 - 完全重写
+  // 切换回复变体
   const handleSwitchResponse = (direction: 'prev' | 'next') => {
-    // 如果不是AI消息，直接退出
     if (!isAssistant) return;
     
-    // 清除控制台以便更清晰地跟踪
-    console.clear();
-    console.log('[变体切换] 开始处理');
-    
-    // 确保我们使用正确的变体数组
-    const alternates = message.alternateResponses || [];
-    
-    // 显示当前状态
-    console.log('[变体切换] 当前状态:', {
-      direction,
-      currentIndex: currentResponseIndex,
-      alternatesLength: alternates.length,
-      messageId: message.id,
-      originalContent: message.content.substring(0, 30) + '...'
+    // 调试日志
+    console.log('切换回复变体:', {
+      direction, 
+      hasAlternateResponses, 
+      currentResponseIndex, 
+      responseCount,
+      messageId: message.id
     });
-
-    // 如果没有变体，生成新变体
-    if (alternates.length === 0) {
-      console.log('[变体切换] 没有现有变体，生成新变体');
+    
+    // 检查是否有变体可切换
+    if (!hasAlternateResponses) {
+      console.log('没有可用变体，尝试生成新变体');
+      // 生成新变体
       if (onRegenerate) {
+        console.log('生成新变体，消息ID:', message.id);
         onRegenerate(`variant:${message.id}`);
       }
       return;
     }
     
-    // 当前是最后一个变体，同时按下一个，则生成新变体
-    if (direction === 'next' && currentResponseIndex >= alternates.length) {
-      console.log('[变体切换] 已是最后变体，生成新变体');
+    // 如果向后切换且已经是最后一个变体
+    if (direction === 'next' && currentResponseIndex === responseCount - 1) {
+      // 生成新变体
       if (onRegenerate) {
+        console.log('已是最后变体，生成新变体，消息ID:', message.id);
         onRegenerate(`variant:${message.id}`);
       }
       return;
     }
     
-    // 获取所有可能的索引值 (0 = 原始回复, 1...n = 变体)
-    const totalVariants = alternates.length + 1;
-    
+    // 计算新的变体索引
     let newIndex: number;
-    
-    // 这里的逻辑调整：
-    // currentResponseIndex = 0 表示显示原始回复
-    // currentResponseIndex = 1...n 表示显示第n个变体
     if (direction === 'prev') {
-      // 向前切换 (当前索引-1，如果小于0则循环到最大值)
-      newIndex = (currentResponseIndex - 1 + totalVariants) % totalVariants;
+      // 循环到最后一个变体
+      newIndex = (currentResponseIndex - 1 + responseCount) % responseCount;
     } else {
-      // 向后切换 (当前索引+1，如果超过最大值则循环到0)
-      newIndex = (currentResponseIndex + 1) % totalVariants;
+      // 切换到下一个变体
+      newIndex = (currentResponseIndex + 1) % responseCount;
     }
     
-    console.log('[变体切换] 计算新索引:', {
-      from: currentResponseIndex,
-      to: newIndex,
-      totalOptions: totalVariants
-    });
+    console.log('切换到变体索引:', newIndex, '当前索引:', currentResponseIndex);
     
-    // 根据索引获取内容
-    let newContent: string;
+    // 直接获取当前变体内容和所有变体内容进行调试
+    const allVariants = message.alternateResponses || [];
+    console.log('所有变体数量:', allVariants.length);
     
-    // 关键修复：明确分离原始内容和变体内容的获取逻辑
+    // 准备内容：如果是索引0则使用原始内容，否则从alternateResponses中获取
+    let newContent = '';
     if (newIndex === 0) {
-      // 索引0表示原始回复
-      newContent = message.originalContent || message.content;
-      console.log('[变体切换] 切换到原始回复:', newContent.substring(0, 30) + '...');
+      newContent = message.content;
+      console.log('使用原始内容作为变体');
     } else {
-      // 索引1+表示变体
-      const variantIndex = newIndex - 1;
-      newContent = alternates[variantIndex];
-      console.log('[变体切换] 切换到变体 #', variantIndex, ':', newContent.substring(0, 30) + '...');
+      if (newIndex - 1 < allVariants.length) {
+        newContent = allVariants[newIndex - 1];
+        console.log('使用变体索引:', newIndex - 1);
+      } else {
+        console.error('变体索引超出范围:', newIndex - 1, '变体数量:', allVariants.length);
+        return;
+      }
     }
     
-    // 记录详细操作
-    console.log('[变体切换] 执行切换操作:', {
-      from: currentResponseIndex,
-      to: newIndex,
-      contentLength: newContent?.length || 0,
-      isOriginalContent: newIndex === 0
-    });
-    
-    // 构建更新对象
-    const updatedMessage = {
-      ...message,
-      content: newContent,
-      currentResponseIndex: newIndex,
-      // 存储原始内容，以便以后能够正确切换回来
-      originalContent: message.originalContent || (currentResponseIndex === 0 ? message.content : message.originalContent)
-    };
-    
-    // 详细记录更新对象
-    console.log('[变体切换] 更新消息对象:', {
-      messageId: updatedMessage.id,
-      newContent: updatedMessage.content.substring(0, 20) + '...',
-      newIndex: updatedMessage.currentResponseIndex,
-      alternatesCount: (updatedMessage.alternateResponses || []).length
-    });
-    
-    // 立即更新消息
-    updateMessage(updatedMessage);
+    // 强制引发界面更新
+    setTimeout(() => {
+      console.log('更新消息内容到变体:', newIndex, '内容长度:', newContent.length);
+      updateMessage({
+        ...message,
+        content: newContent,
+        currentResponseIndex: newIndex
+      });
+    }, 0);
   };
   
   // 打开创建分支对话框
@@ -828,32 +791,10 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                   </span>
                 )}
                 
-                {/* 回复变体指示器 - 彻底重新实现 */}
+                {/* 回复变体指示器 */}
                 {isAssistant && hasAlternateResponses && (
-                  <span className="flex items-center gap-1" title="回复变体">
-                    {/* 计算总回复数（原始回复+所有变体） */}
-                    {(() => {
-                      // 计算总回复数量（原始回复 + 所有变体）
-                      const totalReplies = (message.alternateResponses?.length || 0) + 1;
-                      
-                      // 当前索引为0表示显示原始回复
-                      if (currentResponseIndex === 0) {
-                        return (
-                          <>
-                            <span className="bg-blue-100 dark:bg-blue-900 px-1 rounded text-xs">原始</span>
-                            <span>{totalReplies}</span>
-                          </>
-                        );
-                      } 
-                      
-                      // 否则显示当前变体索引
-                      return (
-                        <>
-                          <span className="bg-purple-100 dark:bg-purple-900 px-1 rounded text-xs">变体{currentResponseIndex}</span>
-                          <span>{totalReplies}</span>
-                        </>
-                      );
-                    })()}
+                  <span className="flex items-center" title="回复变体">
+                    {currentResponseIndex + 1}/{responseCount}
                   </span>
                 )}
               </div>
@@ -909,59 +850,38 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
             {/* 重新生成 - 仅对AI消息显示 */}
             {isAssistant && onRegenerate && (
               <button
-                onClick={(e) => {
-                  // 阻止事件冒泡
-                  e.preventDefault();
-                  e.stopPropagation();
-                  // 标记时间戳以便追踪
-                  const actionTime = Date.now();
-                  console.log(`[UI交互-${actionTime}] 重新生成按钮被点击，消息ID:`, message.id);
-                  // 立即调用处理函数
+                onClick={() => {
+                  console.log('重新生成按钮被点击，消息ID:', message.id);
                   handleRegenerate();
                 }}
-                className="flex items-center gap-0.5 p-1 rounded hover:bg-muted/30"
-                title="重新生成回复"
-                data-action="regenerate"
+                className="flex items-center gap-0.5 p-0.5 rounded hover:bg-muted/30"
+                title="重新生成"
               >
                 <RefreshCw size={12} />
                 <span className="text-xs">重新生成</span>
               </button>
             )}
             
-            {/* 切换回复变体 - 仅对AI消息显示（移除isFirstMessage条件以允许所有AI消息使用变体） */}
-            {isAssistant && (
+            {/* 切换回复变体 - 仅对非第一条的AI消息显示 */}
+            {isAssistant && !isFirstMessage && (
               <div className="flex items-center gap-0.5">
                 <button
-                  onClick={(e) => {
-                    // 阻止事件冒泡
-                    e.preventDefault();
-                    e.stopPropagation();
-                    // 标记时间戳以便追踪
-                    const actionTime = Date.now();
-                    console.log(`[UI交互-${actionTime}] 切换到上一个回复变体，消息ID:`, message.id);
-                    // 立即调用处理函数
+                  onClick={() => {
+                    console.log('切换到上一个回复变体，消息ID:', message.id);
                     handleSwitchResponse('prev');
                   }}
-                  className="p-1 rounded hover:bg-muted/30"
+                  className="p-0.5 rounded hover:bg-muted/30"
                   title="上一个回复变体"
-                  data-action="prev-variant"
                 >
                   <ChevronLeft size={12} />
                 </button>
                 <button
-                  onClick={(e) => {
-                    // 阻止事件冒泡
-                    e.preventDefault();
-                    e.stopPropagation();
-                    // 标记时间戳以便追踪
-                    const actionTime = Date.now();
-                    console.log(`[UI交互-${actionTime}] 切换到下一个回复变体，消息ID:`, message.id);
-                    // 立即调用处理函数
+                  onClick={() => {
+                    console.log('切换到下一个回复变体，消息ID:', message.id);
                     handleSwitchResponse('next');
                   }}
-                  className="p-1 rounded hover:bg-muted/30"
+                  className="p-0.5 rounded hover:bg-muted/30"
                   title="下一个回复变体/生成新变体"
-                  data-action="next-variant"
                 >
                   <ChevronRight size={12} />
                 </button>

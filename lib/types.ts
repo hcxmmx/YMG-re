@@ -19,6 +19,7 @@ export interface Message {
   // 回复变体相关
   alternateResponses?: string[]; // 存储所有备选回复
   currentResponseIndex?: number; // 当前显示的回复索引，0是原始回复
+  originalContent?: string;      // 原始回复内容，用于变体切换时恢复原始回复
   
   // API错误信息
   errorDetails?: {

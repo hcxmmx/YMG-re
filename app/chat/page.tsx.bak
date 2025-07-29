@@ -217,24 +217,15 @@ export default function ChatPage() {
     );
   }
 
-  // 重新生成AI回复 - 完全重写
+  // 重新生成AI回复
   const handleRegenerateMessage = async (messageId: string) => {
-    console.clear(); // 清除控制台便于调试
-    console.log('[重新生成] 开始处理消息:', messageId);
-    
     // 找到需要重新生成的消息
     const messageToRegenerate = currentMessages.find(msg => msg.id === messageId);
-    if (!messageToRegenerate || messageToRegenerate.role !== 'assistant') {
-      console.error('[重新生成] 未找到有效的助手消息:', messageId);
-      return;
-    }
+    if (!messageToRegenerate || messageToRegenerate.role !== 'assistant') return;
 
     // 找到该消息之前的用户消息作为提示
     const messageIndex = currentMessages.findIndex(msg => msg.id === messageId);
-    if (messageIndex <= 0) {
-      console.error('[重新生成] 消息没有前置消息，无法重新生成');
-      return; 
-    }
+    if (messageIndex <= 0) return; // 没有前置消息，无法重新生成
 
     // 获取最近的用户消息
     let userMessageIndex = messageIndex - 1;
@@ -242,16 +233,11 @@ export default function ChatPage() {
       userMessageIndex--;
     }
 
-    if (userMessageIndex < 0) {
-      console.error('[重新生成] 未找到前置用户消息');
-      return; 
-    }
+    if (userMessageIndex < 0) return; // 没有找到前置用户消息
 
     // 保存原始消息的楼层号，确保重新生成时保持相同的编号
     const originalMessageNumber = messageToRegenerate.messageNumber;
-    
-    console.log('[重新生成] 清除所有变体并准备重新生成消息');
-    
+
     // 设置加载状态
     setIsLoading(true);
     setLoadingType('regenerate');
@@ -507,15 +493,12 @@ export default function ChatPage() {
             errorDetails: errorDetails
           });
         } else {
-          // 更新最终消息，包含响应时间，清除所有变体
+          // 更新最终消息，包含响应时间
           updateMessage({
             ...messageToRegenerate,
             content: accumulatedContent,
             timestamp: new Date(),
             responseTime: responseTime,
-            alternateResponses: undefined, // 清除所有变体
-            currentResponseIndex: 0, // 重置索引
-            originalContent: undefined, // 清除原始内容，因为这个就是新的原始内容
             messageNumber: originalMessageNumber, // 保留原始楼层号
             errorDetails: undefined // 清除之前可能存在的错误信息
           });
@@ -547,15 +530,12 @@ export default function ChatPage() {
           const data = await response.json();
           const responseTime = Date.now() - responseStartTimeRef.current;
 
-          // 更新消息，清除所有变体
+          // 更新消息
           updateMessage({
             ...messageToRegenerate,
             content: data.text,
             timestamp: new Date(),
             responseTime: responseTime,
-            alternateResponses: undefined, // 清除所有变体
-            currentResponseIndex: 0, // 重置索引
-            originalContent: undefined, // 清除原始内容，因为这个就是新的原始内容
             messageNumber: originalMessageNumber, // 保留原始楼层号
             errorDetails: undefined // 清除之前可能存在的错误信息
           });
@@ -577,15 +557,12 @@ export default function ChatPage() {
       // 提取并格式化错误信息
       const errorDetails = await extractErrorDetails(error);
       
-      // 更新为错误消息，并清除所有变体
+      // 更新为错误消息
       updateMessage({
         ...messageToRegenerate,
         content: "重新生成失败。",
         timestamp: new Date(),
         errorDetails: errorDetails,
-        alternateResponses: undefined, // 清除所有变体
-        currentResponseIndex: 0, // 重置索引
-        originalContent: undefined, // 清除原始内容
         messageNumber: originalMessageNumber // 保留原始楼层号
       });
     } finally {
@@ -859,32 +836,23 @@ export default function ChatPage() {
             errorDetails: errorDetails
           });
         } else {
-          // 完全重新实现变体生成逻辑
-          console.clear(); // 清除控制台便于调试
+          // 将原始内容和现有变体添加到变体数组中
+          const updatedAlternates = [originalContent, ...currentAlternates]; // 先把原始内容和现有变体组合
           
-          // 当前所有变体（不包括原始内容）
-          const currentVariants = messageToAddVariant.alternateResponses || [];
-          
-          // 创建新的变体数组（保存新生成的内容）
-          const newVariants = [...currentVariants, accumulatedContent];
-          
-          // 详细调试日志
-          console.log('[变体生成] 完成变体生成:', {
+          // 调试日志
+          console.log('[生成变体] 变体状态:', {
             originalContent: originalContent.substring(0, 30) + '...',
-            existingVariants: currentVariants.length,
             newContent: accumulatedContent.substring(0, 30) + '...',
-            totalVariantsAfter: newVariants.length
+            variantsCount: updatedAlternates.length,
+            newIndex: updatedAlternates.length // 这个索引将指向新内容
           });
           
-          // 在生成变体后，我们需要显示新生成的变体内容
+          // 更新消息，将新生成的内容设为当前显示内容，并记录原始内容和现有变体
           updateMessage({
             ...messageToAddVariant,
-            // 将内容设置为新生成的变体内容，而不是原始内容
-            content: accumulatedContent, // 显示新生成的变体内容
-            alternateResponses: newVariants, // 保存所有变体
-            currentResponseIndex: newVariants.length, // 设置索引为新变体的位置
-            // 如果是第一个变体，保存原始内容
-            originalContent: messageToAddVariant.originalContent || originalContent,
+            content: accumulatedContent, // 显示新生成的内容
+            alternateResponses: updatedAlternates, // 将原始内容和现有变体保存
+            currentResponseIndex: updatedAlternates.length, // 索引为变体数组长度，指向新内容
             timestamp: new Date(),
             responseTime: responseTime,
             errorDetails: undefined // 清除可能存在的错误信息
@@ -918,32 +886,23 @@ export default function ChatPage() {
           const data = await response.json();
           const responseTime = Date.now() - responseStartTimeRef.current;
 
-          // 完全重新实现变体生成逻辑 (非流式版本)
-          console.clear(); // 清除控制台便于调试
+          // 将原始内容和现有变体添加到变体数组中
+          const updatedAlternates = [originalContent, ...currentAlternates]; // 先把原始内容和现有变体组合
           
-          // 当前所有变体（不包括原始内容）
-          const currentVariants = messageToAddVariant.alternateResponses || [];
-          
-          // 创建新的变体数组（直接追加新变体）
-          const newVariants = [...currentVariants, data.text];
-          
-          // 详细调试日志
-          console.log('[变体生成-非流式] 完成变体生成:', {
+          // 调试日志
+          console.log('[生成变体-非流式] 变体状态:', {
             originalContent: originalContent.substring(0, 30) + '...',
-            existingVariants: currentVariants.length,
             newContent: data.text.substring(0, 30) + '...',
-            totalVariantsAfter: newVariants.length
+            variantsCount: updatedAlternates.length,
+            newIndex: updatedAlternates.length // 这个索引将指向新内容
           });
           
-          // 在生成变体后，显示新生成的变体内容
+          // 更新消息，将新生成的内容设为当前显示内容，并记录原始内容和现有变体
           updateMessage({
             ...messageToAddVariant,
-            // 将内容设置为新生成的变体内容，而不是原始内容
-            content: data.text, // 显示新生成的变体内容
-            alternateResponses: newVariants, // 保存所有变体
-            currentResponseIndex: newVariants.length, // 设置索引为新变体的位置
-            // 如果是第一个变体，保存原始内容
-            originalContent: messageToAddVariant.originalContent || originalContent,
+            content: data.text, // 显示新生成的内容
+            alternateResponses: updatedAlternates, // 将原始内容和现有变体保存
+            currentResponseIndex: updatedAlternates.length, // 索引为变体数组长度，指向新内容
             timestamp: new Date(),
             responseTime: responseTime,
             errorDetails: undefined // 清除可能存在的错误信息
