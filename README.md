@@ -1,7 +1,7 @@
 # 云边有个妙妙馆 - AI角色扮演平台
 
 ![版本](https://img.shields.io/badge/版本-1.0.0-blue.svg)
-![许可证](https://img.shields.io/badge/许可证-MIT-green.svg)
+![许可证](https://img.shields.io/badge/许可证-AGPL--3.0-green.svg)
 
 这是一款基于Gemini API的AI对话平台，提供高度自定义的角色扮演功能。用户可以创建和管理自己的AI角色，定制提示词和回复风格，支持导入导出主流角色卡格式。适合用于创意写作、角色扮演和AI助手等多种场景。
 
@@ -88,7 +88,7 @@
 
 ## 📄 许可
 
-MIT
+GNU Affero General Public License v3.0 (AGPL-3.0)
 
 ---
 
