@@ -651,7 +651,10 @@ export default function ChatPage() {
       }
 
       // 构建请求消息历史（不包含当前消息和之后的消息）
-      const requestMessagesOriginal = currentMessages.slice(0, messageIndex);
+      // 重要：确保只使用到用户提问的消息，不包括当前AI回复
+      const requestMessagesOriginal = currentMessages.slice(0, userMessageIndex + 1);
+      
+      console.log(`[生成变体] 消息历史构建: 从总共${currentMessages.length}条消息中选取${requestMessagesOriginal.length}条，截止到用户提问`);
       
       // 使用trimMessageHistory裁剪消息历史
       const requestMessages = await trimMessageHistory(
