@@ -154,12 +154,17 @@
   }
 }
 
-/* 引号高亮样式 - 只保留悬停效果 */
+/* 引号高亮样式 */
+.quote-highlight {
+  position: relative;
+  z-index: 1;
+}
+
+/* 仅在悬停时添加轻微的模糊效果 */
 .quote-highlight:hover {
   filter: brightness(1.1);
-  /* 移除模糊效果，防止文本渲染问题 */
-  /* backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px); */
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
 } 
 
 /* 聊天消息字体大小 */

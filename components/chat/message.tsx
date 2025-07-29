@@ -21,58 +21,73 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { replaceMacros } from "@/lib/macroUtils";
-import { parseTextWithQuotes, isQuoteHighlightEnabled, getQuoteHighlightColor, TextSegment } from "@/lib/quoteUtils";
+import { parseTextWithQuotes, isQuoteHighlightEnabled, getQuoteHighlightColor, TextSegment, highlightQuotes } from "@/lib/quoteUtils";
 
-// 添加一个打字动画指示器组件
-function TypingIndicator({ 
-  character,
-  loadingType = 'new' 
-}: { 
-  character?: Character | null;
-  loadingType?: 'new' | 'regenerate' | 'variant'; // 加载类型：新消息、重新生成、变体生成
+// 新的增强版引号高亮组件
+function EnhancedQuoteHighlight({ children, enableHighlight = true }: { 
+  children: React.ReactNode; 
+  enableHighlight?: boolean;
 }) {
-  // 根据不同的加载类型显示不同的文本
-  const loadingText = loadingType === 'regenerate' 
-    ? "正在重新生成回复..." 
-    : loadingType === 'variant'
-      ? "正在生成回复变体..."
-      : "正在回复...";
+  // 如果未启用高亮或没有内容，直接返回原始内容
+  if (!enableHighlight || !children) {
+    return <>{children}</>;
+  }
+  
+  // 只处理字符串内容
+  if (typeof children !== 'string') {
+    return <>{children}</>;
+  }
 
+  // 获取高亮颜色
+  const highlightColor = getQuoteHighlightColor();
+  
+  // 特殊字符，可能会导致误判，跳过包含这些字符的文本
+  if (children.includes('{') || children.includes('}') || 
+      children.includes('<') || children.includes('>') ||
+      children.includes('`') || children.includes('\\')) {
+    return <>{children}</>;
+  }
+  
+  // 使用highlightQuotes函数处理文本
+  const parts = highlightQuotes(children, highlightColor);
+  
+  // 如果没有处理结果或只是一个字符串，直接返回原始内容
+  if (!parts || typeof parts === 'string') {
+    return <>{children}</>;
+  }
+  
+  // 渲染处理后的内容
   return (
-    <div className="mb-6 group">
-      <div className="flex gap-3 justify-start">
-        {/* 角色头像 */}
-        <div className="flex flex-col items-center gap-1">
-          <div className="h-8 w-8 rounded-full overflow-hidden bg-muted flex-shrink-0">
-            {character && character.avatar ? (
-              <Image
-                src={character.avatar}
-                alt={character.name || "AI"}
-                width={32}
-                height={32}
-                className="object-cover w-full h-full"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary">
-                {character?.name ? character.name.charAt(0).toUpperCase() : "AI"}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 正在输入的动画指示器 */}
-        <div className="flex flex-col max-w-[85%]">
-          <div className="px-4 py-3 rounded-lg bg-muted inline-flex items-center">
-            <div className="flex space-x-1">
-              <div className="w-2 h-2 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "0ms" }}></div>
-              <div className="w-2 h-2 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "200ms" }}></div>
-              <div className="w-2 h-2 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "400ms" }}></div>
-            </div>
-            <span className="ml-3 text-sm text-muted-foreground">{loadingText}</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <>
+      {parts.map((part, index) => {
+        if (typeof part === 'string') {
+          return <span key={index}>{part}</span>;
+        } else if (part.type === 'quote') {
+          return (
+            <span 
+              key={index}
+              className="quote-highlight"
+              style={{
+                backgroundColor: `${highlightColor}20`,
+                color: highlightColor,
+                boxShadow: `inset 0 -1px 0 ${highlightColor}30`,
+                borderRadius: '0.25rem',
+                padding: '0.125rem 0.25rem',
+                margin: '0 0.0625rem',
+                display: 'inline',
+                whiteSpace: 'pre-wrap',
+                boxDecorationBreak: 'clone',
+                WebkitBoxDecorationBreak: 'clone',
+                transition: 'all 0.2s ease-in-out',
+              }}
+            >
+              {part.content}
+            </span>
+          );
+        }
+        return null;
+      })}
+    </>
   );
 }
 
@@ -186,6 +201,59 @@ function QuoteHighlight({ children }: { children: React.ReactNode }) {
           return <span key={`text-${groupIndex}`}>{content}</span>;
       })}
     </>
+  );
+}
+
+// 添加一个打字动画指示器组件
+function TypingIndicator({ 
+  character,
+  loadingType = 'new' 
+}: { 
+  character?: Character | null;
+  loadingType?: 'new' | 'regenerate' | 'variant'; // 加载类型：新消息、重新生成、变体生成
+}) {
+  // 根据不同的加载类型显示不同的文本
+  const loadingText = loadingType === 'regenerate' 
+    ? "正在重新生成回复..." 
+    : loadingType === 'variant'
+      ? "正在生成回复变体..."
+      : "正在回复...";
+
+  return (
+    <div className="mb-6 group">
+      <div className="flex gap-3 justify-start">
+        {/* 角色头像 */}
+        <div className="flex flex-col items-center gap-1">
+          <div className="h-8 w-8 rounded-full overflow-hidden bg-muted flex-shrink-0">
+            {character && character.avatar ? (
+              <Image
+                src={character.avatar}
+                alt={character.name || "AI"}
+                width={32}
+                height={32}
+                className="object-cover w-full h-full"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary">
+                {character?.name ? character.name.charAt(0).toUpperCase() : "AI"}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 正在输入的动画指示器 */}
+        <div className="flex flex-col max-w-[85%]">
+          <div className="px-4 py-3 rounded-lg bg-muted inline-flex items-center">
+            <div className="flex space-x-1">
+              <div className="w-2 h-2 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "0ms" }}></div>
+              <div className="w-2 h-2 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "200ms" }}></div>
+              <div className="w-2 h-2 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "400ms" }}></div>
+            </div>
+            <span className="ml-3 text-sm text-muted-foreground">{loadingText}</span>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -416,7 +484,24 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
         <ReactMarkdown 
           remarkPlugins={[remarkGfm, remarkBreaks]} 
           rehypePlugins={[rehypeRaw]} 
-          components={{}}
+          components={enableQuoteHighlight ? {
+            // 为系统消息应用引号高亮
+            p: ({node, children, ...props}) => (
+              <p {...props}><EnhancedQuoteHighlight enableHighlight={enableQuoteHighlight}>{children}</EnhancedQuoteHighlight></p>
+            ),
+            li: ({node, children, ...props}) => (
+              <li {...props}><EnhancedQuoteHighlight enableHighlight={enableQuoteHighlight}>{children}</EnhancedQuoteHighlight></li>
+            ),
+            strong: ({node, children, ...props}) => (
+              <strong {...props}><EnhancedQuoteHighlight enableHighlight={enableQuoteHighlight}>{children}</EnhancedQuoteHighlight></strong>
+            ),
+            em: ({node, children, ...props}) => (
+              <em {...props}><EnhancedQuoteHighlight enableHighlight={enableQuoteHighlight}>{children}</EnhancedQuoteHighlight></em>
+            ),
+            span: ({node, children, ...props}) => (
+              <span {...props}><EnhancedQuoteHighlight enableHighlight={enableQuoteHighlight}>{children}</EnhancedQuoteHighlight></span>
+            )
+          } : {}}
         >
           {message.content}
         </ReactMarkdown>
@@ -594,7 +679,24 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                           className="break-words"
                           remarkPlugins={[remarkGfm, remarkBreaks]}
                           rehypePlugins={[rehypeRaw]}
-                          components={{}}
+                          components={enableQuoteHighlight ? {
+                            // 为各种文本元素应用引号高亮
+                            p: ({node, children, ...props}) => (
+                              <p {...props}><EnhancedQuoteHighlight enableHighlight={enableQuoteHighlight}>{children}</EnhancedQuoteHighlight></p>
+                            ),
+                            li: ({node, children, ...props}) => (
+                              <li {...props}><EnhancedQuoteHighlight enableHighlight={enableQuoteHighlight}>{children}</EnhancedQuoteHighlight></li>
+                            ),
+                            strong: ({node, children, ...props}) => (
+                              <strong {...props}><EnhancedQuoteHighlight enableHighlight={enableQuoteHighlight}>{children}</EnhancedQuoteHighlight></strong>
+                            ),
+                            em: ({node, children, ...props}) => (
+                              <em {...props}><EnhancedQuoteHighlight enableHighlight={enableQuoteHighlight}>{children}</EnhancedQuoteHighlight></em>
+                            ),
+                            span: ({node, children, ...props}) => (
+                              <span {...props}><EnhancedQuoteHighlight enableHighlight={enableQuoteHighlight}>{children}</EnhancedQuoteHighlight></span>
+                            )
+                          } : {}}
                         >
                           {processedContent}
                         </ReactMarkdown>

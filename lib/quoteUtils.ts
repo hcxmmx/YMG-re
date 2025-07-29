@@ -8,15 +8,15 @@ const QUOTES = {
   // 英文直引号
   STRAIGHT_DOUBLE_QUOTE: '"', // U+0022
   // 英文弯引号（左右）
-  LEFT_DOUBLE_QUOTE: '"', // U+201C
-  RIGHT_DOUBLE_QUOTE: '"', // U+201D
+  LEFT_DOUBLE_QUOTE: '“', // U+201C
+  RIGHT_DOUBLE_QUOTE: '”', // U+201D
   // 中文弯引号（左右）
   CHINESE_LEFT_DOUBLE_QUOTE: '“', // U+201C
   CHINESE_RIGHT_DOUBLE_QUOTE: '”', // U+201D
   // 英文单引号
   STRAIGHT_SINGLE_QUOTE: "'", // U+0027
-  LEFT_SINGLE_QUOTE: "'", // U+2018
-  RIGHT_SINGLE_QUOTE: "'", // U+2019
+  LEFT_SINGLE_QUOTE: "‘", // U+2018
+  RIGHT_SINGLE_QUOTE: "’", // U+2019
   // 中文单引号
   CHINESE_LEFT_SINGLE_QUOTE: "‘", // U+2018
   CHINESE_RIGHT_SINGLE_QUOTE: "’", // U+2019
@@ -101,9 +101,6 @@ export const parseTextWithQuotes = (text: string): TextSegment[] => {
   let openQuote: string | null = null;
   let expectedCloseQuote: string | null = null;
   
-  // 调试输出
-  console.log("解析文本:", text);
-  
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
     
@@ -147,9 +144,6 @@ export const parseTextWithQuotes = (text: string): TextSegment[] => {
     });
   }
   
-  // 调试输出
-  console.log("解析结果:", segments);
-  
   return segments;
 };
 
@@ -169,4 +163,50 @@ export const isQuoteHighlightEnabled = (): boolean => {
 export const getQuoteHighlightColor = (): string => {
   if (typeof localStorage === 'undefined') return '#8b5cf6'; // 默认紫色
   return localStorage.getItem('quoteHighlightColor') || '#8b5cf6';
-}; 
+};
+
+/**
+ * 处理文本内容，高亮所有类型的引号
+ * @param text 要处理的文本内容
+ * @param color 高亮颜色
+ * @returns 处理后的React元素数组
+ */
+export function highlightQuotes(text: string, color: string = '#8b5cf6') {
+  if (!text) return null;
+  
+  // 匹配所有类型的引号对
+  // 单引号: '...' '...' '...'
+  // 双引号: "..." "..." "..." 
+  const quoteRegex = /(["“”][^"“”]+["“”])|(['‘’][^'‘’]+['‘’])/g;
+  
+  // 特殊字符，可能会导致误判，跳过包含这些字符的文本
+  if (text.includes('{') || text.includes('}')) {
+    return text;
+  }
+  
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+  
+  while ((match = quoteRegex.exec(text)) !== null) {
+    // 添加引号前的普通文本
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+    
+    // 添加引号内容（带高亮）
+    parts.push({
+      type: 'quote',
+      content: match[0]
+    });
+    
+    lastIndex = match.index + match[0].length;
+  }
+  
+  // 添加剩余的普通文本
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+  
+  return parts;
+} 
