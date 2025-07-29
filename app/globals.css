@@ -157,8 +157,9 @@
 /* 引号高亮样式 - 只保留悬停效果 */
 .quote-highlight:hover {
   filter: brightness(1.1);
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
+  /* 移除模糊效果，防止文本渲染问题 */
+  /* backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px); */
 } 
 
 /* 聊天消息字体大小 */
@@ -172,6 +173,13 @@
 .chat-message-content {
   font-size: var(--chat-font-size);
   font-family: inherit !important;
+  white-space: pre-line; /* 保留换行符 */
+}
+
+/* 确保ReactMarkdown中的换行符正确显示 */
+.chat-message-content p {
+  white-space: pre-line;
+  margin-bottom: 0.5em;
 }
 
 /* 确保Markdown元素的字体大小也能被覆盖 */

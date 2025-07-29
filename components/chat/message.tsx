@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import { Message as MessageType, Character } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Copy, Check, Clock, Hash, BarChart2, Trash2, Edit, RefreshCw, User, ChevronLeft, ChevronRight, GitBranch, AlertCircle, FileText } from "lucide-react";
@@ -104,6 +106,12 @@ function QuoteHighlight({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
   
+  // 检测文本中是否包含花括号，如果包含则不应用引号高亮
+  // 这是为了防止误将花括号内容识别为引号
+  if (textContent.includes('{') || textContent.includes('}')) {
+    return <>{children}</>;
+  }
+  
   // 解析文本，识别引号和引号内容
   const segments = parseTextWithQuotes(textContent);
   
@@ -186,8 +194,9 @@ function QuoteHighlight({ children }: { children: React.ReactNode }) {
                 whiteSpace: 'pre-wrap',
                 boxDecorationBreak: 'clone',
                 WebkitBoxDecorationBreak: 'clone',
-                backdropFilter: 'blur(4px)',
-                WebkitBackdropFilter: 'blur(4px)',
+                // 移除可能导致问题的模糊效果
+                // backdropFilter: 'blur(4px)',
+                // WebkitBackdropFilter: 'blur(4px)',
                 transition: 'all 0.2s ease-in-out',
               }}
               className="quote-highlight"
@@ -429,7 +438,7 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
   if (isSystem) {
     return (
       <div className="py-2 px-4 rounded-lg bg-muted text-muted-foreground text-sm mb-4">
-        <ReactMarkdown>{message.content}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{message.content}</ReactMarkdown>
       </div>
     );
   }
@@ -553,7 +562,8 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
             {/* 渲染文本内容 */}
             <div className={cn(
               "prose dark:prose-invert max-w-none chat-message-text",
-              isUser ? "prose-primary" : ""
+              isUser ? "prose-primary" : "",
+              "whitespace-pre-line" // 添加这个类来保留换行符
             )}>
               {isEditing ? (
                 <div className="flex flex-col gap-2">
@@ -601,6 +611,7 @@ export function Message({ message, character, onEdit, onRegenerate }: MessagePro
                       <div className="chat-message-content">
                         <ReactMarkdown 
                           className="break-words"
+                          remarkPlugins={[remarkGfm, remarkBreaks]}
                           components={enableQuoteHighlight ? {
                             p: ({node, children, ...props}) => {
                               return <p {...props}><QuoteHighlight>{children}</QuoteHighlight></p>;
