@@ -24,44 +24,67 @@ export class GeminiService {
   constructor(apiKey: string) {
     this.apiKey = apiKey;
     this.genAI = new GoogleGenAI({ apiKey });
+    // 在构造时不设置activeKeyId，让getActiveApiKey方法来处理
+    this.activeKeyId = null;
   }
   
   // 获取活动API密钥并更新genAI实例
   private async getActiveApiKey(): Promise<string | undefined> {
+    // 检查是否在客户端环境（浏览器）
+    if (typeof window === 'undefined') {
+      // 在服务器端，直接返回当前API密钥，不尝试访问IndexedDB
+      console.log("服务器端环境，使用提供的API密钥");
+      this.activeKeyId = null;
+      return this.apiKey;
+    }
+
     try {
       // 获取当前活动API密钥
       const activeKey = await apiKeyStorage.getActiveApiKey();
       
-      if (activeKey && activeKey.key !== this.apiKey) {
-        // 如果密钥发生变化，重新创建genAI实例
-        this.apiKey = activeKey.key;
+      if (activeKey) {
+        // 设置当前活动密钥ID，这是关键！
         this.activeKeyId = activeKey.id;
-        this.genAI = new GoogleGenAI({ apiKey: activeKey.key });
         
-        console.log(`已切换到API密钥: ${activeKey.name} (ID: ${activeKey.id})`);
-        return activeKey.key;
-      } else if (activeKey) {
-        // 如果密钥未变化，但需要记录当前密钥ID
-        this.activeKeyId = activeKey.id;
+        if (activeKey.key !== this.apiKey) {
+          // 如果密钥发生变化，重新创建genAI实例
+          this.apiKey = activeKey.key;
+          this.genAI = new GoogleGenAI({ apiKey: activeKey.key });
+          
+          console.log(`已切换到API密钥: ${activeKey.name} (ID: ${activeKey.id})`);
+        }
         return activeKey.key;
       }
       
-      // 如果没有可用密钥，继续使用当前密钥
+      // 如果没有可用密钥，继续使用当前密钥，但清除activeKeyId
+      this.activeKeyId = null;
       return this.apiKey;
     } catch (error) {
       console.error("获取API密钥失败，使用默认密钥:", error);
+      this.activeKeyId = null;
       return this.apiKey;
     }
   }
   
   // 记录当前密钥的使用
   private async incrementApiKeyUsage() {
+    console.log(`尝试增加API密钥使用次数，activeKeyId: ${this.activeKeyId}`);
+    
+    // 检查是否在客户端环境
+    if (typeof window === 'undefined') {
+      console.log("服务器端环境，跳过API密钥使用次数统计");
+      return;
+    }
+    
     if (this.activeKeyId) {
       try {
         await apiKeyStorage.incrementApiKeyUsage(this.activeKeyId);
+        console.log(`成功增加API密钥 ${this.activeKeyId} 的使用次数`);
       } catch (error) {
         console.error("增加API密钥使用次数失败:", error);
       }
+    } else {
+      console.warn("activeKeyId为空，无法增加使用次数");
     }
   }
 

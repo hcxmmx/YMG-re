@@ -1,25 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GeminiService, GeminiParams } from "@/lib/gemini";
 import type { Message } from "@/lib/types";
-import { apiKeyStorage } from "@/lib/storage";
 
 // 用于存储活动请求的AbortController
 const activeRequests = new Map<string, AbortController>();
 
 // 获取活动API密钥或回退到提供的密钥
 async function getApiKey(providedKey: string): Promise<string> {
-  try {
-    // 尝试从存储中获取活动密钥
-    const activeKey = await apiKeyStorage.getActiveApiKey();
-    if (activeKey) {
-      console.log(`使用轮询API密钥: ${activeKey.name} (ID: ${activeKey.id})`);
-      return activeKey.key;
-    }
-  } catch (error) {
-    console.warn("获取轮询API密钥失败，使用提供的密钥", error);
-  }
-  
-  // 如果没有可用的轮询密钥，使用提供的密钥
+  // 在服务器端，我们无法访问IndexedDB，所以直接使用提供的密钥
+  // API密钥轮询逻辑应该在客户端处理
   return providedKey;
 }
 
@@ -97,6 +86,7 @@ export async function POST(req: NextRequest) {
 
     // 获取API密钥（优先使用轮询系统的密钥）
     const effectiveApiKey = await getApiKey(apiKey);
+    // 创建GeminiService实例，它会在调用时自动获取和设置正确的activeKeyId
     const geminiService = new GeminiService(effectiveApiKey);
     
     // 如果需要流式响应
