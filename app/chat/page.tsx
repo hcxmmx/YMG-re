@@ -610,30 +610,13 @@ export default function ChatPage() {
       // 调用API获取回复
       if (settings.enableStreaming) {
         // 流式响应处理
-        let apiResponse: Response;
-        try {
-          apiResponse = await fetch("/api/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(params),
-          });
+        const apiResponse = await callChatApi(params);
 
-          if (!apiResponse.ok) {
-            // 提取API错误详情
-            const errorDetails = await extractErrorDetails(null, apiResponse);
-            
-            // 保持原始内容，但添加错误信息
-            updateMessage({
-              ...messageToAddVariant,
-              content: originalContent,
-              timestamp: new Date(),
-              errorDetails: errorDetails
-            });
-            return;
-          }
-        } catch (fetchError) {
-          // 处理网络错误
-          const errorDetails = await extractErrorDetails(fetchError);
+        if (!apiResponse.ok) {
+          // 提取API错误详情
+          const errorDetails = await extractErrorDetails(null, apiResponse);
+          
+          // 保持原始内容，但添加错误信息
           updateMessage({
             ...messageToAddVariant,
             content: originalContent,
@@ -644,122 +627,36 @@ export default function ChatPage() {
         }
 
         console.log("[生成变体] 流式响应开始接收");
-        const reader = apiResponse.body?.getReader();
-        if (!reader) throw new Error("流式响应读取失败");
 
         // 累积的响应内容
         let accumulatedContent = "";
-        let decoder = new TextDecoder();
-        let buffer = ""; // 用于存储不完整的数据块
-        let chunkCount = 0;
-        let dataChunkCount = 0;
         let firstChunkReceived = false;
 
         // 处理流式数据
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            console.log("[生成变体] 流式响应接收完成");
-            break;
+        for await (const chunk of handleStreamResponse(apiResponse)) {
+          // 记录第一个内容块的时间
+          if (!firstChunkReceived) {
+            firstChunkReceived = true;
+            const firstChunkTime = Date.now() - responseStartTimeRef.current;
+            console.log(`[生成变体] 首个响应块接收时间: ${firstChunkTime}ms`);
           }
 
-          // 解码为文本
-          const text = decoder.decode(value, { stream: true });
-          chunkCount++;
-          console.log(`[生成变体] 接收到第 ${chunkCount} 个原始数据块，长度: ${text.length}`);
-          buffer += text; // 将新数据添加到缓冲区
+          accumulatedContent += chunk;
+          console.log(`[生成变体] 更新流式内容，时间: ${new Date().toISOString()}, 新增内容: "${chunk}"`);
 
-          // 尝试按SSE格式分割数据
-          const lines = buffer.split("\n\n");
-          buffer = lines.pop() || ""; // 保留最后一个可能不完整的块
-
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            if (!line.startsWith("data: ")) continue;
-
-            const data = line.replace("data: ", "");
-            if (data === "[DONE]") continue;
-
-            try {
-              dataChunkCount++;
-              const parsed = JSON.parse(data);
-              
-              // 处理错误
-              if (parsed.error) {
-                console.error("[生成变体] 流式响应错误:", parsed.error);
-                
-                // 提取错误详情
-                const errorDetails: ErrorDetails = {
-                  code: parsed.code || 400,
-                  message: parsed.error || "API响应错误",
-                  details: parsed.details || undefined,
-                  timestamp: new Date().toISOString()
-                };
-                
-                // 恢复原始内容，添加错误信息
-                updateMessage({
-                  ...messageToAddVariant,
-                  content: originalContent,
-                  alternateResponses: currentAlternates,
-                  currentResponseIndex: 0, // 重置为原始内容
-                  timestamp: new Date(),
-                  errorDetails: errorDetails
-                });
-                return;
-              }
-              
-              if (parsed.text !== undefined) {
-                // 记录第一个内容块的时间
-                if (!firstChunkReceived) {
-                  firstChunkReceived = true;
-                  const firstChunkTime = Date.now() - responseStartTimeRef.current;
-                  console.log(`[生成变体] 首个响应块接收时间: ${firstChunkTime}ms`);
-                }
-
-                accumulatedContent += parsed.text;
-                // 使用updateMessage更新消息内容，并添加时间戳用于调试
-                console.log(`[生成变体] 更新流式内容，时间: ${new Date().toISOString()}, 新增内容: "${parsed.text}"`);
-
-                // 当前所有变体（不包括原始内容）
-                const currentStreamingVariants = messageToAddVariant.alternateResponses || [];
-                
-                // 立即更新消息以显示当前累积的内容
-                updateMessage({
-                  ...messageToAddVariant,
-                  content: accumulatedContent, // 实时更新内容
-                  alternateResponses: currentStreamingVariants, // 保持现有变体数组
-                  currentResponseIndex: currentStreamingVariants.length + 1, // 设置索引为当前正在生成的变体
-                  originalContent: messageToAddVariant.originalContent || originalContent, // 保留原始内容
-                  timestamp: new Date(),
-                  responseTime: Date.now() - responseStartTimeRef.current, // 实时响应时间
-                });
-              }
-            } catch (e) {
-              // 解析失败，记录错误但不中断流程
-              console.error("[生成变体] 解析流式数据失败:", e, "原始数据:", data);
-            }
-          }
-        }
-
-        // 处理缓冲区中可能剩余的数据
-        if (buffer.trim()) {
-          console.log("[生成变体] 处理剩余缓冲区数据");
-          const lines = buffer.split("\n\n");
-          for (const line of lines) {
-            if (!line.trim() || !line.startsWith("data: ")) continue;
-
-            const data = line.replace("data: ", "");
-            if (data === "[DONE]") continue;
-
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.text !== undefined) {
-                accumulatedContent += parsed.text;
-              }
-            } catch (e) {
-              console.error("[生成变体] 解析剩余流式数据失败:", e);
-            }
-          }
+          // 当前所有变体（不包括原始内容）
+          const currentStreamingVariants = messageToAddVariant.alternateResponses || [];
+          
+          // 立即更新消息以显示当前累积的内容
+          updateMessage({
+            ...messageToAddVariant,
+            content: accumulatedContent, // 实时更新内容
+            alternateResponses: currentStreamingVariants, // 保持现有变体数组
+            currentResponseIndex: currentStreamingVariants.length + 1, // 设置索引为当前正在生成的变体
+            originalContent: messageToAddVariant.originalContent || originalContent, // 保留原始内容
+            timestamp: new Date(),
+            responseTime: Date.now() - responseStartTimeRef.current, // 实时响应时间
+          });
         }
 
         // 计算总响应时间
@@ -785,20 +682,31 @@ export default function ChatPage() {
             errorDetails: errorDetails
           });
         } else {
-          // 完全重新实现变体生成逻辑
-          console.clear(); // 清除控制台便于调试
+          // 获取当前玩家和角色名称
+          const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
+          const playerName = currentPlayer?.name || "玩家";
+          const characterName = currentCharacter?.name || "AI";
+          
+          // 应用正则表达式处理AI响应
+          let processedResponse = accumulatedContent;
+          try {
+            const { applyRegexToMessage } = useRegexStore.getState();
+            processedResponse = await applyRegexToMessage(accumulatedContent, playerName, characterName, 0, 2, currentCharacter?.id);
+          } catch (error) {
+            console.error("应用正则表达式处理AI响应时出错:", error);
+          }
           
           // 当前所有变体（不包括原始内容）
           const currentVariants = messageToAddVariant.alternateResponses || [];
           
           // 创建新的变体数组（保存新生成的内容）
-          const newVariants = [...currentVariants, accumulatedContent];
+          const newVariants = [...currentVariants, processedResponse];
           
           // 详细调试日志
           console.log('[变体生成] 完成变体生成:', {
             originalContent: originalContent.substring(0, 30) + '...',
             existingVariants: currentVariants.length,
-            newContent: accumulatedContent.substring(0, 30) + '...',
+            newContent: processedResponse.substring(0, 30) + '...',
             totalVariantsAfter: newVariants.length
           });
           
@@ -806,7 +714,7 @@ export default function ChatPage() {
           updateMessage({
             ...messageToAddVariant,
             // 将内容设置为新生成的变体内容，而不是原始内容
-            content: accumulatedContent, // 显示新生成的变体内容
+            content: processedResponse, // 显示新生成的变体内容
             alternateResponses: newVariants, // 保存所有变体
             currentResponseIndex: newVariants.length, // 设置索引为新变体的位置
             // 如果是第一个变体，保存原始内容
@@ -815,83 +723,54 @@ export default function ChatPage() {
             responseTime: responseTime,
             errorDetails: undefined // 清除可能存在的错误信息
           });
-          
-          // 增加API密钥使用次数
-          await incrementApiKeyUsageCount(effectiveApiKey);
         }
       } else {
         // 非流式响应
+        const apiResponse = await callChatApi(params);
+        const result = await handleNonStreamResponse(apiResponse);
+        const responseTime = Date.now() - responseStartTimeRef.current;
+
+        // 获取当前玩家和角色名称
+        const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
+        const playerName = currentPlayer?.name || "玩家";
+        const characterName = currentCharacter?.name || "AI";
+        
+        // 应用正则表达式处理AI响应
+        let processedResponse = result;
         try {
-          const response = await fetch("/api/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(params),
-          });
-
-          if (!response.ok) {
-            // 提取API错误详情
-            const errorDetails = await extractErrorDetails(null, response);
-            
-            // 保持原始内容，显示错误
-            updateMessage({
-              ...messageToAddVariant,
-              content: originalContent,
-              alternateResponses: currentAlternates,
-              currentResponseIndex: 0, // 重置为原始内容
-              timestamp: new Date(),
-              errorDetails: errorDetails
-            });
-            return;
-          }
-
-          const data = await response.json();
-          const responseTime = Date.now() - responseStartTimeRef.current;
-
-          // 完全重新实现变体生成逻辑 (非流式版本)
-          console.clear(); // 清除控制台便于调试
-          
-          // 当前所有变体（不包括原始内容）
-          const currentVariants = messageToAddVariant.alternateResponses || [];
-          
-          // 创建新的变体数组（直接追加新变体）
-          const newVariants = [...currentVariants, data.text];
-          
-          // 详细调试日志
-          console.log('[变体生成-非流式] 完成变体生成:', {
-            originalContent: originalContent.substring(0, 30) + '...',
-            existingVariants: currentVariants.length,
-            newContent: data.text.substring(0, 30) + '...',
-            totalVariantsAfter: newVariants.length
-          });
-          
-          // 在生成变体后，显示新生成的变体内容
-          updateMessage({
-            ...messageToAddVariant,
-            // 将内容设置为新生成的变体内容，而不是原始内容
-            content: data.text, // 显示新生成的变体内容
-            alternateResponses: newVariants, // 保存所有变体
-            currentResponseIndex: newVariants.length, // 设置索引为新变体的位置
-            // 如果是第一个变体，保存原始内容
-            originalContent: messageToAddVariant.originalContent || originalContent,
-            timestamp: new Date(),
-            responseTime: responseTime,
-            errorDetails: undefined // 清除可能存在的错误信息
-          });
-          
-          // 增加API密钥使用次数
-          await incrementApiKeyUsageCount(effectiveApiKey);
-        } catch (fetchError) {
-          // 处理网络错误
-          const errorDetails = await extractErrorDetails(fetchError);
-          updateMessage({
-            ...messageToAddVariant,
-            content: originalContent,
-            alternateResponses: currentAlternates,
-            currentResponseIndex: 0, // 重置为原始内容
-            timestamp: new Date(),
-            errorDetails: errorDetails
-          });
+          const { applyRegexToMessage } = useRegexStore.getState();
+          processedResponse = await applyRegexToMessage(result, playerName, characterName, 0, 2, currentCharacter?.id);
+        } catch (error) {
+          console.error("应用正则表达式处理AI响应时出错:", error);
         }
+
+        // 当前所有变体（不包括原始内容）
+        const currentVariants = messageToAddVariant.alternateResponses || [];
+        
+        // 创建新的变体数组（直接追加新变体）
+        const newVariants = [...currentVariants, processedResponse];
+        
+        // 详细调试日志
+        console.log('[变体生成-非流式] 完成变体生成:', {
+          originalContent: originalContent.substring(0, 30) + '...',
+          existingVariants: currentVariants.length,
+          newContent: processedResponse.substring(0, 30) + '...',
+          totalVariantsAfter: newVariants.length
+        });
+        
+        // 在生成变体后，显示新生成的变体内容
+        updateMessage({
+          ...messageToAddVariant,
+          // 将内容设置为新生成的变体内容，而不是原始内容
+          content: processedResponse, // 显示新生成的变体内容
+          alternateResponses: newVariants, // 保存所有变体
+          currentResponseIndex: newVariants.length, // 设置索引为新变体的位置
+          // 如果是第一个变体，保存原始内容
+          originalContent: messageToAddVariant.originalContent || originalContent,
+          timestamp: new Date(),
+          responseTime: responseTime,
+          errorDetails: undefined // 清除可能存在的错误信息
+        });
       }
     } catch (error: any) {
       console.error("[生成变体] API调用失败:", error);
@@ -1022,54 +901,30 @@ export default function ChatPage() {
       // 调用API获取回复
       if (settings.enableStreaming) {
         // 流式响应处理
-        let apiResponse: Response;
-        try {
-          apiResponse = await fetch("/api/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(params),
-          });
+        const apiResponse = await callChatApi(params);
 
-          if (!apiResponse.ok) {
-            // 提取API错误详情
-            const errorDetails = await extractErrorDetails(null, apiResponse);
-            
-            // 创建带有错误信息的助手消息
-            await addMessage({
-              id: generateId(),
-              role: "assistant",
-              content: "API请求失败。",
-              timestamp: new Date(),
-              errorDetails: errorDetails
-            });
-            
-            // 清除请求ID
-            currentRequestIdRef.current = null;
-            return;
-          }
-        } catch (fetchError) {
-          // 处理网络错误
-          const errorDetails = await extractErrorDetails(fetchError);
+        if (!apiResponse.ok) {
+          // 提取API错误详情
+          const errorDetails = await extractErrorDetails(null, apiResponse);
+          
+          // 创建带有错误信息的助手消息
           await addMessage({
             id: generateId(),
             role: "assistant",
-            content: "连接到API服务器失败。",
+            content: "API请求失败。",
             timestamp: new Date(),
             errorDetails: errorDetails
           });
+          
+          // 清除请求ID
+          currentRequestIdRef.current = null;
           return;
         }
 
         console.log("流式响应开始接收");
-        const reader = apiResponse.body?.getReader();
-        if (!reader) throw new Error("流式响应读取失败");
 
         // 累积的响应内容
         let accumulatedContent = "";
-        let decoder = new TextDecoder();
-        let buffer = ""; // 用于存储不完整的数据块
-        let chunkCount = 0;
-        let dataChunkCount = 0;
         let firstChunkReceived = false;
 
         // 创建初始空消息
@@ -1085,141 +940,37 @@ export default function ChatPage() {
         await addMessage(initialAssistantMessage);
 
         // 处理流式数据
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            console.log("流式响应接收完成");
-            break;
+        for await (const chunk of handleStreamResponse(apiResponse)) {
+          // 记录第一个内容块的时间
+          if (!firstChunkReceived) {
+            firstChunkReceived = true;
+            const firstChunkTime = Date.now() - responseStartTimeRef.current;
+            console.log(`首个响应块接收时间: ${firstChunkTime}ms`);
           }
 
-          // 解码为文本
-          const text = decoder.decode(value, { stream: true });
-          chunkCount++;
-          console.log(`接收到第 ${chunkCount} 个原始数据块，长度: ${text.length}`);
-          buffer += text; // 将新数据添加到缓冲区
-
-          // 尝试按SSE格式分割数据
-          const lines = buffer.split("\n\n");
-          // 保留最后一个可能不完整的块
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            if (!line.trim()) continue;
-
-            if (!line.startsWith("data: ")) {
-              console.warn("非预期格式的数据行:", line);
-              continue;
-            }
-
-            const data = line.replace("data: ", "");
-            if (data === "[DONE]") {
-              console.log("收到流结束标记");
-              continue;
-            }
-
-            try {
-              dataChunkCount++;
-              const parsed = JSON.parse(data);
-              console.log(`解析第 ${dataChunkCount} 个数据块:`,
-                parsed.text ? `文本(${parsed.text.length}字符)` :
-                  parsed.error ? `错误(${parsed.error})` : "无内容");
-
-              if (parsed.error) {
-                console.error("流式响应错误:", parsed.error);
-                
-                // 提取错误详情
-                const errorDetails: ErrorDetails = {
-                  code: parsed.code || 400,
-                  message: parsed.error || "API响应错误",
-                  details: parsed.details || undefined,
-                  timestamp: new Date().toISOString()
-                };
-                
-                // 更新消息，添加错误信息
-                updateMessage({
-                  id: assistantMessageId,
-                  role: "assistant",
-                  content: accumulatedContent || "生成回复时发生错误。",
-                  timestamp: new Date(),
-                  errorDetails: errorDetails
-                });
-                continue;
-              }
-
-              if (parsed.text !== undefined) {
-                // 记录第一个内容块的时间
-                if (!firstChunkReceived) {
-                  firstChunkReceived = true;
-                  const firstChunkTime = Date.now() - responseStartTimeRef.current;
-                  console.log(`首个响应块接收时间: ${firstChunkTime}ms`);
-                }
-
-                accumulatedContent += parsed.text;
-                // 使用updateMessage更新消息内容，并添加时间戳用于调试
-                console.log(`更新消息内容，时间: ${new Date().toISOString()}, 新增内容: "${parsed.text}"`);
-                updateMessage({
-                  id: assistantMessageId,
-                  role: "assistant",
-                  content: accumulatedContent,
-                  timestamp: new Date(),
-                });
-              }
-            } catch (e) {
-              // 解析失败，记录错误但不中断流程
-              console.error("解析流式数据失败:", e, "原始数据:", data);
-              // 继续处理下一个数据块
-            }
-          }
+          accumulatedContent += chunk;
+          // 更新消息内容
+          updateMessage({
+            id: assistantMessageId,
+            role: "assistant",
+            content: accumulatedContent,
+            timestamp: new Date(),
+          });
         }
 
-        // 处理缓冲区中可能剩余的数据
-        if (buffer.trim()) {
-          console.log("处理剩余缓冲区数据");
-          const lines = buffer.split("\n\n");
-          for (const line of lines) {
-            if (!line.trim() || !line.startsWith("data: ")) continue;
-
-            const data = line.replace("data: ", "");
-            if (data === "[DONE]") continue;
-
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.text !== undefined) {
-                accumulatedContent += parsed.text;
-                // 使用updateMessage更新消息内容
-                updateMessage({
-                  id: assistantMessageId,
-                  role: "assistant",
-                  content: accumulatedContent,
-                  timestamp: new Date(),
-                });
-              }
-            } catch (e) {
-              console.error("解析剩余流式数据失败:", e);
-            }
-          }
-        }
-
-        // 计算总响应时间并更新消息
+        // 计算总响应时间
         const responseTime = Date.now() - responseStartTimeRef.current;
         console.log(`总响应时间: ${responseTime}ms`);
 
-        // 如果最终没有收到任何内容，显示提示信息并标记为错误
+        // 如果最终没有收到任何内容，显示提示信息
         if (!accumulatedContent) {
-          console.warn("流式响应未产生任何内容");
-          const errorDetails: ErrorDetails = {
-            code: 204, // No Content
-            message: "API返回了空响应",
-            timestamp: new Date().toISOString()
-          };
-          
+          console.warn("响应未产生任何内容");
           updateMessage({
             id: assistantMessageId,
             role: "assistant",
             content: "AI未能生成回复。",
             timestamp: new Date(),
             responseTime: responseTime,
-            errorDetails: errorDetails
           });
         } else {
           // 获取当前玩家和角色名称
@@ -1231,7 +982,7 @@ export default function ChatPage() {
           let processedResponse = accumulatedContent;
           try {
             const { applyRegexToMessage } = useRegexStore.getState();
-            processedResponse = await applyRegexToMessage(accumulatedContent, playerName, characterName, 0, 2, currentCharacter?.id); // 类型2=AI响应，传入角色ID
+            processedResponse = await applyRegexToMessage(accumulatedContent, playerName, characterName, 0, 2, currentCharacter?.id);
           } catch (error) {
             console.error("应用正则表达式处理AI响应时出错:", error);
           }
@@ -1244,87 +995,47 @@ export default function ChatPage() {
             timestamp: new Date(),
             responseTime: responseTime
           });
-          
-          // 增加API密钥使用次数
-          await incrementApiKeyUsageCount(effectiveApiKey);
         }
       } else {
         // 非流式响应
+        const apiResponse = await callChatApi(params);
+        const result = await handleNonStreamResponse(apiResponse);
+        
+        // 计算响应时间
+        const responseTime = Date.now() - responseStartTimeRef.current;
+        
+        // 获取当前玩家和角色名称
+        const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
+        const playerName = currentPlayer?.name || "玩家";
+        const characterName = currentCharacter?.name || "AI";
+        
+        // 应用正则表达式处理AI响应
+        let processedResponse = result;
         try {
-          const response = await fetch("/api/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(params),
-          });
-
-          if (!response.ok) {
-            // 提取API错误详情
-            const errorDetails = await extractErrorDetails(null, response);
-            
-            // 创建带有错误信息的助手消息
-            await addMessage({
-              id: generateId(),
-              role: "assistant",
-              content: "API请求失败。",
-              timestamp: new Date(),
-              errorDetails: errorDetails
-            });
-            return;
-          }
-
-          const data = await response.json();
-          const responseTime = Date.now() - responseStartTimeRef.current;
-
-          // 获取当前玩家和角色名称
-          const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
-          const playerName = currentPlayer?.name || "玩家";
-          const characterName = currentCharacter?.name || "AI";
-          
-          // 应用正则表达式处理AI响应
-          let processedResponse = data.text;
-          try {
-            const { applyRegexToMessage } = useRegexStore.getState();
-            processedResponse = await applyRegexToMessage(data.text, playerName, characterName, 0, 2, currentCharacter?.id); // 类型2=AI响应，传入角色ID
-          } catch (error) {
-            console.error("应用正则表达式处理AI响应时出错:", error);
-          }
-          
-          // 添加助手回复
-          await addMessage({
-            id: generateId(),
-            role: "assistant",
-            content: processedResponse,
-            timestamp: new Date(),
-            responseTime: responseTime
-          });
-          
-          // 增加API密钥使用次数
-          await incrementApiKeyUsageCount(effectiveApiKey);
-        } catch (fetchError) {
-          // 处理网络错误
-          const errorDetails = await extractErrorDetails(fetchError);
-          await addMessage({
-            id: generateId(),
-            role: "assistant",
-            content: "连接到API服务器失败。",
-            timestamp: new Date(),
-            errorDetails: errorDetails
-          });
+          const { applyRegexToMessage } = useRegexStore.getState();
+          processedResponse = await applyRegexToMessage(result, playerName, characterName, 0, 2, currentCharacter?.id);
+        } catch (error) {
+          console.error("应用正则表达式处理AI响应时出错:", error);
         }
+        
+        // 添加助手回复
+        await addMessage({
+          id: generateId(),
+          role: "assistant",
+          content: processedResponse,
+          timestamp: new Date(),
+          responseTime: responseTime
+        });
       }
     } catch (error: any) {
-      console.error("API调用失败:", error);
+      console.error("发送消息时出错:", error);
       
-      // 提取并格式化错误信息
-      const errorDetails = await extractErrorDetails(error);
-      
-      // 添加带有详细错误信息的系统消息
+      // 添加错误消息
       await addMessage({
         id: generateId(),
         role: "assistant",
-        content: "消息发送失败。",
+        content: "发送消息时发生错误。",
         timestamp: new Date(),
-        errorDetails: errorDetails
       });
     } finally {
       setIsLoading(false);
@@ -1433,35 +1144,17 @@ export default function ChatPage() {
       // 调用API获取回复
       if (settings.enableStreaming) {
         // 流式响应处理
-        let apiResponse: Response;
-        try {
-          apiResponse = await fetch("/api/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(params),
-          });
+        const apiResponse = await callChatApi(params);
 
-          if (!apiResponse.ok) {
-            // 提取API错误详情
-            const errorDetails = await extractErrorDetails(null, apiResponse);
-            
-            // 创建带有错误信息的助手消息
-            await addMessage({
-              id: generateId(),
-              role: "assistant",
-              content: "API请求失败。",
-              timestamp: new Date(),
-              errorDetails: errorDetails
-            });
-            return;
-          }
-        } catch (fetchError) {
-          // 处理网络错误
-          const errorDetails = await extractErrorDetails(fetchError);
+        if (!apiResponse.ok) {
+          // 提取API错误详情
+          const errorDetails = await extractErrorDetails(null, apiResponse);
+          
+          // 创建带有错误信息的助手消息
           await addMessage({
             id: generateId(),
             role: "assistant",
-            content: "连接API服务器失败。",
+            content: "API请求失败。",
             timestamp: new Date(),
             errorDetails: errorDetails
           });
