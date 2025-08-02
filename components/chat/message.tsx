@@ -510,7 +510,9 @@ export function Message({ message, character, onEdit, onRegenerate, isGenerating
   
   // 打开创建分支对话框
   const handleOpenBranchDialog = () => {
-    const nextBranchNum = branches.length + 1;
+    // 计算下一个分支编号：不包括主分支，只计算用户创建的分支
+    const userCreatedBranches = branches.filter(b => b.parentMessageId && b.parentMessageId !== '');
+    const nextBranchNum = userCreatedBranches.length + 1;
     setBranchName(`分支 ${nextBranchNum}`);
     setIsBranchDialogOpen(true);
   };

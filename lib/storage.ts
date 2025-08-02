@@ -555,8 +555,10 @@ export const conversationStorage = {
             conversation.messages.findIndex(m => m.id === targetBranch.parentMessageId)
           );
           
-          // 将父分支消息添加到结果中
-          branchMessages = [...parentMessages, ...branchMessages];
+          // 将父分支消息添加到结果中（如果还没有包含）
+          const existingIds = new Set(branchMessages.map(m => m.id));
+          const newParentMessages = parentMessages.filter(m => !existingIds.has(m.id));
+          branchMessages = [...newParentMessages, ...branchMessages];
         }
       }
     } else {
@@ -572,6 +574,15 @@ export const conversationStorage = {
     
     // 去除可能的重复消息
     const uniqueMessages = Array.from(new Map(branchMessages.map(msg => [msg.id, msg])).values());
+    
+    // 确保至少有一条消息（开场白）
+    if (uniqueMessages.length === 0 && conversation.messages.length > 0) {
+      console.warn('分支切换后没有消息，尝试恢复第一条消息');
+      const firstMessage = conversation.messages[0];
+      if (firstMessage) {
+        uniqueMessages.push(firstMessage);
+      }
+    }
     
     // 更新当前分支ID
     conversation.currentBranchId = branchId;
