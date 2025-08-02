@@ -308,9 +308,26 @@ export const useChatStore = create<ChatState>()(
               !msg.branchId || msg.branchId === updatedCurrentBranchId
             );
 
+            // 重新计算当前分支消息的楼层号
+            const reNumberedBranchMessages = currentBranchMessages.map((msg, index) => {
+              if (msg.role === 'system') {
+                return msg; // 系统消息不需要楼层号
+              }
+              
+              // 计算当前消息之前的非系统消息数量
+              const previousNonSystemMessages = currentBranchMessages
+                .slice(0, index)
+                .filter(m => m.role !== 'system');
+              
+              return {
+                ...msg,
+                messageNumber: previousNonSystemMessages.length + 1
+              };
+            });
+
             set({
               currentConversationId: id,
-              currentMessages: currentBranchMessages,
+              currentMessages: reNumberedBranchMessages,
               currentTitle: conversation.title,
               systemPrompt: conversation.systemPrompt || '你是一个友好、乐于助人的AI助手。',
               messageCounter: maxMessageNumber,
@@ -352,15 +369,23 @@ export const useChatStore = create<ChatState>()(
 
         let updatedMessage = { ...messageWithBranch };
 
-        // 为非系统消息添加楼层号
+        // 为非系统消息添加楼层号 - 基于当前分支的消息数量
         if (messageWithBranch.role !== 'system' && !messageWithBranch.messageNumber) {
-          const newCounter = get().messageCounter + 1;
+          // 计算当前分支中非系统消息的最大楼层号
+          const { currentMessages } = get();
+          const maxBranchMessageNumber = currentMessages
+            .filter(msg => msg.role !== 'system' && msg.messageNumber)
+            .reduce((max, msg) => Math.max(max, msg.messageNumber || 0), 0);
+          
+          const newMessageNumber = maxBranchMessageNumber + 1;
           updatedMessage = {
             ...updatedMessage,
-            messageNumber: newCounter,
+            messageNumber: newMessageNumber,
             charCount: messageWithBranch.content.length
           };
-          set({ messageCounter: newCounter });
+          
+          // 更新全局计数器（保持兼容性）
+          set({ messageCounter: Math.max(get().messageCounter, newMessageNumber) });
         }
 
         // 获取当前对话的所有消息（包括所有分支）
@@ -978,8 +1003,25 @@ export const useChatStore = create<ChatState>()(
                 msg.branchId === currentBranchId || !msg.branchId
               );
               if (branchMessages.length > 0) {
-                console.log('已恢复分支消息，消息数量:', branchMessages.length);
-                set({ currentMessages: branchMessages });
+                // 重新计算恢复消息的楼层号
+                const reNumberedMessages = branchMessages.map((msg, index) => {
+                  if (msg.role === 'system') {
+                    return msg; // 系统消息不需要楼层号
+                  }
+                  
+                  // 计算当前消息之前的非系统消息数量
+                  const previousNonSystemMessages = branchMessages
+                    .slice(0, index)
+                    .filter(m => m.role !== 'system');
+                  
+                  return {
+                    ...msg,
+                    messageNumber: previousNonSystemMessages.length + 1
+                  };
+                });
+                
+                console.log('已恢复分支消息，消息数量:', reNumberedMessages.length);
+                set({ currentMessages: reNumberedMessages });
               }
             }
           }
@@ -1016,10 +1058,27 @@ export const useChatStore = create<ChatState>()(
           // 过滤出新分支的消息
           const branchMessages = conversation.messages.filter(msg => msg.branchId === branchId);
           
+          // 重新计算分支消息的楼层号
+          const reNumberedMessages = branchMessages.map((msg, index) => {
+            if (msg.role === 'system') {
+              return msg; // 系统消息不需要楼层号
+            }
+            
+            // 计算当前消息之前的非系统消息数量
+            const previousNonSystemMessages = branchMessages
+              .slice(0, index)
+              .filter(m => m.role !== 'system');
+            
+            return {
+              ...msg,
+              messageNumber: previousNonSystemMessages.length + 1
+            };
+          });
+          
           // 更新状态
           set({
             currentBranchId: branchId,
-            currentMessages: branchMessages,
+            currentMessages: reNumberedMessages,
             branches: conversation.branches || []
           });
           
@@ -1043,6 +1102,23 @@ export const useChatStore = create<ChatState>()(
             branchId
           );
           
+          // 重新计算分支消息的楼层号
+          const reNumberedMessages = branchMessages.map((msg, index) => {
+            if (msg.role === 'system') {
+              return msg; // 系统消息不需要楼层号
+            }
+            
+            // 计算当前消息之前的非系统消息数量
+            const previousNonSystemMessages = branchMessages
+              .slice(0, index)
+              .filter(m => m.role !== 'system');
+            
+            return {
+              ...msg,
+              messageNumber: previousNonSystemMessages.length + 1
+            };
+          });
+          
           // 获取最新的分支列表
           const conversation = await conversationStorage.getConversation(currentConversationId);
           if (!conversation) throw new Error('获取对话失败');
@@ -1050,11 +1126,11 @@ export const useChatStore = create<ChatState>()(
           // 更新当前分支ID和消息
           set({
             currentBranchId: branchId,
-            currentMessages: branchMessages,
+            currentMessages: reNumberedMessages,
             branches: conversation.branches || []
           });
           
-          console.log(`已切换到分支ID: ${branchId}，消息数量: ${branchMessages.length}`);
+          console.log(`已切换到分支ID: ${branchId}，消息数量: ${reNumberedMessages.length}`);
         } catch (error) {
           console.error('切换分支失败:', error);
         }
