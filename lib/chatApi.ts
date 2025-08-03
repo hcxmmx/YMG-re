@@ -1,4 +1,5 @@
 import { apiKeyStorage } from "./storage";
+import { fallbackStorage } from "./fallbackStorage";
 
 // 聊天API参数类型
 export interface ChatApiParams {
@@ -18,14 +19,58 @@ export interface ChatApiParams {
 // 增加API密钥使用次数的辅助函数
 const incrementApiKeyUsageCount = async (apiKey: string) => {
   try {
-    // 只有当使用的是轮询系统中的密钥时才增加使用次数
+    console.log("开始增加API密钥使用次数，当前环境:", {
+      isServer: typeof window === 'undefined',
+      apiKey: apiKey?.substring(0, 10) + '...',
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'server'
+    });
+
+    // 检查是否需要使用后备存储
+    const useFallback = fallbackStorage.shouldUseFallback();
+    console.log("使用后备存储:", useFallback);
+
+    if (useFallback) {
+      // 使用后备存储
+      const activeKey = fallbackStorage.getActiveApiKey();
+      if (activeKey && activeKey.key === apiKey) {
+        fallbackStorage.incrementUsage(activeKey.id);
+        console.log("后备存储：API密钥使用次数已增加");
+      } else {
+        console.log("后备存储：跳过计数，密钥不匹配或无活动密钥");
+      }
+      return;
+    }
+
+    // 使用正常的IndexedDB存储
     const activeKey = await apiKeyStorage.getActiveApiKey();
+    console.log("获取到的活动密钥:", activeKey ? {
+      id: activeKey.id,
+      name: activeKey.name,
+      keyMatch: activeKey.key === apiKey,
+      currentUsage: activeKey.usageCount
+    } : null);
+
     if (activeKey && activeKey.key === apiKey) {
-      await apiKeyStorage.incrementApiKeyUsage(activeKey.id);
-      console.log(`API密钥 ${activeKey.name} 使用次数已增加`);
+      const updatedKey = await apiKeyStorage.incrementApiKeyUsage(activeKey.id);
+      console.log(`API密钥 ${activeKey.name} 使用次数已增加`, {
+        oldCount: activeKey.usageCount,
+        newCount: updatedKey?.usageCount
+      });
+      return updatedKey;
+    } else {
+      console.log("跳过计数：", {
+        hasActiveKey: !!activeKey,
+        keyMatches: activeKey?.key === apiKey,
+        reason: !activeKey ? "无活动密钥" : "密钥不匹配"
+      });
     }
   } catch (error) {
     console.error("增加API密钥使用次数失败:", error);
+    console.error("错误详情:", {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : typeof error
+    });
   }
 };
 
