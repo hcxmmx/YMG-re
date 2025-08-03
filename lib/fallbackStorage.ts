@@ -24,15 +24,15 @@ class FallbackStorage {
 
   // 检测是否需要使用后备存储
   shouldUseFallback(): boolean {
-    // 检测是否在Vercel环境或IndexedDB不可用
+    // 检测是否在服务器端
     if (typeof window === 'undefined') return true;
     
     try {
-      // 简单检测IndexedDB是否可用
+      // 检测IndexedDB是否可用
       if (!window.indexedDB) return true;
       
-      // 检测是否在无痕模式或受限环境
-      const test = window.indexedDB.open('test');
+      // 在生产环境中，如果IndexedDB有问题，使用后备存储
+      // 这里可以添加更多的检测逻辑
       return false;
     } catch (error) {
       return true;

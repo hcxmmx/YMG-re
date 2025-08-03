@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useChatStore } from "@/lib/store";
-import { useNavbar } from "@/app/layout";
+import { useNavbar } from "@/lib/contexts";
 import { ChevronUp, ChevronDown, User, Plus, MessageCircle, MoreHorizontal, MessageSquare, Pencil, Trash, MoreVertical, GitBranch, Check } from "lucide-react";
 import { Character, Conversation } from "@/lib/types";
 import Image from "next/image";

@@ -36,6 +36,7 @@ export function ChatSettings() {
     showMessageNumber: uiSettings.showMessageNumber,
     enableQuoteHighlight: uiSettings.enableQuoteHighlight,
     quoteHighlightColor: uiSettings.quoteHighlightColor,
+    showDebugPanel: uiSettings.showDebugPanel,
   });
   
   // 是否是第一次加载
@@ -70,6 +71,7 @@ export function ChatSettings() {
       showMessageNumber: uiSettings.showMessageNumber,
       enableQuoteHighlight: uiSettings.enableQuoteHighlight,
       quoteHighlightColor: uiSettings.quoteHighlightColor,
+      showDebugPanel: uiSettings.showDebugPanel,
     }));
   }, [settings, uiSettings]);
   
@@ -136,7 +138,7 @@ export function ChatSettings() {
           }
         }
       }
-    } else if (['showResponseTime', 'showCharCount', 'showMessageNumber', 'enableQuoteHighlight', 'quoteHighlightColor'].includes(key)) {
+    } else if (['showResponseTime', 'showCharCount', 'showMessageNumber', 'enableQuoteHighlight', 'quoteHighlightColor', 'showDebugPanel'].includes(key)) {
       updateUISettings({ [key]: value });
     }
   };
@@ -517,6 +519,14 @@ export function ChatSettings() {
                 </div>
               </div>
             )}
+            
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">API密钥调试面板</label>
+              <Switch 
+                checked={localSettings.showDebugPanel}
+                onCheckedChange={(checked) => handleSettingChange('showDebugPanel', checked)}
+              />
+            </div>
           </div>
         </div>
       </PopoverContent>

@@ -4,24 +4,15 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Header } from "@/components/header";
-import { useState, useEffect, createContext, useContext } from "react";
+import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useSettingsStore } from "@/lib/store";
 import { Toaster } from "@/components/ui/toast";
 import Script from "next/script";
 import { UpdateNotification } from "@/components/ui/update-notification";
+import { NavbarContext } from "@/lib/contexts";
 
 const inter = Inter({ subsets: ["latin"] });
-
-// 创建导航栏上下文
-export const NavbarContext = createContext({
-  isNavbarVisible: true,
-  toggleNavbar: () => {},
-  setNavbarVisible: (visible: boolean) => {}
-});
-
-// 使用上下文的钩子
-export const useNavbar = () => useContext(NavbarContext);
 
 // 应用版本号，每次更新后修改
 const APP_VERSION = '1.0.0';

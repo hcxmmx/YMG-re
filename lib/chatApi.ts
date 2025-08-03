@@ -18,59 +18,61 @@ export interface ChatApiParams {
 
 // 增加API密钥使用次数的辅助函数
 const incrementApiKeyUsageCount = async (apiKey: string) => {
+  const timestamp = new Date().toLocaleString();
+  
   try {
-    console.log("开始增加API密钥使用次数，当前环境:", {
-      isServer: typeof window === 'undefined',
-      apiKey: apiKey?.substring(0, 10) + '...',
-      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'server'
-    });
+    // 记录API调用时间
+    localStorage.setItem('debug_last_api_call', timestamp);
 
     // 检查是否需要使用后备存储
     const useFallback = fallbackStorage.shouldUseFallback();
-    console.log("使用后备存储:", useFallback);
+    
+    // 记录调试信息
+    const debugLog = {
+      timestamp,
+      useFallback,
+      environment: typeof window === 'undefined' ? 'server' : 'client',
+      apiKeyPrefix: apiKey?.substring(0, 10) + '...'
+    };
+    
+    localStorage.setItem('debug_current_state', JSON.stringify(debugLog));
 
     if (useFallback) {
       // 使用后备存储
       const activeKey = fallbackStorage.getActiveApiKey();
       if (activeKey && activeKey.key === apiKey) {
         fallbackStorage.incrementUsage(activeKey.id);
-        console.log("后备存储：API密钥使用次数已增加");
+        localStorage.setItem('debug_last_count_update', `${timestamp} - 后备存储更新成功`);
       } else {
-        console.log("后备存储：跳过计数，密钥不匹配或无活动密钥");
+        localStorage.setItem('debug_last_count_update', `${timestamp} - 后备存储跳过计数`);
       }
-      return;
-    }
-
-    // 使用正常的IndexedDB存储
-    const activeKey = await apiKeyStorage.getActiveApiKey();
-    console.log("获取到的活动密钥:", activeKey ? {
-      id: activeKey.id,
-      name: activeKey.name,
-      keyMatch: activeKey.key === apiKey,
-      currentUsage: activeKey.usageCount
-    } : null);
-
-    if (activeKey && activeKey.key === apiKey) {
-      const updatedKey = await apiKeyStorage.incrementApiKeyUsage(activeKey.id);
-      console.log(`API密钥 ${activeKey.name} 使用次数已增加`, {
-        oldCount: activeKey.usageCount,
-        newCount: updatedKey?.usageCount
-      });
-      return updatedKey;
     } else {
-      console.log("跳过计数：", {
-        hasActiveKey: !!activeKey,
-        keyMatches: activeKey?.key === apiKey,
-        reason: !activeKey ? "无活动密钥" : "密钥不匹配"
-      });
+      // 使用正常的IndexedDB存储
+      const activeKey = await apiKeyStorage.getActiveApiKey();
+      
+      if (activeKey && activeKey.key === apiKey) {
+        const updatedKey = await apiKeyStorage.incrementApiKeyUsage(activeKey.id);
+        localStorage.setItem('debug_last_count_update', 
+          `${timestamp} - IndexedDB更新成功: ${activeKey.name} (${updatedKey?.usageCount || 0}次)`);
+      } else {
+        localStorage.setItem('debug_last_count_update', 
+          `${timestamp} - IndexedDB跳过计数: ${!activeKey ? '无活动密钥' : '密钥不匹配'}`);
+      }
     }
+    
+    // 触发UI更新
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('api-key-debug-update'));
+    }
+    
   } catch (error) {
-    console.error("增加API密钥使用次数失败:", error);
-    console.error("错误详情:", {
-      message: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-      name: error instanceof Error ? error.name : typeof error
-    });
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    localStorage.setItem('debug_last_count_update', `${timestamp} - 错误: ${errorMsg}`);
+    
+    // 触发UI更新
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('api-key-debug-update'));
+    }
   }
 };
 
