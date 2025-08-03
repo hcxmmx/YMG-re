@@ -48,15 +48,39 @@ const incrementApiKeyUsageCount = async (apiKey: string) => {
       }
     } else {
       // 使用正常的IndexedDB存储
-      const activeKey = await apiKeyStorage.getActiveApiKey();
       
-      if (activeKey && activeKey.key === apiKey) {
-        const updatedKey = await apiKeyStorage.incrementApiKeyUsage(activeKey.id);
+      // 先尝试直接通过密钥找到对应的API密钥记录
+      const allKeys = await apiKeyStorage.listApiKeys();
+      const matchingKey = allKeys.find(key => key.key === apiKey && key.enabled);
+      
+      if (matchingKey) {
+        // 找到匹配的密钥，直接更新
+        await apiKeyStorage.incrementApiKeyUsage(matchingKey.id);
         localStorage.setItem('debug_last_count_update', 
-          `${timestamp} - IndexedDB更新成功: ${activeKey.name} (${updatedKey?.usageCount || 0}次)`);
+          `${timestamp} - IndexedDB直接更新成功: ${matchingKey.name} (${(matchingKey.usageCount || 0) + 1}次)`);
       } else {
+        // 没找到匹配的密钥，记录详细信息用于调试
+        const activeKey = await apiKeyStorage.getActiveApiKey();
+        const debugInfo = {
+          allKeysCount: allKeys.length,
+          enabledKeysCount: allKeys.filter(k => k.enabled).length,
+          activeKeyInfo: activeKey ? {
+            id: activeKey.id,
+            name: activeKey.name,
+            keyPrefix: activeKey.key.substring(0, 10) + '...',
+            usageCount: activeKey.usageCount
+          } : null,
+          requestedKeyPrefix: apiKey.substring(0, 10) + '...',
+          keyMatches: allKeys.map(k => ({
+            name: k.name,
+            keyPrefix: k.key.substring(0, 10) + '...',
+            matches: k.key === apiKey,
+            enabled: k.enabled
+          }))
+        };
+        
         localStorage.setItem('debug_last_count_update', 
-          `${timestamp} - IndexedDB跳过计数: ${!activeKey ? '无活动密钥' : '密钥不匹配'}`);
+          `${timestamp} - IndexedDB跳过计数: 密钥不匹配 ${JSON.stringify(debugInfo)}`);
       }
     }
     

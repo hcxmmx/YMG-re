@@ -41,19 +41,20 @@ function SearchParamsWrapper({ children }: { children: (params: URLSearchParams)
 
 // 检查API密钥（设置中的密钥或API轮询系统中的密钥）
 const checkApiKey = async (settingsApiKey?: string): Promise<string | null> => {
-  // 检查设置中的密钥
-  if (settingsApiKey) {
-    return settingsApiKey;
-  }
-  
   try {
-    // 检查API轮询系统中是否有启用的密钥
+    // 首先检查API轮询系统中是否有启用的密钥
     const activeKey = await apiKeyStorage.getActiveApiKey();
     if (activeKey) {
+      // 如果轮询系统有活动密钥，优先使用它
       return activeKey.key;
     }
   } catch (error) {
     console.error("检查API轮询系统密钥失败:", error);
+  }
+  
+  // 如果轮询系统没有可用密钥，回退到设置中的密钥
+  if (settingsApiKey) {
+    return settingsApiKey;
   }
   
   return null;
