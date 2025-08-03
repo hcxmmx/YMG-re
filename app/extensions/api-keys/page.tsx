@@ -2,15 +2,18 @@
 
 import { useState, useEffect } from "react";
 import { useApiKeyStore } from "@/lib/store";
+import { apiKeyStorage } from "@/lib/storage";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
-import { AlertCircle, Check, Key, Plus, RefreshCw, Trash, ShieldAlert } from "lucide-react";
+import { AlertCircle, Check, Key, Plus, RefreshCw, Trash, ShieldAlert, Upload, Download, Trash2, Power, PowerOff } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -44,9 +47,16 @@ export default function ApiKeysPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDuplicateDialogOpen, setIsDuplicateDialogOpen] = useState(false);
+  const [isBatchImportDialogOpen, setIsBatchImportDialogOpen] = useState(false);
+  const [isBatchDeleteDialogOpen, setIsBatchDeleteDialogOpen] = useState(false);
   const [keyToDelete, setKeyToDelete] = useState<string | null>(null);
   const [duplicateKeyInfo, setDuplicateKeyInfo] = useState<{ name: string; id: string } | null>(null);
   const [isSaved, setIsSaved] = useState(false);
+  
+  // 批量操作状态
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [batchImportText, setBatchImportText] = useState("");
+  const [parsedKeys, setParsedKeys] = useState<string[]>([]);
 
   // 新API密钥表单状态
   const [newKeyName, setNewKeyName] = useState("");
@@ -56,7 +66,8 @@ export default function ApiKeysPage() {
   const [localSettings, setLocalSettings] = useState({
     rotationStrategy: "sequential" as "sequential" | "random" | "least-used",
     switchTiming: "threshold" as "every-call" | "threshold",
-    switchThreshold: 50
+    switchThreshold: 50,
+    rotationEnabled: false
   });
   
   // 加载API密钥
@@ -70,7 +81,8 @@ export default function ApiKeysPage() {
       setLocalSettings({
         rotationStrategy: settings.rotationStrategy,
         switchTiming: settings.switchTiming,
-        switchThreshold: settings.switchThreshold
+        switchThreshold: settings.switchThreshold,
+        rotationEnabled: settings.rotationEnabled
       });
     }
   }, [settings]);
@@ -110,6 +122,19 @@ export default function ApiKeysPage() {
     };
     
     await saveApiKey(newKey);
+    
+    // 如果这是第一个密钥，自动设置为活动密钥
+    if (apiKeys.length === 0 && settings && !settings.activeKeyId) {
+      // 重新加载密钥列表以获取新添加的密钥ID
+      await loadApiKeys();
+      // 获取刚添加的密钥（通过key值查找）
+      const allKeys = await apiKeyStorage.listApiKeys();
+      const addedKey = allKeys.find(key => key.key === newKeyValue.trim());
+      if (addedKey) {
+        await updateApiKeySettings({ activeKeyId: addedKey.id });
+      }
+    }
+    
     setIsAddDialogOpen(false);
     setNewKeyName("");
     setNewKeyValue("");
@@ -132,6 +157,127 @@ export default function ApiKeysPage() {
     setNewKeyName("");
     setNewKeyValue("");
     setDuplicateKeyInfo(null);
+  };
+  
+  // 解析批量导入文本
+  const parseBatchImportText = (text: string): string[] => {
+    if (!text.trim()) return [];
+    
+    // 先按换行分割，再按逗号分割，最后按空格分割
+    const keys = text
+      .split(/[\n\r]+/) // 换行分割
+      .flatMap(line => line.split(',')) // 逗号分割
+      .flatMap(part => part.split(/\s+/)) // 空格分割
+      .map(key => key.trim())
+      .filter(key => key.length > 0) // 过滤空字符串
+      .filter((key, index, arr) => arr.indexOf(key) === index); // 去重
+    
+    return keys;
+  };
+  
+  // 处理批量导入文本变化
+  const handleBatchImportTextChange = (text: string) => {
+    setBatchImportText(text);
+    setParsedKeys(parseBatchImportText(text));
+  };
+  
+  // 处理批量导入
+  const handleBatchImport = async () => {
+    if (parsedKeys.length === 0) return;
+    
+    const existingKeys = new Set(apiKeys.map(key => key.key));
+    const newKeys = parsedKeys.filter(key => !existingKeys.has(key));
+    
+    if (newKeys.length === 0) {
+      alert("所有密钥都已存在，没有新密钥需要导入");
+      return;
+    }
+    
+    // 获取下一个优先级起始值
+    const nextPriority = apiKeys.length === 0 ? 10 : Math.max(...apiKeys.map(k => k.priority)) + 10;
+    const isFirstKeys = apiKeys.length === 0; // 记录是否是首次添加密钥
+    
+    // 批量创建密钥
+    for (let i = 0; i < newKeys.length; i++) {
+      const key = newKeys[i];
+      const newKey: ApiKey = {
+        id: "",
+        name: `API密钥${apiKeys.length + i + 1}`,
+        key: key,
+        enabled: true,
+        priority: nextPriority + (i * 10),
+        usageCount: 0,
+        createdAt: Date.now()
+      };
+      
+      await saveApiKey(newKey);
+    }
+    
+    // 如果这是首次添加密钥，自动设置第一个为活动密钥
+    if (isFirstKeys && newKeys.length > 0 && settings && !settings.activeKeyId) {
+      await loadApiKeys(); // 重新加载以获取新密钥ID
+      const allKeys = await apiKeyStorage.listApiKeys();
+      const firstAddedKey = allKeys.find(key => key.key === newKeys[0]);
+      if (firstAddedKey) {
+        await updateApiKeySettings({ activeKeyId: firstAddedKey.id });
+      }
+    }
+    
+    setIsBatchImportDialogOpen(false);
+    setBatchImportText("");
+    setParsedKeys([]);
+    alert(`成功导入 ${newKeys.length} 个新密钥${isFirstKeys ? '，已自动设置第一个密钥为活动密钥' : ''}`);
+  };
+  
+  // 处理全选/取消全选
+  const handleSelectAll = () => {
+    if (selectedKeys.size === apiKeys.length) {
+      setSelectedKeys(new Set());
+    } else {
+      setSelectedKeys(new Set(apiKeys.map(key => key.id)));
+    }
+  };
+  
+  // 处理单个密钥选择
+  const handleKeySelect = (keyId: string) => {
+    const newSelection = new Set(selectedKeys);
+    if (newSelection.has(keyId)) {
+      newSelection.delete(keyId);
+    } else {
+      newSelection.add(keyId);
+    }
+    setSelectedKeys(newSelection);
+  };
+  
+  // 处理批量启用/禁用
+  const handleBatchToggleEnabled = async (enabled: boolean) => {
+    const selectedKeyIds = Array.from(selectedKeys);
+    
+    for (const keyId of selectedKeyIds) {
+      const key = apiKeys.find(k => k.id === keyId);
+      if (key) {
+        await saveApiKey({
+          ...key,
+          enabled: enabled
+        });
+      }
+    }
+    
+    setSelectedKeys(new Set());
+    alert(`已${enabled ? '启用' : '禁用'} ${selectedKeyIds.length} 个密钥`);
+  };
+  
+  // 处理批量删除
+  const handleBatchDelete = async () => {
+    const selectedKeyIds = Array.from(selectedKeys);
+    
+    for (const keyId of selectedKeyIds) {
+      await deleteApiKey(keyId);
+    }
+    
+    setSelectedKeys(new Set());
+    setIsBatchDeleteDialogOpen(false);
+    alert(`已删除 ${selectedKeyIds.length} 个密钥`);
   };
   
   // 处理删除API密钥
@@ -175,12 +321,53 @@ export default function ApiKeysPage() {
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 <span>API密钥列表</span>
-                <Button onClick={() => setIsAddDialogOpen(true)}>
-                  <Plus className="mr-1 h-4 w-4" /> 添加密钥
-                </Button>
+                <div className="flex items-center space-x-2">
+                  <Button variant="outline" onClick={() => setIsBatchImportDialogOpen(true)}>
+                    <Upload className="mr-1 h-4 w-4" /> 批量导入
+                  </Button>
+                  <Button onClick={() => setIsAddDialogOpen(true)}>
+                    <Plus className="mr-1 h-4 w-4" /> 添加密钥
+                  </Button>
+                </div>
               </CardTitle>
-              <CardDescription>
-                管理可用的API密钥，支持自动查重和智能排序
+              <CardDescription className="flex items-center justify-between">
+                <span>管理可用的API密钥，支持自动查重和智能排序</span>
+                {apiKeys.length > 0 && (
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      checked={selectedKeys.size === apiKeys.length && apiKeys.length > 0}
+                      onCheckedChange={handleSelectAll}
+                    />
+                    <span className="text-sm">全选</span>
+                    {selectedKeys.size > 0 && (
+                      <>
+                        <span className="text-muted-foreground">|</span>
+                        <span className="text-sm text-primary">已选择 {selectedKeys.size} 项</span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleBatchToggleEnabled(true)}
+                        >
+                          <Power className="mr-1 h-3 w-3" /> 启用
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleBatchToggleEnabled(false)}
+                        >
+                          <PowerOff className="mr-1 h-3 w-3" /> 禁用
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => setIsBatchDeleteDialogOpen(true)}
+                        >
+                          <Trash2 className="mr-1 h-3 w-3" /> 删除
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -214,8 +401,12 @@ export default function ApiKeysPage() {
                         }`}
                       >
                         <div className="flex justify-between items-start">
-                          <div className="space-y-1">
+                          <div className="space-y-1 flex-1">
                             <div className="flex items-center space-x-2">
+                              <Checkbox
+                                checked={selectedKeys.has(key.id)}
+                                onCheckedChange={() => handleKeySelect(key.id)}
+                              />
                               <span className="flex items-center justify-center w-6 h-6 bg-muted text-muted-foreground text-xs rounded-full font-medium">
                                 {index + 1}
                               </span>
@@ -224,7 +415,7 @@ export default function ApiKeysPage() {
                                 <Badge className="bg-green-500">当前使用中</Badge>
                               )}
                             </div>
-                            <div className="flex items-center space-x-2">
+                            <div className="flex items-center space-x-2 ml-8">
                               <p className="font-mono text-sm">{getMaskedKey(key.key)}</p>
                               <button 
                                 className="text-primary hover:text-primary/80 text-xs underline"
@@ -236,7 +427,7 @@ export default function ApiKeysPage() {
                                 复制
                               </button>
                             </div>
-                            <div className="text-xs text-muted-foreground">
+                            <div className="text-xs text-muted-foreground ml-8">
                               使用次数: {key.usageCount || 0} 次
                               {key.lastUsed && (
                                 <span> · 最后使用: {new Date(key.lastUsed).toLocaleString()}</span>
@@ -322,6 +513,34 @@ export default function ApiKeysPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* 轮询系统启用开关 */}
+              <div className="space-y-3 p-4 border rounded-lg bg-gradient-to-r from-primary/5 to-secondary/5">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <Label className="text-base font-semibold">启用API密钥轮询系统</Label>
+                    <p className="text-sm text-muted-foreground">
+                      启用后，系统将根据下方配置自动选择和切换API密钥
+                    </p>
+                  </div>
+                  <Switch
+                    checked={localSettings.rotationEnabled}
+                    onCheckedChange={(checked) => 
+                      setLocalSettings(prev => ({ ...prev, rotationEnabled: checked }))
+                    }
+                  />
+                </div>
+                <div className="text-xs text-muted-foreground border-t pt-2">
+                  <strong>优先级说明：</strong>
+                  {localSettings.rotationEnabled 
+                    ? " 轮询系统已启用，将按下方策略自动选择密钥，忽略手动设置的活动密钥"
+                    : " 轮询系统已关闭，将使用手动设置的活动密钥，或第一个可用密钥"
+                  }
+                </div>
+              </div>
+
+              {/* 轮询配置选项 */}
+              <div className={`space-y-6 ${!localSettings.rotationEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
+              
               {/* 切换时机选择 */}
               <div className="space-y-3">
                 <Label className="text-base font-medium">切换时机</Label>
@@ -427,7 +646,9 @@ export default function ApiKeysPage() {
               <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
                 <h4 className="text-sm font-medium text-primary mb-2">当前配置效果</h4>
                 <p className="text-xs text-muted-foreground">
-                  {localSettings.switchTiming === 'every-call' 
+                  {!localSettings.rotationEnabled 
+                    ? "轮询系统已关闭，将使用手动设置的活动密钥"
+                    : localSettings.switchTiming === 'every-call' 
                     ? `每次API调用都会${
                         localSettings.rotationStrategy === 'sequential' ? '按顺序选择下一个密钥' :
                         localSettings.rotationStrategy === 'random' ? '随机选择一个密钥' :
@@ -441,6 +662,8 @@ export default function ApiKeysPage() {
                   }
                 </p>
               </div>
+              
+              </div> {/* 结束轮询配置选项的div */}
             </CardContent>
             <CardFooter>
               <Button className="w-full" onClick={handleSaveSettings}>
@@ -518,6 +741,78 @@ export default function ApiKeysPage() {
         </DialogContent>
       </Dialog>
       
+      {/* 批量导入API密钥对话框 */}
+      <Dialog open={isBatchImportDialogOpen} onOpenChange={setIsBatchImportDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>批量导入API密钥</DialogTitle>
+            <DialogDescription>
+              支持使用逗号、换行或空格分隔的API密钥列表
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="batch-keys">API密钥列表</Label>
+              <Textarea
+                id="batch-keys"
+                placeholder={`支持多种格式：\n\nAPI1,API2,API3\n\nAPI1\nAPI2\nAPI3\n\nAPI1 API2 API3`}
+                rows={8}
+                value={batchImportText}
+                onChange={(e) => handleBatchImportTextChange(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                系统会自动去重并检查是否与现有密钥重复
+              </p>
+            </div>
+            
+            {parsedKeys.length > 0 && (
+              <div className="space-y-2">
+                <Label>解析结果 ({parsedKeys.length} 个密钥)</Label>
+                <div className="max-h-40 overflow-y-auto border rounded-md p-3 bg-muted/50">
+                  <div className="space-y-1">
+                    {parsedKeys.map((key, index) => {
+                      const isExisting = apiKeys.some(existing => existing.key === key);
+                      return (
+                        <div 
+                          key={index} 
+                          className={`text-sm flex items-center justify-between ${
+                            isExisting ? 'text-muted-foreground line-through' : 'text-foreground'
+                          }`}
+                        >
+                          <span className="font-mono">{key.substring(0, 20)}...</span>
+                          {isExisting ? (
+                            <Badge variant="secondary">已存在</Badge>
+                          ) : (
+                            <Badge variant="default">新密钥</Badge>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  将导入 {parsedKeys.filter(key => !apiKeys.some(existing => existing.key === key)).length} 个新密钥，
+                  跳过 {parsedKeys.filter(key => apiKeys.some(existing => existing.key === key)).length} 个重复密钥
+                </p>
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBatchImportDialogOpen(false)}>
+              取消
+            </Button>
+            <Button 
+              onClick={handleBatchImport}
+              disabled={parsedKeys.length === 0 || parsedKeys.every(key => apiKeys.some(existing => existing.key === key))}
+            >
+              导入 {parsedKeys.filter(key => !apiKeys.some(existing => existing.key === key)).length} 个密钥
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
       {/* 删除API密钥确认对话框 */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent>
@@ -577,6 +872,48 @@ export default function ApiKeysPage() {
             </Button>
             <Button onClick={handleUpdateDuplicateKey}>
               更新现有密钥名称
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* 批量删除确认对话框 */}
+      <Dialog open={isBatchDeleteDialogOpen} onOpenChange={setIsBatchDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认批量删除</DialogTitle>
+            <DialogDescription>
+              确定要删除选中的 {selectedKeys.size} 个API密钥吗？此操作无法撤销。
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground mb-3">
+              即将删除的密钥：
+            </p>
+            <div className="max-h-40 overflow-y-auto border rounded-md p-3 bg-muted/50">
+              <div className="space-y-2">
+                {Array.from(selectedKeys).map(keyId => {
+                  const key = apiKeys.find(k => k.id === keyId);
+                  return key ? (
+                    <div key={keyId} className="flex items-center justify-between text-sm">
+                      <span className="font-medium">{key.name}</span>
+                      <span className="font-mono text-muted-foreground">
+                        {key.key.substring(0, 8)}...
+                      </span>
+                    </div>
+                  ) : null;
+                })}
+              </div>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBatchDeleteDialogOpen(false)}>
+              取消
+            </Button>
+            <Button variant="destructive" onClick={handleBatchDelete}>
+              确认删除 {selectedKeys.size} 个密钥
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -275,7 +275,8 @@ export interface ApiKey {
 
 export interface ApiKeySettings {
   rotationStrategy: 'sequential' | 'random' | 'least-used'; // 轮询策略
-  activeKeyId: string | null;                             // 当前活动密钥ID
+  activeKeyId: string | null;                             // 当前活动密钥ID（手动设置）
   switchTiming: 'every-call' | 'threshold';               // 切换时机：每次调用 | 达到阈值
   switchThreshold: number;                               // 切换阈值（使用次数）
+  rotationEnabled: boolean;                              // 是否启用轮询系统
 } 

@@ -107,6 +107,7 @@ interface AppDB extends DBSchema {
       activeKeyId: string | null;
       switchTiming: 'every-call' | 'threshold';
       switchThreshold: number;
+      rotationEnabled: boolean;
     };
   };
 }
@@ -2233,20 +2234,23 @@ export const apiKeyStorage = {
         rotationStrategy: 'sequential',
         activeKeyId: null,
         switchTiming: 'threshold',
-        switchThreshold: 50
+        switchThreshold: 50,
+        rotationEnabled: false // 默认关闭轮询，需要手动启用
       };
       await db.put('apiKeySettings', settings);
+      return settings;
     }
     
-    // 兼容旧版本：如果存在autoSwitch字段，转换为新格式
-    if ('autoSwitch' in settings) {
+    // 兼容旧版本：如果存在autoSwitch字段或缺少rotationEnabled字段，转换为新格式
+    if ('autoSwitch' in settings || !('rotationEnabled' in settings)) {
       const oldSettings = settings as any;
       settings = {
         id: 'settings',
         rotationStrategy: settings.rotationStrategy,
         activeKeyId: settings.activeKeyId,
-        switchTiming: oldSettings.autoSwitch ? 'threshold' : 'every-call',
-        switchThreshold: settings.switchThreshold || 50
+        switchTiming: oldSettings.autoSwitch ? 'threshold' : (settings.switchTiming || 'threshold'),
+        switchThreshold: settings.switchThreshold || 50,
+        rotationEnabled: oldSettings.autoSwitch || false
       };
       await db.put('apiKeySettings', settings);
     }
@@ -2367,19 +2371,34 @@ export const apiKeyStorage = {
   // 获取当前活动的API密钥
   async getActiveApiKey(): Promise<ApiKey | undefined> {
     const settings = await this.getApiKeySettings();
+    const allKeys = await this.listApiKeys();
+    const enabledKeys = allKeys.filter(key => key.enabled);
     
-    // 如果没有设置活动密钥，获取下一个密钥
-    if (!settings.activeKeyId) {
-      return this.getNextApiKey();
+    if (enabledKeys.length === 0) {
+      return undefined;
     }
     
-    // 对于"每次调用都切换"模式，总是获取下一个密钥
-    if (settings.switchTiming === 'every-call') {
+    // 优先级逻辑：轮询启用时，轮询系统优先级高于手动设置
+    if (settings.rotationEnabled) {
+      // 轮询系统启用，使用轮询逻辑
       return this.getNextApiKey();
+    } else {
+      // 轮询系统关闭，使用手动设置的活动密钥
+      if (!settings.activeKeyId) {
+        // 如果没有手动设置活动密钥，返回第一个可用密钥
+        return enabledKeys[0];
+      }
+      
+      // 获取手动设置的活动密钥
+      const activeKey = await this.getApiKey(settings.activeKeyId);
+      
+      // 如果活动密钥不存在或已禁用，返回第一个可用密钥
+      if (!activeKey || !activeKey.enabled) {
+        return enabledKeys[0];
+      }
+      
+      return activeKey;
     }
-    
-    // 对于"达到阈值后切换"模式，检查是否需要切换
-    return this.getNextApiKey();
   }
 };
 
