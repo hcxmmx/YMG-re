@@ -105,7 +105,7 @@ interface AppDB extends DBSchema {
       id: string;
       rotationStrategy: 'sequential' | 'random' | 'least-used';
       activeKeyId: string | null;
-      autoSwitch: boolean;
+      switchTiming: 'every-call' | 'threshold';
       switchThreshold: number;
     };
   };
@@ -2232,8 +2232,21 @@ export const apiKeyStorage = {
         id: 'settings',
         rotationStrategy: 'sequential',
         activeKeyId: null,
-        autoSwitch: true,
-        switchThreshold: 100
+        switchTiming: 'threshold',
+        switchThreshold: 50
+      };
+      await db.put('apiKeySettings', settings);
+    }
+    
+    // 兼容旧版本：如果存在autoSwitch字段，转换为新格式
+    if ('autoSwitch' in settings) {
+      const oldSettings = settings as any;
+      settings = {
+        id: 'settings',
+        rotationStrategy: settings.rotationStrategy,
+        activeKeyId: settings.activeKeyId,
+        switchTiming: oldSettings.autoSwitch ? 'threshold' : 'every-call',
+        switchThreshold: settings.switchThreshold || 50
       };
       await db.put('apiKeySettings', settings);
     }
@@ -2257,7 +2270,7 @@ export const apiKeyStorage = {
     return updatedSettings;
   },
   
-  // 获取下一个可用的API密钥（根据轮询策略）
+  // 获取下一个可用的API密钥（根据轮询策略和切换时机）
   async getNextApiKey(): Promise<ApiKey | undefined> {
     const settings = await this.getApiKeySettings();
     const allKeys = await this.listApiKeys();
@@ -2269,7 +2282,18 @@ export const apiKeyStorage = {
       return undefined;
     }
     
-    // 根据不同的轮询策略选择下一个密钥
+    // 根据切换时机决定逻辑
+    if (settings.switchTiming === 'every-call') {
+      // 每次调用都切换：直接根据策略选择
+      return this.selectKeyByStrategy(enabledKeys, settings);
+    } else {
+      // 达到阈值后切换：检查当前密钥是否需要切换
+      return this.selectKeyWithThreshold(enabledKeys, settings);
+    }
+  },
+  
+  // 根据策略选择密钥（用于每次调用切换）
+  async selectKeyByStrategy(enabledKeys: ApiKey[], settings: ApiKeySettings): Promise<ApiKey> {
     switch (settings.rotationStrategy) {
       case 'random':
         // 随机选择一个密钥
@@ -2281,46 +2305,81 @@ export const apiKeyStorage = {
         
       case 'sequential':
       default:
-        // 找到当前活动密钥的索引
+        // 顺序轮换：找到当前活动密钥的下一个
         const currentIndex = enabledKeys.findIndex(key => key.id === settings.activeKeyId);
+        const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % enabledKeys.length;
+        const nextKey = enabledKeys[nextIndex];
         
-        // 如果找不到当前密钥或者当前密钥的使用次数超过阈值，选择下一个密钥
-        if (currentIndex === -1 || 
-            !settings.activeKeyId || 
-            (settings.autoSwitch && 
-             enabledKeys[currentIndex].usageCount >= settings.switchThreshold)) {
-          // 选择下一个密钥（环形索引）
-          const nextIndex = (currentIndex + 1) % enabledKeys.length;
-          const nextKey = enabledKeys[nextIndex];
-          
-          // 更新活动密钥ID
-          await this.updateApiKeySettings({ activeKeyId: nextKey.id });
-          return nextKey;
-        }
-        
-        // 返回当前活动密钥
-        return enabledKeys[currentIndex];
+        // 更新活动密钥ID
+        await this.updateApiKeySettings({ activeKeyId: nextKey.id });
+        return nextKey;
     }
+  },
+  
+  // 根据阈值选择密钥（用于达到阈值后切换）
+  async selectKeyWithThreshold(enabledKeys: ApiKey[], settings: ApiKeySettings): Promise<ApiKey> {
+    // 找到当前活动密钥
+    const currentKey = enabledKeys.find(key => key.id === settings.activeKeyId);
+    
+    // 如果没有当前密钥或已达到阈值，需要切换
+    const needSwitch = !currentKey || 
+                      !settings.activeKeyId || 
+                      (currentKey.usageCount || 0) >= settings.switchThreshold;
+    
+    if (!needSwitch) {
+      // 继续使用当前密钥
+      return currentKey!;
+    }
+    
+    // 需要切换，根据策略选择下一个密钥
+    let nextKey: ApiKey;
+    
+    switch (settings.rotationStrategy) {
+      case 'random':
+        // 随机选择一个不同的密钥（如果有多个的话）
+        const otherKeys = enabledKeys.filter(key => key.id !== settings.activeKeyId);
+        if (otherKeys.length > 0) {
+          nextKey = otherKeys[Math.floor(Math.random() * otherKeys.length)];
+        } else {
+          nextKey = enabledKeys[0]; // 只有一个密钥时使用它
+        }
+        break;
+        
+      case 'least-used':
+        // 选择使用次数最少的密钥
+        nextKey = enabledKeys.sort((a, b) => (a.usageCount || 0) - (b.usageCount || 0))[0];
+        break;
+        
+      case 'sequential':
+      default:
+        // 顺序选择下一个密钥
+        const currentIndex = enabledKeys.findIndex(key => key.id === settings.activeKeyId);
+        const nextIndex = (currentIndex + 1) % enabledKeys.length;
+        nextKey = enabledKeys[nextIndex];
+        break;
+    }
+    
+    // 更新活动密钥ID
+    await this.updateApiKeySettings({ activeKeyId: nextKey.id });
+    return nextKey;
   },
   
   // 获取当前活动的API密钥
   async getActiveApiKey(): Promise<ApiKey | undefined> {
     const settings = await this.getApiKeySettings();
     
-    // 如果没有设置活动密钥，或者设置为自动切换，获取下一个密钥
-    if (!settings.activeKeyId || settings.autoSwitch) {
+    // 如果没有设置活动密钥，获取下一个密钥
+    if (!settings.activeKeyId) {
       return this.getNextApiKey();
     }
     
-    // 获取设置的活动密钥
-    const activeKey = await this.getApiKey(settings.activeKeyId);
-    
-    // 如果活动密钥不存在或已禁用，获取下一个密钥
-    if (!activeKey || !activeKey.enabled) {
+    // 对于"每次调用都切换"模式，总是获取下一个密钥
+    if (settings.switchTiming === 'every-call') {
       return this.getNextApiKey();
     }
     
-    return activeKey;
+    // 对于"达到阈值后切换"模式，检查是否需要切换
+    return this.getNextApiKey();
   }
 };
 

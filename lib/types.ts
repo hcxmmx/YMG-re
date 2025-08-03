@@ -276,6 +276,6 @@ export interface ApiKey {
 export interface ApiKeySettings {
   rotationStrategy: 'sequential' | 'random' | 'least-used'; // 轮询策略
   activeKeyId: string | null;                             // 当前活动密钥ID
-  autoSwitch: boolean;                                   // 是否自动切换密钥
+  switchTiming: 'every-call' | 'threshold';               // 切换时机：每次调用 | 达到阈值
   switchThreshold: number;                               // 切换阈值（使用次数）
 } 

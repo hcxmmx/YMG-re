@@ -54,8 +54,8 @@ export default function ApiKeysPage() {
   // 本地设置状态
   const [localSettings, setLocalSettings] = useState({
     rotationStrategy: "sequential" as "sequential" | "random" | "least-used",
-    autoSwitch: true,
-    switchThreshold: 100
+    switchTiming: "threshold" as "every-call" | "threshold",
+    switchThreshold: 50
   });
   
   // 加载API密钥
@@ -68,7 +68,7 @@ export default function ApiKeysPage() {
     if (settings) {
       setLocalSettings({
         rotationStrategy: settings.rotationStrategy,
-        autoSwitch: settings.autoSwitch,
+        switchTiming: settings.switchTiming,
         switchThreshold: settings.switchThreshold
       });
     }
@@ -289,9 +289,68 @@ export default function ApiKeysPage() {
                 配置API密钥轮询策略
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>轮询策略</Label>
+            <CardContent className="space-y-6">
+              {/* 切换时机选择 */}
+              <div className="space-y-3">
+                <Label className="text-base font-medium">切换时机</Label>
+                <RadioGroup
+                  value={localSettings.switchTiming}
+                  onValueChange={(value: string) => 
+                    setLocalSettings(prev => ({ 
+                      ...prev, 
+                      switchTiming: value as "every-call" | "threshold" 
+                    }))
+                  }
+                  className="space-y-3"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="every-call" id="every-call" />
+                      <Label htmlFor="every-call" className="font-medium">每次调用都切换</Label>
+                    </div>
+                    <p className="text-xs text-muted-foreground ml-6">
+                      每次API调用都根据策略重新选择密钥
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="threshold" id="threshold" />
+                      <Label htmlFor="threshold" className="font-medium">达到阈值后切换</Label>
+                    </div>
+                    <p className="text-xs text-muted-foreground ml-6">
+                      单个密钥使用达到指定次数后切换到下一个
+                    </p>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              {/* 阈值设置 */}
+              {localSettings.switchTiming === 'threshold' && (
+                <div className="space-y-3 p-3 bg-muted/30 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <Label className="font-medium">切换阈值: {localSettings.switchThreshold} 次</Label>
+                  </div>
+                  <Slider
+                    value={[localSettings.switchThreshold]}
+                    min={1}
+                    max={200}
+                    step={1}
+                    onValueChange={(values) => 
+                      setLocalSettings(prev => ({ ...prev, switchThreshold: values[0] }))
+                    }
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>1次 (极频繁)</span>
+                    <span>50次 (推荐)</span>
+                    <span>200次 (高用量)</span>
+                  </div>
+                </div>
+              )}
+              
+              {/* 切换策略选择 */}
+              <div className="space-y-3">
+                <Label className="text-base font-medium">切换策略</Label>
                 <RadioGroup
                   value={localSettings.rotationStrategy}
                   onValueChange={(value: string) => 
@@ -300,57 +359,56 @@ export default function ApiKeysPage() {
                       rotationStrategy: value as "sequential" | "random" | "least-used" 
                     }))
                   }
+                  className="space-y-3"
                 >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="sequential" id="sequential" />
-                    <Label htmlFor="sequential">顺序轮询</Label>
+                  <div className="space-y-1">
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="sequential" id="sequential" />
+                      <Label htmlFor="sequential" className="font-medium">顺序轮换</Label>
+                    </div>
+                    <p className="text-xs text-muted-foreground ml-6">
+                      按优先级顺序依次使用密钥（A→B→C→A）
+                    </p>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="random" id="random" />
-                    <Label htmlFor="random">随机选择</Label>
+                  <div className="space-y-1">
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="random" id="random" />
+                      <Label htmlFor="random" className="font-medium">随机选择</Label>
+                    </div>
+                    <p className="text-xs text-muted-foreground ml-6">
+                      随机选择可用密钥，提供最佳隐私保护
+                    </p>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="least-used" id="least-used" />
-                    <Label htmlFor="least-used">优先使用次数最少</Label>
+                  <div className="space-y-1">
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="least-used" id="least-used" />
+                      <Label htmlFor="least-used" className="font-medium">智能均衡</Label>
+                    </div>
+                    <p className="text-xs text-muted-foreground ml-6">
+                      优先选择使用次数最少的密钥，自动负载均衡
+                    </p>
                   </div>
                 </RadioGroup>
               </div>
-              
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="auto-switch">自动切换</Label>
-                  <Switch
-                    id="auto-switch"
-                    checked={localSettings.autoSwitch}
-                    onCheckedChange={(checked) => 
-                      setLocalSettings(prev => ({ ...prev, autoSwitch: checked }))
-                    }
-                  />
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  在使用次数达到阈值时自动切换到下一个密钥
+
+              {/* 当前配置预览 */}
+              <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                <h4 className="text-sm font-medium text-primary mb-2">当前配置效果</h4>
+                <p className="text-xs text-muted-foreground">
+                  {localSettings.switchTiming === 'every-call' 
+                    ? `每次API调用都会${
+                        localSettings.rotationStrategy === 'sequential' ? '按顺序选择下一个密钥' :
+                        localSettings.rotationStrategy === 'random' ? '随机选择一个密钥' :
+                        '选择使用次数最少的密钥'
+                      }`
+                    : `每个密钥使用${localSettings.switchThreshold}次后${
+                        localSettings.rotationStrategy === 'sequential' ? '按顺序切换到下一个密钥' :
+                        localSettings.rotationStrategy === 'random' ? '随机选择下一个不同的密钥' :
+                        '切换到使用次数最少的密钥'
+                      }`
+                  }
                 </p>
               </div>
-              
-              {localSettings.autoSwitch && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>切换阈值: {localSettings.switchThreshold}</Label>
-                  </div>
-                  <Slider
-                    value={[localSettings.switchThreshold]}
-                    min={10}
-                    max={1000}
-                    step={10}
-                    onValueChange={(values) => 
-                      setLocalSettings(prev => ({ ...prev, switchThreshold: values[0] }))
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    当单个密钥使用次数达到此阈值时切换到下一个密钥
-                  </p>
-                </div>
-              )}
             </CardContent>
             <CardFooter>
               <Button className="w-full" onClick={handleSaveSettings}>
