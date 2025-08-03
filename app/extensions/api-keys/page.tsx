@@ -43,13 +43,14 @@ export default function ApiKeysPage() {
   // 组件状态
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDuplicateDialogOpen, setIsDuplicateDialogOpen] = useState(false);
   const [keyToDelete, setKeyToDelete] = useState<string | null>(null);
+  const [duplicateKeyInfo, setDuplicateKeyInfo] = useState<{ name: string; id: string } | null>(null);
   const [isSaved, setIsSaved] = useState(false);
 
   // 新API密钥表单状态
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyValue, setNewKeyValue] = useState("");
-  const [newKeyPriority, setNewKeyPriority] = useState(10);
   
   // 本地设置状态
   const [localSettings, setLocalSettings] = useState({
@@ -87,12 +88,23 @@ export default function ApiKeysPage() {
       return;
     }
     
+    // 检查密钥是否已存在
+    const existingKey = apiKeys.find(key => key.key === newKeyValue.trim());
+    if (existingKey) {
+      setDuplicateKeyInfo({ name: existingKey.name, id: existingKey.id });
+      setIsDuplicateDialogOpen(true);
+      return;
+    }
+    
+    // 自动分配优先级（按现有密钥数量递增）
+    const nextPriority = apiKeys.length === 0 ? 10 : Math.max(...apiKeys.map(k => k.priority)) + 10;
+    
     const newKey: ApiKey = {
       id: "",
       name: newKeyName.trim(),
       key: newKeyValue.trim(),
       enabled: true,
-      priority: newKeyPriority,
+      priority: nextPriority,
       usageCount: 0,
       createdAt: Date.now()
     };
@@ -101,7 +113,25 @@ export default function ApiKeysPage() {
     setIsAddDialogOpen(false);
     setNewKeyName("");
     setNewKeyValue("");
-    setNewKeyPriority(10);
+  };
+  
+  // 处理重复密钥的更新
+  const handleUpdateDuplicateKey = async () => {
+    if (!duplicateKeyInfo) return;
+    
+    const keyToUpdate = apiKeys.find(key => key.id === duplicateKeyInfo.id);
+    if (keyToUpdate) {
+      await saveApiKey({
+        ...keyToUpdate,
+        name: newKeyName.trim() // 更新名称
+      });
+    }
+    
+    setIsDuplicateDialogOpen(false);
+    setIsAddDialogOpen(false);
+    setNewKeyName("");
+    setNewKeyValue("");
+    setDuplicateKeyInfo(null);
   };
   
   // 处理删除API密钥
@@ -150,7 +180,7 @@ export default function ApiKeysPage() {
                 </Button>
               </CardTitle>
               <CardDescription>
-                管理可用的API密钥并设置使用顺序
+                管理可用的API密钥，支持自动查重和智能排序
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -174,7 +204,7 @@ export default function ApiKeysPage() {
                 <div className="space-y-4">
                   {apiKeys
                     .sort((a, b) => a.priority - b.priority)
-                    .map((key) => (
+                    .map((key, index) => (
                       <div 
                         key={key.id} 
                         className={`border rounded-md p-4 ${
@@ -186,11 +216,13 @@ export default function ApiKeysPage() {
                         <div className="flex justify-between items-start">
                           <div className="space-y-1">
                             <div className="flex items-center space-x-2">
+                              <span className="flex items-center justify-center w-6 h-6 bg-muted text-muted-foreground text-xs rounded-full font-medium">
+                                {index + 1}
+                              </span>
                               <h3 className="font-medium">{key.name}</h3>
                               {settings?.activeKeyId === key.id && (
                                 <Badge className="bg-green-500">当前使用中</Badge>
                               )}
-                              <Badge variant="outline">{`优先级: ${key.priority}`}</Badge>
                             </div>
                             <div className="flex items-center space-x-2">
                               <p className="font-mono text-sm">{getMaskedKey(key.key)}</p>
@@ -471,22 +503,8 @@ export default function ApiKeysPage() {
                 value={newKeyValue}
                 onChange={(e) => setNewKeyValue(e.target.value)}
               />
-            </div>
-            
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <Label htmlFor="key-priority">优先级: {newKeyPriority}</Label>
-              </div>
-              <Slider
-                id="key-priority"
-                value={[newKeyPriority]}
-                min={1}
-                max={100}
-                step={1}
-                onValueChange={(values) => setNewKeyPriority(values[0])}
-              />
               <p className="text-xs text-muted-foreground">
-                优先级数字越小，优先级越高。在顺序轮询模式下决定使用顺序。
+                系统会自动检查密钥是否已存在，并按添加顺序分配优先级
               </p>
             </div>
           </div>
@@ -516,6 +534,49 @@ export default function ApiKeysPage() {
             </Button>
             <Button variant="destructive" onClick={handleDeleteKey}>
               删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* 重复密钥提示对话框 */}
+      <Dialog open={isDuplicateDialogOpen} onOpenChange={setIsDuplicateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>密钥已存在</DialogTitle>
+            <DialogDescription>
+              该API密钥已存在于您的列表中，当前名称为 "<strong>{duplicateKeyInfo?.name}</strong>"。
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground mb-3">
+              您可以选择以下操作：
+            </p>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-primary rounded-full"></div>
+                <span>更新现有密钥的名称为 "<strong>{newKeyName}</strong>"</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-muted-foreground rounded-full"></div>
+                <span>取消添加，保持现有密钥不变</span>
+              </div>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsDuplicateDialogOpen(false);
+                setDuplicateKeyInfo(null);
+              }}
+            >
+              取消
+            </Button>
+            <Button onClick={handleUpdateDuplicateKey}>
+              更新现有密钥名称
             </Button>
           </DialogFooter>
         </DialogContent>
