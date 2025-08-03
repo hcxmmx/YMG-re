@@ -14,6 +14,7 @@ import { trimMessageHistory } from "@/lib/tokenUtils";
 import { replaceMacros } from "@/lib/macroUtils";
 import { apiKeyStorage } from "@/lib/storage";
 import { callChatApi, handleStreamResponse, handleNonStreamResponse, ChatApiParams } from "@/lib/chatApi";
+import { useToast } from "@/components/ui/use-toast";
 
 // 定义加载类型
 type LoadingType = 'new' | 'regenerate' | 'variant';
@@ -72,6 +73,7 @@ const incrementApiKeyUsageCount = async (apiKey: string) => {
 };
 
 export default function ChatPage() {
+  const { toast } = useToast();
   const { settings } = useSettingsStore();
   const {
     currentMessages,
@@ -279,11 +281,10 @@ export default function ChatPage() {
       // 检查是否有API密钥（设置中的或轮询系统中的）
       const effectiveApiKey = await checkApiKey(settings.apiKey);
       if (!effectiveApiKey) {
-        // 更新消息，添加错误信息
-        updateMessage({
-          ...messageToRegenerate,
-          content: "重新生成失败：未找到有效的API密钥。请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。",
-          timestamp: new Date(),
+        toast({
+          title: "重新生成失败",
+          description: "未找到有效的API密钥。请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。",
+          variant: "destructive",
         });
         setIsLoading(false);
         return;
@@ -542,16 +543,10 @@ export default function ChatPage() {
       // 检查是否有API密钥（设置中的或轮询系统中的）
       const effectiveApiKey = await checkApiKey(settings.apiKey);
       if (!effectiveApiKey) {
-        // 保持原始内容，但添加错误信息
-        updateMessage({
-          ...messageToAddVariant,
-          content: originalContent,
-          timestamp: new Date(),
-          errorDetails: {
-            code: 400,
-            message: "生成变体失败：未找到有效的API密钥。请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。",
-            timestamp: new Date().toISOString()
-          }
+        toast({
+          title: "生成变体失败",
+          description: "未找到有效的API密钥。请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。",
+          variant: "destructive",
         });
         setIsLoading(false);
         return;
@@ -813,11 +808,10 @@ export default function ChatPage() {
     // 检查是否有API密钥（设置中的或轮询系统中的）
     const effectiveApiKey = await checkApiKey(settings.apiKey);
     if (!effectiveApiKey) {
-      addMessage({
-        id: generateId(),
-        role: "system",
-        content: "请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。",
-        timestamp: new Date(),
+      toast({
+        title: "API密钥未配置",
+        description: "请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。",
+        variant: "destructive",
       });
       return;
     }
@@ -1084,11 +1078,10 @@ export default function ChatPage() {
       // 检查是否有API密钥（设置中的或轮询系统中的）
       const effectiveApiKey = await checkApiKey(settings.apiKey);
       if (!effectiveApiKey) {
-        addMessage({
-          id: generateId(),
-          role: "system",
-          content: "请求回复失败：未找到有效的API密钥。请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。",
-          timestamp: new Date(),
+        toast({
+          title: "请求回复失败",
+          description: "未找到有效的API密钥。请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。",
+          variant: "destructive",
         });
         setIsLoading(false);
         return;

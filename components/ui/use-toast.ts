@@ -31,38 +31,32 @@ function generateId() {
   return `${count++}`;
 }
 
-// 简化版的toast状态管理
+// 简化版的toast状态管理，使用全局事件与Toaster组件通信
 export function useToast() {
-  const [state, setState] = useState<ToastState>({ toasts: [] });
-
   const toast = (props: Omit<Toast, "id">) => {
     const id = generateId();
     const newToast = { id, ...props };
     
-    setState((prevState) => {
-      const newToasts = [...prevState.toasts, newToast].slice(-TOAST_LIMIT);
-      return { toasts: newToasts };
-    });
-    
-    // 自动移除toast
-    setTimeout(() => {
-      setState((prevState) => ({
-        toasts: prevState.toasts.filter((t) => t.id !== id),
-      }));
-    }, TOAST_REMOVE_DELAY);
+    // 发送全局事件给Toaster组件
+    if (typeof window !== 'undefined') {
+      const event = new CustomEvent('toast', { detail: newToast });
+      window.dispatchEvent(event);
+    }
     
     return id;
   };
 
   const dismiss = (toastId: string) => {
-    setState((prevState) => ({
-      toasts: prevState.toasts.filter((t) => t.id !== toastId),
-    }));
+    // 发送dismiss事件
+    if (typeof window !== 'undefined') {
+      const event = new CustomEvent('toast-dismiss', { detail: { id: toastId } });
+      window.dispatchEvent(event);
+    }
   };
 
   return {
     toast,
     dismiss,
-    toasts: state.toasts,
+    toasts: [], // 这个不再使用，状态由Toaster组件管理
   };
 } 

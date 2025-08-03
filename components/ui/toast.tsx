@@ -54,8 +54,17 @@ export function Toaster() {
       }, 3000);
     };
 
+    const handleDismiss = (event: CustomEvent<{ id: string }>) => {
+      setToasts((prev) => prev.filter((t) => t.id !== event.detail.id));
+    };
+
     window.addEventListener("toast" as any, handleToast as any);
-    return () => window.removeEventListener("toast" as any, handleToast as any);
+    window.addEventListener("toast-dismiss" as any, handleDismiss as any);
+    
+    return () => {
+      window.removeEventListener("toast" as any, handleToast as any);
+      window.removeEventListener("toast-dismiss" as any, handleDismiss as any);
+    };
   }, []);
 
   return (
