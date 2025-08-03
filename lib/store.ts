@@ -2540,11 +2540,11 @@ export const useApiKeyStore = create<ApiKeyState>()(
     (set, get) => ({
       apiKeys: [],
       settings: {
-        id: 'settings',
         rotationStrategy: 'sequential',
         activeKeyId: null,
-        autoSwitch: true,
-        switchThreshold: 100
+        switchTiming: 'threshold',
+        switchThreshold: 100,
+        rotationEnabled: false
       },
       isLoading: false,
       error: null,
@@ -2658,8 +2658,8 @@ export const useApiKeyStore = create<ApiKeyState>()(
           // 更新存储中的设置
           const updatedSettings = await apiKeyStorage.updateApiKeySettings({
             activeKeyId: id,
-            // 当手动设置活动密钥时，禁用自动切换
-            autoSwitch: false
+            // 当手动设置活动密钥时，禁用轮询系统
+            rotationEnabled: false
           });
           
           // 更新状态
