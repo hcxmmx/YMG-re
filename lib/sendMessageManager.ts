@@ -8,9 +8,10 @@ import type { FileData } from '@/components/chat/chat-input';
 
 // 发送消息配置接口
 export interface SendMessageConfig {
-  content: string;                     // 用户输入的内容
+  content?: string;                    // 用户输入的内容（直接回复时可选）
   files?: FileData[];                  // 附件
   stream?: boolean;                    // 是否使用流式响应，默认从设置读取
+  directReply?: boolean;               // 是否为直接回复模式（使用现有消息历史）
   onProgress?: (chunk: string) => void; // 流式响应进度回调
   onComplete?: (fullResponse: string) => void; // 完成回调
   onError?: (error: string) => void;   // 错误回调
@@ -42,9 +43,10 @@ export class SendMessageManager {
     this.context = { ...this.context, ...context };
   }
 
-  // 发送新消息
+  // 发送新消息或直接回复
   async sendMessage(config: SendMessageConfig): Promise<string | null> {
-    console.log('[SendMessageManager] 开始发送消息');
+    const logPrefix = config.directReply ? '[SendMessageManager-DirectReply]' : '[SendMessageManager]';
+    console.log(`${logPrefix} 开始处理请求`);
     
     try {
       // 生成请求ID
@@ -56,36 +58,49 @@ export class SendMessageManager {
         const error = "未找到有效的API密钥。请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。";
         config.onError?.(error);
         this.context.toast({
-          title: "API密钥未配置",
+          title: config.directReply ? "请求回复失败" : "API密钥未配置",
           description: error,
           variant: "destructive",
         });
         return null;
       }
 
-      // 2. 处理用户输入内容
-      const processedContent = await this.processUserInput(config.content);
+      // 2. 构建消息历史
+      let messageHistory: Message[];
+      
+      if (config.directReply) {
+        // 直接回复模式：使用现有消息历史，不添加新消息
+        messageHistory = this.context.messages;
+        console.log(`${logPrefix} 直接回复模式，使用现有${messageHistory.length}条消息`);
+      } else {
+        // 新消息模式：处理用户输入并添加新消息
+        if (!config.content?.trim() && !config.files?.length) {
+          const error = "消息内容不能为空";
+          config.onError?.(error);
+          return null;
+        }
+        
+        const processedContent = await this.processUserInput(config.content!);
+        const userMessage: Message = {
+          id: generateId(),
+          role: "user",
+          content: processedContent,
+          files: config.files,
+          timestamp: new Date(),
+        };
+        
+        messageHistory = [...this.context.messages, userMessage];
+        console.log(`${logPrefix} 新消息模式，添加用户消息后共${messageHistory.length}条消息`);
+      }
 
-      // 3. 构建用户消息
-      const userMessage: Message = {
-        id: generateId(),
-        role: "user",
-        content: processedContent,
-        files: config.files,
-        timestamp: new Date(),
-      };
-
-      // 4. 构建完整的消息历史
-      const messageHistory = [...this.context.messages, userMessage];
-
-      // 5. 裁剪消息历史
+      // 3. 裁剪消息历史
       const trimmedMessages = await this.trimMessageHistory(messageHistory, apiKey);
-      console.log(`[SendMessageManager] 消息裁剪: 从${messageHistory.length}条消息裁剪到${trimmedMessages.length}条`);
+      console.log(`${logPrefix} 消息裁剪: 从${messageHistory.length}条消息裁剪到${trimmedMessages.length}条`);
 
-      // 6. 处理系统提示词
+      // 4. 处理系统提示词
       const systemPrompt = await this.processSystemPrompt();
 
-      // 7. 准备API参数
+      // 5. 准备API参数
       const apiParams: ChatApiParams = {
         messages: trimmedMessages,
         systemPrompt,
@@ -105,11 +120,11 @@ export class SendMessageManager {
         ]
       };
 
-      // 8. 调用API
+      // 6. 调用API
       config.onStart?.();
       const response = await this.callApi(apiParams);
 
-      // 9. 处理响应
+      // 7. 处理响应
       if (apiParams.stream) {
         return await this.handleStreamResponse(response, config);
       } else {
@@ -117,8 +132,8 @@ export class SendMessageManager {
       }
 
     } catch (error: any) {
-      console.error('[SendMessageManager] 发送消息失败:', error);
-      const errorMessage = error.message || "发送消息时出错";
+      console.error(`${logPrefix} 请求失败:`, error);
+      const errorMessage = error.message || (config.directReply ? "请求回复时出错" : "发送消息时出错");
       config.onError?.(errorMessage);
       return null;
     } finally {
@@ -316,3 +331,32 @@ export class SendMessageManager {
 export function createSendMessageManager(context: SendMessageContext): SendMessageManager {
   return new SendMessageManager(context);
 }
+
+// 便捷方法：执行不同类型的请求
+export const ChatRequests = {
+  // 发送新消息
+  async sendMessage(
+    manager: SendMessageManager, 
+    content: string, 
+    files?: FileData[],
+    options?: Partial<SendMessageConfig>
+  ): Promise<string | null> {
+    return manager.sendMessage({
+      content,
+      files,
+      directReply: false,
+      ...options
+    });
+  },
+
+  // 直接请求回复
+  async requestDirectReply(
+    manager: SendMessageManager,
+    options?: Partial<SendMessageConfig>
+  ): Promise<string | null> {
+    return manager.sendMessage({
+      directReply: true,
+      ...options
+    });
+  }
+};

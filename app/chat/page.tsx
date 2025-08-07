@@ -15,7 +15,7 @@ import { replaceMacros } from "@/lib/macroUtils";
 import { apiKeyStorage } from "@/lib/storage";
 import { callChatApi, handleStreamResponse, handleNonStreamResponse, ChatApiParams } from "@/lib/chatApi";
 import { useToast } from "@/components/ui/use-toast";
-import { createSendMessageManager, SendMessageManager, type SendMessageContext } from "@/lib/sendMessageManager";
+import { createSendMessageManager, SendMessageManager, ChatRequests, type SendMessageContext } from "@/lib/sendMessageManager";
 
 // 定义加载类型
 type LoadingType = 'new' | 'regenerate' | 'variant';
@@ -988,6 +988,9 @@ export default function ChatPage() {
     // 安全检查：确保可以请求回复且存在最后一条用户消息
     if (!canRequestReply || !lastUserMessage) return;
     
+    // 初始化发送消息管理器
+    const sendManager = initializeSendMessageManager();
+    
     setIsLoading(true);
     setLoadingType('new');
     setLoadingMessageId(null);
@@ -995,332 +998,86 @@ export default function ChatPage() {
     // 记录响应开始时间
     responseStartTimeRef.current = Date.now();
 
+    // 创建初始空消息（AI回复）
+    let currentAssistantMessage: MessageType | null = null;
+
     try {
-      // 检查是否有API密钥（设置中的或轮询系统中的）
-      const effectiveApiKey = await checkApiKey(settings.apiKey);
-      if (!effectiveApiKey) {
-        toast({
-          title: "请求回复失败",
-          description: "未找到有效的API密钥。请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。",
-          variant: "destructive",
-        });
-        setIsLoading(false);
-        return;
-      }
-
-      // 构建请求消息历史（使用现有消息，不添加新的用户消息）
-      const requestMessagesOriginal = currentMessages;
-      
-      // 使用trimMessageHistory裁剪消息历史
-      const requestMessages = await trimMessageHistory(
-        requestMessagesOriginal,
-        settings,
-        effectiveApiKey
-      );
-      
-      console.log(`[直接请求回复] 消息裁剪: 从${requestMessagesOriginal.length}条消息裁剪到${requestMessages.length}条`);
-
-      // 获取当前玩家和角色名称用于宏替换
-      const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
-      const playerName = currentPlayer?.name || "玩家";
-      const characterName = currentCharacter?.name || "AI";
-
-      // 应用宏替换到系统提示词
-      const processedSystemPrompt = replaceMacros(systemPrompt, playerName, characterName);
-
-      // 生成请求ID
-      const requestId = generateRequestId();
-      console.log(`[直接请求回复] 发送请求: ${requestId}`);
-      
-      // 保存当前请求ID到ref中
-      currentRequestIdRef.current = requestId;
-
-      // API调用参数
-      const params = {
-        messages: requestMessages,
-        systemPrompt: processedSystemPrompt,
-        apiKey: effectiveApiKey, // 使用有效的API密钥
+      // 使用统一的请求管理器执行直接回复请求
+      const response = await ChatRequests.requestDirectReply(sendManager, {
         stream: settings.enableStreaming,
-        requestId, // 添加requestId
-        temperature: settings.temperature,
-        maxOutputTokens: settings.maxTokens,
-        topK: settings.topK,
-        topP: settings.topP,
-        model: settings.model,
-        safetySettings: [
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: settings.safetySettings.hateSpeech },
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: settings.safetySettings.harassment },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: settings.safetySettings.sexuallyExplicit },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: settings.safetySettings.dangerousContent }
-        ]
-      };
-
-      // 调用API获取回复
-      if (settings.enableStreaming) {
-        // 流式响应处理
-        const apiResponse = await callChatApi(params);
-
-        if (!apiResponse.ok) {
-          // 提取API错误详情
-          const errorDetails = await extractErrorDetails(null, apiResponse);
+        onStart: () => {
+          console.log('[handleRequestReply] 开始直接请求回复');
+        },
+        onProgress: async (chunk: string) => {
+          // 如果还没有创建助手消息，先创建一个
+          if (!currentAssistantMessage) {
+            currentAssistantMessage = {
+              id: generateId(),
+              role: "assistant",
+              content: "",
+              timestamp: new Date(),
+            };
+            await addMessage(currentAssistantMessage);
+          }
+          
+          // 更新消息内容
+          const updatedMessage = {
+            ...currentAssistantMessage,
+            content: currentAssistantMessage.content + chunk
+          };
+          
+          currentAssistantMessage = updatedMessage;
+          updateMessage(updatedMessage);
+        },
+        onComplete: async (fullResponse: string) => {
+          console.log('[handleRequestReply] 直接回复生成完成');
+          
+          // 计算响应时间
+          const responseTime = Date.now() - responseStartTimeRef.current;
+          
+          // 如果使用非流式响应，创建完整的消息
+          if (!settings.enableStreaming && !currentAssistantMessage) {
+            const assistantMessage: MessageType = {
+              id: generateId(),
+              role: "assistant",
+              content: fullResponse,
+              timestamp: new Date(),
+              responseTime: responseTime
+            };
+            await addMessage(assistantMessage);
+          } else if (currentAssistantMessage) {
+            // 更新最终内容，包含响应时间
+            const finalMessage = {
+              ...currentAssistantMessage,
+              content: fullResponse,
+              responseTime: responseTime
+            };
+            updateMessage(finalMessage);
+          }
+          
+          setIsLoading(false);
+          setLoadingMessageId(null);
+        },
+        onError: async (error: string) => {
+          console.error('[handleRequestReply] 直接回复生成失败:', error);
           
           // 创建带有错误信息的助手消息
           await addMessage({
             id: generateId(),
             role: "assistant",
-            content: "API请求失败。",
+            content: "请求回复时发生错误。",
             timestamp: new Date(),
-            errorDetails: errorDetails
-          });
-          return;
-        }
-
-        console.log("[直接请求回复] 流式响应开始接收");
-        const reader = apiResponse.body?.getReader();
-        if (!reader) throw new Error("流式响应读取失败");
-
-        // 累积的响应内容
-        let accumulatedContent = "";
-        let decoder = new TextDecoder();
-        let buffer = ""; // 用于存储不完整的数据块
-        let chunkCount = 0;
-        let dataChunkCount = 0;
-        let firstChunkReceived = false;
-
-        // 创建初始空消息（AI回复）
-        const assistantMessageId = generateId();
-        const initialAssistantMessage: MessageType = {
-          id: assistantMessageId,
-          role: "assistant",
-          content: "",
-          timestamp: new Date(),
-        };
-
-        // 添加初始空消息
-        await addMessage(initialAssistantMessage);
-
-        // 处理流式数据
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            console.log("[直接请求回复] 流式响应接收完成");
-            break;
-          }
-
-          // 解码为文本
-          const text = decoder.decode(value, { stream: true });
-          chunkCount++;
-          console.log(`[直接请求回复] 接收到第 ${chunkCount} 个原始数据块，长度: ${text.length}`);
-          buffer += text; // 将新数据添加到缓冲区
-
-          // 尝试按SSE格式分割数据
-          const lines = buffer.split("\n\n");
-          // 保留最后一个可能不完整的块
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            if (!line.trim()) continue;
-
-            if (!line.startsWith("data: ")) {
-              console.warn("[直接请求回复] 非预期格式的数据行:", line);
-              continue;
-            }
-
-            const data = line.replace("data: ", "");
-            if (data === "[DONE]") {
-              console.log("[直接请求回复] 收到流结束标记");
-              continue;
-            }
-
-            try {
-              dataChunkCount++;
-              const parsed = JSON.parse(data);
-              console.log(`[直接请求回复] 解析第 ${dataChunkCount} 个数据块:`,
-                parsed.text ? `文本(${parsed.text.length}字符)` :
-                  parsed.error ? `错误(${parsed.error})` : "无内容");
-
-              if (parsed.error) {
-                console.error("[直接请求回复] 流式响应错误:", parsed.error);
-                
-                // 提取错误详情
-                const errorDetails: ErrorDetails = {
-                  code: parsed.code || 400,
-                  message: parsed.error || "API响应错误",
-                  details: parsed.details || undefined,
-                  timestamp: new Date().toISOString()
-                };
-                
-                // 更新消息，添加错误信息
-                updateMessage({
-                  id: assistantMessageId,
-                  role: "assistant",
-                  content: accumulatedContent || "生成回复时发生错误。",
-                  timestamp: new Date(),
-                  errorDetails: errorDetails
-                });
-                continue;
-              }
-
-              if (parsed.text !== undefined) {
-                // 记录第一个内容块的时间
-                if (!firstChunkReceived) {
-                  firstChunkReceived = true;
-                  const firstChunkTime = Date.now() - responseStartTimeRef.current;
-                  console.log(`[直接请求回复] 首个响应块接收时间: ${firstChunkTime}ms`);
-                }
-
-                accumulatedContent += parsed.text;
-                // 使用updateMessage更新消息内容
-                console.log(`[直接请求回复] 更新消息内容，时间: ${new Date().toISOString()}, 新增内容: "${parsed.text}"`);
-                updateMessage({
-                  id: assistantMessageId,
-                  role: "assistant",
-                  content: accumulatedContent,
-                  timestamp: new Date(),
-                });
-              }
-            } catch (e) {
-              // 解析失败，记录错误但不中断流程
-              console.error("[直接请求回复] 解析流式数据失败:", e, "原始数据:", data);
-            }
-          }
-        }
-
-        // 处理缓冲区中可能剩余的数据
-        if (buffer.trim()) {
-          console.log("[直接请求回复] 处理剩余缓冲区数据");
-          const lines = buffer.split("\n\n");
-          for (const line of lines) {
-            if (!line.trim() || !line.startsWith("data: ")) continue;
-
-            const data = line.replace("data: ", "");
-            if (data === "[DONE]") continue;
-
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.text !== undefined) {
-                accumulatedContent += parsed.text;
-                // 使用updateMessage更新消息内容
-                updateMessage({
-                  id: assistantMessageId,
-                  role: "assistant",
-                  content: accumulatedContent,
-                  timestamp: new Date(),
-                });
-              }
-            } catch (e) {
-              console.error("[直接请求回复] 解析剩余流式数据失败:", e);
-            }
-          }
-        }
-
-        // 计算总响应时间并更新消息
-        const responseTime = Date.now() - responseStartTimeRef.current;
-        console.log(`[直接请求回复] 总响应时间: ${responseTime}ms`);
-
-        // 如果最终没有收到任何内容，显示提示信息
-        if (!accumulatedContent) {
-          console.warn("[直接请求回复] 流式响应未产生任何内容");
-          const errorDetails: ErrorDetails = {
-            code: 204, // No Content
-            message: "API返回了空响应",
-            timestamp: new Date().toISOString()
-          };
-          
-          updateMessage({
-            id: assistantMessageId,
-            role: "assistant",
-            content: "AI未能生成回复。",
-            timestamp: new Date(),
-            responseTime: responseTime,
-            errorDetails: errorDetails
-          });
-        } else {
-          // 更新最终消息，包含响应时间
-          updateMessage({
-            id: assistantMessageId,
-            role: "assistant",
-            content: accumulatedContent,
-            timestamp: new Date(),
-            responseTime: responseTime,
-            errorDetails: undefined // 清除可能存在的错误信息
           });
           
-          // 增加API密钥使用次数
-          await incrementApiKeyUsageCount(effectiveApiKey);
+          setIsLoading(false);
+          setLoadingMessageId(null);
         }
-      } else {
-        // 非流式响应
-        try {
-          const response = await fetch("/api/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(params),
-          });
-
-          if (!response.ok) {
-            // 提取API错误详情
-            const errorDetails = await extractErrorDetails(null, response);
-            
-            // 创建带有错误信息的助手消息
-            await addMessage({
-              id: generateId(),
-              role: "assistant",
-              content: "API请求失败。",
-              timestamp: new Date(),
-              errorDetails: errorDetails
-            });
-            return;
-          }
-
-          const data = await response.json();
-          const responseTime = Date.now() - responseStartTimeRef.current;
-
-          // 添加助手回复
-          await addMessage({
-            id: generateId(),
-            role: "assistant",
-            content: data.text,
-            timestamp: new Date(),
-            responseTime: responseTime,
-            errorDetails: undefined // 确保没有错误信息
-          });
-          
-          // 增加API密钥使用次数
-          await incrementApiKeyUsageCount(effectiveApiKey);
-        } catch (fetchError) {
-          // 处理网络错误
-          const errorDetails = await extractErrorDetails(fetchError);
-          await addMessage({
-            id: generateId(),
-            role: "assistant",
-            content: "连接到API服务器失败。",
-            timestamp: new Date(),
-            errorDetails: errorDetails
-          });
-        }
-      }
-    } catch (error: any) {
-      console.error("[直接请求回复] API调用失败:", error);
-      
-      // 提取并格式化错误信息
-      const errorDetails = await extractErrorDetails(error);
-      
-      // 添加带有详细错误信息的消息
-      await addMessage({
-        id: generateId(),
-        role: "assistant",
-        content: "回复请求失败。",
-        timestamp: new Date(),
-        errorDetails: errorDetails
       });
-    } finally {
-      // 重置加载状态
+      
+    } catch (error: any) {
+      console.error('[handleRequestReply] 执行失败:', error);
       setIsLoading(false);
       setLoadingMessageId(null);
-      
-      // 清除请求ID
-      currentRequestIdRef.current = null;
     }
   };
 
@@ -1380,54 +1137,36 @@ export default function ChatPage() {
         }
       } else if (typeof error === "string") {
         errorDetails.message = error;
-      } else if (typeof error === "object" && error !== null) {
-        if (error.error) errorDetails.message = error.error;
-        if (error.code) errorDetails.code = error.code;
-        if (error.details) errorDetails.details = error.details;
       }
-      
-      // 确保错误消息不是空的
-      if (!errorDetails.message || errorDetails.message.trim() === "") {
-        errorDetails.message = "未知错误";
-      }
-      
-    } catch (e) {
-      console.error("提取错误详情时发生错误:", e);
-      // 使用默认错误信息
+    } catch (extractError) {
+      console.error("提取错误详情时出错:", extractError);
+      errorDetails.message = "处理错误信息时出错";
     }
     
     return errorDetails;
   };
 
-  // 取消当前请求
+  // 取消请求
   const cancelRequest = useCallback(async () => {
-    const requestId = currentRequestIdRef.current;
-    if (!requestId) {
-      console.log("没有活动的请求可取消");
-      return;
-    }
+    const sendManager = initializeSendMessageManager();
+    const cancelled = await sendManager.cancelRequest();
     
-    console.log(`尝试取消请求: ${requestId}`);
-    try {
-      const response = await fetch(`/api/chat?requestId=${requestId}`, {
-        method: "DELETE",
-      });
-      
-      const result = await response.json();
-      console.log("取消请求结果:", result);
-      
-      // 清除当前请求ID
+    if (cancelled) {
+      console.log('[取消请求] 请求已成功取消');
+      setIsLoading(false);
+      setLoadingMessageId(null);
       currentRequestIdRef.current = null;
       
-      if (!response.ok) {
-        console.error("取消请求失败:", result.message || "未知错误");
-      }
-    } catch (error) {
-      console.error("调用取消API时出错:", error);
+      toast({
+        title: "请求已取消",
+        description: "AI回复生成已停止",
+      });
+    } else {
+      console.log('[取消请求] 没有活动的请求可以取消');
     }
-  }, []);
+  }, [initializeSendMessageManager, setIsLoading, setLoadingMessageId, toast]);
 
-  // 在加载状态变化时添加一个清理函数
+  // 在组件卸载时取消请求
   useEffect(() => {
     return () => {
       // 当组件卸载时，取消所有请求
