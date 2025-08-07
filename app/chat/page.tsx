@@ -307,17 +307,72 @@ export default function ChatPage() {
     responseStartTimeRef.current = Date.now();
 
     try {
-      // 检查是否有API密钥（设置中的或轮询系统中的）
-      const effectiveApiKey = await checkApiKey(settings.apiKey);
-      if (!effectiveApiKey) {
-        toast({
-          title: "重新生成失败",
-          description: "未找到有效的API密钥。请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。",
-          variant: "destructive",
-        });
-        setIsLoading(false);
-        return;
-      }
+      // 初始化发送消息管理器并使用统一的重新生成逻辑
+      const sendManager = initializeSendMessageManager();
+      await ChatRequests.regenerateMessage(
+        sendManager,
+        messageId,
+        messageIndex,
+        {
+          stream: settings.enableStreaming,
+          onStart: () => {
+            console.log('[handleRegenerateMessage] 开始完全重新生成消息');
+          },
+          onProgress: async (chunk: string) => {
+            updateMessage({
+              ...messageToRegenerate,
+              content: chunk,
+              timestamp: new Date(),
+            });
+          },
+          onComplete: async (fullResponse: string) => {
+            const responseTime = Date.now() - responseStartTimeRef.current;
+            const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
+            const playerName = currentPlayer?.name || "玩家";
+            const characterName = currentCharacter?.name || "AI";
+            
+            let processedResponse = fullResponse;
+            try {
+              const { applyRegexToMessage } = useRegexStore.getState();
+              processedResponse = await applyRegexToMessage(fullResponse, playerName, characterName, 0, 2, currentCharacter?.id);
+            } catch (error) {
+              console.error("应用正则表达式处理AI响应时出错:", error);
+            }
+            
+            updateMessage({
+              id: messageId,
+              role: "assistant",
+              content: processedResponse,
+              timestamp: new Date(),
+              responseTime: responseTime,
+              messageNumber: originalMessageNumber,
+              alternateResponses: [],
+              currentResponseIndex: 0,
+              originalContent: undefined,
+              errorDetails: undefined
+            });
+            
+            setIsLoading(false);
+            setLoadingMessageId(null);
+          },
+          onError: async (error: string) => {
+            updateMessage({
+              ...messageToRegenerate,
+              content: "重新生成消息时发生错误。",
+              timestamp: new Date(),
+              errorDetails: {
+                code: 500,
+                message: error,
+                timestamp: new Date().toISOString()
+              }
+            });
+            
+            setIsLoading(false);
+            setLoadingMessageId(null);
+          }
+        }
+      );
+      return;
 
       // 构建请求消息历史（不包含当前消息和之后的消息）
       const requestMessagesOriginal = currentMessages.slice(0, messageIndex);
@@ -569,17 +624,71 @@ export default function ChatPage() {
     responseStartTimeRef.current = Date.now();
 
     try {
-      // 检查是否有API密钥（设置中的或轮询系统中的）
-      const effectiveApiKey = await checkApiKey(settings.apiKey);
-      if (!effectiveApiKey) {
-        toast({
-          title: "生成变体失败",
-          description: "未找到有效的API密钥。请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。",
-          variant: "destructive",
-        });
-        setIsLoading(false);
-        return;
-      }
+      // 使用统一的消息管理器处理变体生成
+      const sendManager = initializeSendMessageManager();
+      await ChatRequests.generateVariant(
+        sendManager,
+        messageId,
+        messageIndex,
+        {
+          stream: settings.enableStreaming,
+          onStart: () => {
+            console.log('[handleGenerateVariant] 开始生成变体');
+          },
+          onProgress: async (chunk: string) => {
+            updateMessage({
+              ...messageToAddVariant,
+              content: chunk,
+              timestamp: new Date(),
+            });
+          },
+          onComplete: async (fullResponse: string) => {
+            const responseTime = Date.now() - responseStartTimeRef.current;
+            const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
+            const playerName = currentPlayer?.name || "玩家";
+            const characterName = currentCharacter?.name || "AI";
+            
+            let processedResponse = fullResponse;
+            try {
+              const { applyRegexToMessage } = useRegexStore.getState();
+              processedResponse = await applyRegexToMessage(fullResponse, playerName, characterName, 0, 2, currentCharacter?.id);
+            } catch (error) {
+              console.error("应用正则表达式处理AI响应时出错:", error);
+            }
+            
+            const newVariants = [...currentAlternates, processedResponse];
+            updateMessage({
+              ...messageToAddVariant,
+              content: processedResponse,
+              alternateResponses: newVariants,
+              currentResponseIndex: newVariants.length,
+              originalContent: messageToAddVariant.originalContent || originalContent,
+              timestamp: new Date(),
+              responseTime: responseTime,
+              errorDetails: undefined
+            });
+            
+            setIsLoading(false);
+            setLoadingMessageId(null);
+          },
+          onError: async (error: string) => {
+            updateMessage({
+              ...messageToAddVariant,
+              content: originalContent,
+              timestamp: new Date(),
+              errorDetails: {
+                code: 500,
+                message: error,
+                timestamp: new Date().toISOString()
+              }
+            });
+            
+            setIsLoading(false);
+            setLoadingMessageId(null);
+          }
+        }
+      );
+      return;
 
       // 构建请求消息历史（不包含当前消息和之后的消息）
       // 重要：确保只使用到用户提问的消息，不包括当前AI回复
