@@ -15,18 +15,12 @@ import { replaceMacros } from "@/lib/macroUtils";
 import { apiKeyStorage } from "@/lib/storage";
 import { callChatApi, handleStreamResponse, handleNonStreamResponse, ChatApiParams } from "@/lib/chatApi";
 import { useToast } from "@/components/ui/use-toast";
-import { createSendMessageManager, SendMessageManager, ChatRequests, type SendMessageContext } from "@/lib/sendMessageManager";
+import { createSendMessageManager, SendMessageManager, ChatRequests, type SendMessageContext, type ErrorDetails } from "@/lib/sendMessageManager";
 
 // 定义加载类型
 type LoadingType = 'new' | 'regenerate' | 'variant';
 
-// 添加错误详情接口
-interface ErrorDetails {
-  code: number;        // HTTP状态码或API错误代码
-  message: string;     // 错误消息
-  details?: any;       // 错误详细信息
-  timestamp: string;   // 错误发生时间
-}
+
 
 // 用于生成请求ID的辅助函数
 function generateRequestId(): string {
@@ -356,17 +350,13 @@ export default function ChatPage() {
             setIsLoading(false);
             setLoadingMessageId(null);
           },
-          onError: async (error: string) => {
+          onError: async (errorDetails: ErrorDetails, error?: string) => {
             updateMessage({
               ...messageToRegenerate,
               id: messageId,
               content: "重新生成消息时发生错误。",
               timestamp: new Date(),
-              errorDetails: {
-                code: 500,
-                message: error,
-                timestamp: new Date().toISOString()
-              }
+              errorDetails
             });
             
             setIsLoading(false);
@@ -465,17 +455,13 @@ export default function ChatPage() {
             setIsLoading(false);
             setLoadingMessageId(null);
           },
-          onError: async (error: string) => {
+          onError: async (errorDetails: ErrorDetails, error?: string) => {
             updateMessage({
               ...messageToAddVariant,
               id: messageId,
               content: originalContent,
               timestamp: new Date(),
-              errorDetails: {
-                code: 500,
-                message: error,
-                timestamp: new Date().toISOString()
-              }
+              errorDetails
             });
             
             setIsLoading(false);
@@ -606,8 +592,8 @@ export default function ChatPage() {
           setIsLoading(false);
           setLoadingMessageId(null);
         },
-        onError: async (error: string) => {
-          console.error('[handleSendMessage] AI回复生成失败:', error);
+        onError: async (errorDetails: ErrorDetails, error?: string) => {
+          console.error('[handleSendMessage] AI回复生成失败:', errorDetails);
           
           // 创建带有错误信息的助手消息
           await addMessage({
@@ -615,6 +601,7 @@ export default function ChatPage() {
             role: "assistant",
             content: "发送消息时发生错误。",
             timestamp: new Date(),
+            errorDetails
           });
           
           setIsLoading(false);
@@ -730,8 +717,8 @@ export default function ChatPage() {
           setIsLoading(false);
           setLoadingMessageId(null);
         },
-        onError: async (error: string) => {
-          console.error('[handleRequestReply] 直接回复生成失败:', error);
+        onError: async (errorDetails: ErrorDetails, error?: string) => {
+          console.error('[handleRequestReply] 直接回复生成失败:', errorDetails);
           
           // 创建带有错误信息的助手消息
           await addMessage({
@@ -739,6 +726,7 @@ export default function ChatPage() {
             role: "assistant",
             content: "请求回复时发生错误。",
             timestamp: new Date(),
+            errorDetails
           });
           
           setIsLoading(false);

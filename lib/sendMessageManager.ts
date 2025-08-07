@@ -6,6 +6,14 @@ import { trimMessageHistory } from './tokenUtils';
 import { generateId } from './utils';
 import type { FileData } from '@/components/chat/chat-input';
 
+// 错误详情接口
+export interface ErrorDetails {
+  code: number;        // HTTP状态码或API错误代码
+  message: string;     // 错误消息
+  details?: any;       // 错误详细信息
+  timestamp: string;   // 错误发生时间
+}
+
 // 发送消息配置接口
 export interface SendMessageConfig {
   content?: string;                    // 用户输入的内容（直接回复时可选）
@@ -19,7 +27,7 @@ export interface SendMessageConfig {
   };
   onProgress?: (chunk: string) => void; // 流式响应进度回调
   onComplete?: (fullResponse: string) => void; // 完成回调
-  onError?: (error: string) => void;   // 错误回调
+  onError?: (errorDetails: ErrorDetails, errorMessage?: string) => void;   // 错误回调
   onStart?: () => void;                // 开始回调
 }
 
@@ -62,16 +70,22 @@ export class SendMessageManager {
       
       // 1. 检查API密钥
       const apiKey = await this.checkApiKey();
-      if (!apiKey) {
-        const error = "未找到有效的API密钥。请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。";
-        config.onError?.(error);
-        this.context.toast({
-          title: config.directReply ? "请求回复失败" : "API密钥未配置",
-          description: error,
-          variant: "destructive",
-        });
-        return null;
-      }
+          if (!apiKey) {
+      const errorMessage = "未找到有效的API密钥。请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。";
+      const errorDetails: ErrorDetails = {
+        code: 401,
+        message: errorMessage,
+        timestamp: new Date().toISOString()
+      };
+      
+      config.onError?.(errorDetails, errorMessage);
+      this.context.toast({
+        title: config.directReply ? "请求回复失败" : "API密钥未配置",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      return null;
+    }
 
       // 2. 构建消息历史
       let messageHistory: Message[];
@@ -87,8 +101,13 @@ export class SendMessageManager {
       } else {
         // 新消息模式：处理用户输入并添加新消息
         if (!config.content?.trim() && !config.files?.length) {
-          const error = "消息内容不能为空";
-          config.onError?.(error);
+          const errorMessage = "消息内容不能为空";
+          const errorDetails: ErrorDetails = {
+            code: 400,
+            message: errorMessage,
+            timestamp: new Date().toISOString()
+          };
+          config.onError?.(errorDetails, errorMessage);
           return null;
         }
         
@@ -145,12 +164,15 @@ export class SendMessageManager {
 
     } catch (error: any) {
       console.error(`${logPrefix} 请求失败:`, error);
-      const errorMessage = error.message || 
-        (config.regenerate ? 
-          (config.regenerate.mode === 'variant' ? "生成变体时出错" : "重新生成消息时出错") :
-         config.directReply ? "请求回复时出错" : 
-         "发送消息时出错");
-      config.onError?.(errorMessage);
+      
+      // 创建详细错误信息
+      const errorDetails = await this.extractErrorDetails(error);
+      const simpleMessage = config.regenerate ? 
+        (config.regenerate.mode === 'variant' ? "生成变体时出错" : "重新生成消息时出错") :
+        config.directReply ? "请求回复时出错" : 
+        "发送消息时出错";
+      
+      config.onError?.(errorDetails, simpleMessage);
       return null;
     } finally {
       this.activeRequestId = null;
@@ -261,41 +283,101 @@ export class SendMessageManager {
   // 处理流式响应
   private async handleStreamResponse(response: Response, config: SendMessageConfig): Promise<string> {
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || "API调用失败");
+      const errorData = await response.json().catch(() => ({ error: response.statusText || "API调用失败" }));
+      const error = new Error(errorData.error || "API调用失败");
+      (error as any).response = response;
+      throw error;
     }
 
     let fullResponse = "";
-    const playerName = this.context.currentPlayer?.name || "玩家";
-    const characterName = this.context.currentCharacter?.name || "AI";
-    
+    const decoder = new TextDecoder();
+    const reader = response.body?.getReader();
+
+    if (!reader) {
+      throw new Error("无法读取响应流");
+    }
+
     try {
-      for await (const chunk of handleStreamResponse(response)) {
-        // 应用正则表达式处理AI输出
-        let processedChunk = chunk;
-        try {
-          processedChunk = await this.context.applyRegexToMessage(
-            chunk, 
-            playerName, 
-            characterName, 
-            0, 
-            2, // 类型2=AI输出
-            this.context.currentCharacter?.id
-          );
-        } catch (error) {
-          console.error('[SendMessageManager] 应用正则表达式处理AI输出时出错:', error);
+      let done = false;
+      let hasReceivedContent = false;
+      
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+
+        if (value) {
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              if (data === '[DONE]') {
+                done = true;
+                break;
+              }
+              
+              try {
+                const parsed = JSON.parse(data);
+                
+                // 检查是否是错误响应
+                if (parsed.error) {
+                  // 流式响应中的错误处理
+                  const error = new Error("API流式响应错误");
+                  (error as any).apiError = parsed.error;
+                  (error as any).streamError = true;
+                  throw error;
+                }
+                
+                if (parsed.text) {
+                  hasReceivedContent = true;
+                  // 应用正则表达式处理AI输出片段
+                  let processedChunk = parsed.text;
+                  try {
+                    const playerName = this.context.currentPlayer?.name || "玩家";
+                    const characterName = this.context.currentCharacter?.name || "AI";
+                    processedChunk = await this.context.applyRegexToMessage(
+                      parsed.text, 
+                      playerName, 
+                      characterName, 
+                      0, 
+                      2, // 类型2=AI输出
+                      this.context.currentCharacter?.id
+                    );
+                  } catch (error) {
+                    console.error('[SendMessageManager] 应用正则表达式处理AI输出时出错:', error);
+                  }
+                  
+                  fullResponse += processedChunk;
+                  config.onProgress?.(processedChunk);
+                }
+              } catch (e) {
+                if ((e as any).streamError) {
+                  throw e; // 重新抛出流式错误
+                }
+                console.warn('解析SSE数据失败:', e);
+              }
+            }
+          }
         }
-        
-        fullResponse += processedChunk;
-        config.onProgress?.(processedChunk);
+      }
+      
+      // 如果没有收到任何内容，认为是错误
+      if (!hasReceivedContent && !fullResponse) {
+        throw new Error("API未返回任何内容，可能是由于安全过滤或API限制");
       }
     } catch (error: any) {
+      if (error.streamError) {
+        throw error; // 保持原始流式错误
+      }
       throw new Error(`流式响应处理失败: ${error.message}`);
     }
 
     // 应用正则表达式处理完整响应
     let processedFullResponse = fullResponse;
     try {
+      const playerName = this.context.currentPlayer?.name || "玩家";
+      const characterName = this.context.currentCharacter?.name || "AI";
       processedFullResponse = await this.context.applyRegexToMessage(
         fullResponse, 
         playerName, 
@@ -315,8 +397,10 @@ export class SendMessageManager {
   // 处理非流式响应
   private async handleNonStreamResponse(response: Response, config: SendMessageConfig): Promise<string> {
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || "API调用失败");
+      const errorData = await response.json().catch(() => ({ error: response.statusText || "API调用失败" }));
+      const error = new Error(errorData.error || "API调用失败");
+      (error as any).response = response;
+      throw error;
     }
 
     const fullResponse = await handleNonStreamResponse(response);
@@ -340,6 +424,77 @@ export class SendMessageManager {
 
     config.onComplete?.(processedResponse);
     return processedResponse;
+  }
+
+  // 提取错误详情
+  private async extractErrorDetails(error: any): Promise<ErrorDetails> {
+    let errorDetails: ErrorDetails = {
+      code: 500,
+      message: "未知错误",
+      timestamp: new Date().toISOString()
+    };
+    
+    try {
+      // 处理流式响应中的API错误
+      if (error.apiError) {
+        const apiErr = error.apiError;
+        errorDetails.code = apiErr.code || 500;
+        errorDetails.message = apiErr.message || "API流式响应错误";
+        if (apiErr.details || apiErr.status) {
+          errorDetails.details = apiErr;
+        }
+      }
+      // 处理API响应错误
+      else if (error.response) {
+        const response = error.response;
+        errorDetails.code = response.status;
+        
+        try {
+          // 尝试解析响应JSON
+          const errorData = await response.json();
+          errorDetails.message = errorData.error || errorData.message || "API请求失败";
+          
+          // 提取更多细节
+          if (errorData.details) {
+            errorDetails.details = errorData.details;
+          }
+          
+        } catch (jsonError) {
+          // 响应不是JSON格式
+          errorDetails.message = response.statusText || "API请求失败";
+        }
+      } 
+      // 处理JavaScript错误对象
+      else if (error.message) {
+        errorDetails.message = error.message;
+        
+        // 尝试从错误消息中提取状态码
+        const statusMatch = error.message.match(/(?:status|code)[\s:]*(\d+)/i);
+        if (statusMatch) {
+          errorDetails.code = parseInt(statusMatch[1]);
+        }
+        
+        // 检查是否是网络错误
+        if (error.message.includes('fetch failed') || error.message.includes('NetworkError')) {
+          errorDetails.code = 0;
+          errorDetails.message = "网络连接失败：" + error.message;
+        } else if (error.message.includes('User location is not supported')) {
+          errorDetails.code = 400;
+          errorDetails.message = "用户所在地区不支持此API";
+        }
+      }
+      
+      // 提取堆栈信息（调试用）
+      if (error.stack && process.env.NODE_ENV === 'development') {
+        errorDetails.details = { ...errorDetails.details, stack: error.stack };
+      }
+      
+    } catch (extractError) {
+      console.error('[SendMessageManager] 提取错误详情失败:', extractError);
+      // 保持默认错误信息
+    }
+    
+    return errorDetails;
   }
 }
 

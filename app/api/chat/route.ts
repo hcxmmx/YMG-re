@@ -136,10 +136,60 @@ export async function POST(req: NextRequest) {
             controller.close();
           } catch (error: any) {
             console.error("流式响应生成错误:", error);
-            const errorMessage = error.message || "生成响应时出错";
+            
+            // 提取详细错误信息
+            let errorDetails: any = {
+              code: 500,
+              message: "生成响应时出错",
+              timestamp: new Date().toISOString()
+            };
+
+            try {
+              // 处理Gemini API错误 
+              if (error.status) {
+                errorDetails.code = error.status;
+                
+                // 尝试解析错误消息
+                if (error.message) {
+                  try {
+                    // 如果错误消息是JSON字符串，尝试解析
+                    const errorObj = JSON.parse(error.message);
+                    if (errorObj.error) {
+                      errorDetails.message = errorObj.error.message || errorObj.error.code || error.message;
+                      errorDetails.details = errorObj.error;
+                    } else {
+                      errorDetails.message = error.message;
+                    }
+                  } catch (parseError) {
+                    // 如果不是JSON，直接使用错误消息
+                    errorDetails.message = error.message;
+                  }
+                }
+              } 
+              // 处理网络错误等
+              else if (error.message) {
+                if (error.message.includes('fetch failed') || error.message.includes('NetworkError')) {
+                  errorDetails.code = 0;
+                  errorDetails.message = "网络连接失败：无法连接到API服务器";
+                } else if (error.message.includes('User location is not supported')) {
+                  errorDetails.code = 400;
+                  errorDetails.message = "用户所在地区不支持此API";
+                } else {
+                  errorDetails.message = error.message;
+                }
+              }
+              
+              // 添加调试信息（开发环境）
+              if (process.env.NODE_ENV === 'development' && error.stack) {
+                errorDetails.details = { ...errorDetails.details, stack: error.stack };
+              }
+            } catch (extractError) {
+              console.error("提取错误详情失败:", extractError);
+            }
+
             try {
               controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ error: errorMessage })}\n\n`)
+                encoder.encode(`data: ${JSON.stringify({ error: errorDetails })}\n\n`)
               );
               controller.enqueue(encoder.encode("data: [DONE]\n\n"));
             } catch (e) {
@@ -192,9 +242,59 @@ export async function POST(req: NextRequest) {
         activeRequests.delete(requestId);
       }
       
+      // 提取详细错误信息
+      let errorDetails: any = {
+        code: 500,
+        message: "生成响应时出错",
+        timestamp: new Date().toISOString()
+      };
+
+      try {
+        // 处理Gemini API错误
+        if (error.status) {
+          errorDetails.code = error.status;
+          
+          // 尝试解析错误消息
+          if (error.message) {
+            try {
+              // 如果错误消息是JSON字符串，尝试解析
+              const errorObj = JSON.parse(error.message);
+              if (errorObj.error) {
+                errorDetails.message = errorObj.error.message || errorObj.error.code || error.message;
+                errorDetails.details = errorObj.error;
+              } else {
+                errorDetails.message = error.message;
+              }
+            } catch (parseError) {
+              // 如果不是JSON，直接使用错误消息
+              errorDetails.message = error.message;
+            }
+          }
+        } 
+        // 处理网络错误等
+        else if (error.message) {
+          if (error.message.includes('fetch failed') || error.message.includes('NetworkError')) {
+            errorDetails.code = 0;
+            errorDetails.message = "网络连接失败：无法连接到API服务器";
+          } else if (error.message.includes('User location is not supported')) {
+            errorDetails.code = 400;
+            errorDetails.message = "用户所在地区不支持此API";
+          } else {
+            errorDetails.message = error.message;
+          }
+        }
+        
+        // 添加调试信息（开发环境）
+        if (process.env.NODE_ENV === 'development' && error.stack) {
+          errorDetails.details = { ...errorDetails.details, stack: error.stack };
+        }
+      } catch (extractError) {
+        console.error("提取错误详情失败:", extractError);
+      }
+      
       return NextResponse.json(
-        { error: error.message || "生成响应时出错" },
-        { status: 500 }
+        { error: errorDetails },
+        { status: errorDetails.code }
       );
     }
   } catch (error: any) {
