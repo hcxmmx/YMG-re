@@ -2,7 +2,7 @@
 
 import { useState, useRef, ChangeEvent, FormEvent, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Send, Image, File, FileText } from "lucide-react";
 import { ChatSettings } from "./chat-settings";
 
@@ -34,9 +34,17 @@ export function ChatInput({
   const [message, setMessage] = useState("");
   const [files, setFiles] = useState<FileData[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [isPWA, setIsPWA] = useState(false);
+
+  // 自动调整textarea高度
+  const adjustTextareaHeight = () => {
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 120)}px`;
+    }
+  };
 
   // 检测设备和运行环境
   useEffect(() => {
@@ -55,6 +63,11 @@ export function ChatInput({
     setIsIOS(checkIsIOS());
     setIsPWA(checkIsPWA());
   }, []);
+
+  // 调整textarea高度当message内容变化时
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [message]);
 
   // 判断是否可以发送消息
   // 注意：这里处理两种情况 - 1) 有新消息内容 2) 空输入框但可以请求回复
@@ -88,17 +101,21 @@ export function ChatInput({
       onRequestReply();
     }
     
-    // 提交后聚焦输入框
-    setTimeout(() => inputRef.current?.focus(), 0);
+    // 提交后聚焦输入框并重置高度
+    setTimeout(() => {
+      inputRef.current?.focus();
+      adjustTextareaHeight();
+    }, 0);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // 按Enter发送消息（不按Shift）
-    if (e.key === 'Enter' && !e.shiftKey) {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // 按Ctrl+Enter或Cmd+Enter发送消息
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       const form = e.currentTarget.form;
       if (form) form.requestSubmit();
     }
+    // 单独按Enter键允许换行（默认行为）
   };
 
   const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
@@ -200,7 +217,7 @@ export function ChatInput({
   };
 
   // 处理输入框获得焦点，特别针对iOS PWA环境
-  const handleInputFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+  const handleInputFocus = (e: React.FocusEvent<HTMLTextAreaElement>) => {
     if (isIOS && isPWA) {
       // 仅针对iOS PWA环境应用特殊处理
       setTimeout(() => {
@@ -246,16 +263,17 @@ export function ChatInput({
           <span className="sr-only">添加文件</span>
         </Button>
         
-        <Input
+        <Textarea
           ref={inputRef}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={handleInputFocus}
-          placeholder={canRequestReply ? "输入新消息或按发送键请求回复..." : "输入消息..."}
-          className="flex-1"
+          placeholder={canRequestReply ? "输入新消息或按发送键请求回复...\nCtrl+Enter 发送" : "输入消息...\nCtrl+Enter 发送"}
+          className="flex-1 min-h-[40px] resize-none overflow-hidden"
           disabled={disabled}
           autoFocus
+          rows={1}
         />
         
         {/* 发送/取消按钮：根据是否正在加载显示不同状态 */}
