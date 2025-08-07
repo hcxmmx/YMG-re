@@ -158,11 +158,51 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
     } as Character;
 
     try {
-      // 保存角色
-      await characterStorage.saveCharacter(characterToSave);
+      // 获取原始角色的世界书关联（如果是编辑模式）
+      const originalWorldBookIds = character.worldBookIds || [];
+      const newWorldBookIds = selectedWorldBookIds || [];
+      
+      // 找出需要新增和删除的关联
+      const toAdd = newWorldBookIds.filter(id => !originalWorldBookIds.includes(id));
+      const toRemove = originalWorldBookIds.filter(id => !newWorldBookIds.includes(id));
+      
+      // 先保存角色数据（但暂时不包含世界书关联）
+      const characterWithoutWorldBooks = {
+        ...characterToSave,
+        worldBookIds: originalWorldBookIds // 暂时保持原有关联
+      };
+      await characterStorage.saveCharacter(characterWithoutWorldBooks);
+      
+      // 导入世界书存储功能
+      const { worldBookStorage } = await import('@/lib/storage');
+      
+      // 处理新增的关联
+      for (const worldBookId of toAdd) {
+        try {
+          await worldBookStorage.linkToCharacter(worldBookId, id);
+        } catch (error) {
+          console.error(`关联世界书 ${worldBookId} 失败:`, error);
+        }
+      }
+      
+      // 处理删除的关联
+      for (const worldBookId of toRemove) {
+        try {
+          await worldBookStorage.unlinkFromCharacter(worldBookId, id);
+        } catch (error) {
+          console.error(`解除世界书 ${worldBookId} 关联失败:`, error);
+        }
+      }
+      
+      // 最后更新角色的世界书关联列表
+      const finalCharacter = {
+        ...characterToSave,
+        worldBookIds: newWorldBookIds
+      };
+      await characterStorage.saveCharacter(finalCharacter);
       
       if (onSave) {
-        onSave(characterToSave);
+        onSave(finalCharacter);
       } else {
         router.push('/characters');
       }

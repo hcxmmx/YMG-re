@@ -124,14 +124,24 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
     if (!worldBook) return;
     
     try {
+      // 获取最新的世界书数据，确保包含最新的关联信息
+      const latestWorldBook = await getWorldBook(worldBook.id);
+      if (!latestWorldBook) {
+        alert("获取最新数据失败");
+        return;
+      }
+      
       await saveWorldBook({
-        ...worldBook,
+        ...latestWorldBook, // 使用最新的数据作为基础
         name,
         description,
         enabled
       });
       
       alert("保存成功");
+      
+      // 保存成功后返回世界书管理页面
+      router.push("/worldbooks");
     } catch (error) {
       console.error("保存世界书失败:", error);
       alert("保存世界书失败");
@@ -242,6 +252,12 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
       setIsLinkingCharacter(true);
       await linkToCharacter(worldBook.id, characterId);
       
+      // 重新获取最新的世界书数据
+      const updatedWorldBook = await getWorldBook(worldBook.id);
+      if (updatedWorldBook) {
+        setWorldBook(updatedWorldBook);
+      }
+      
       // 更新关联角色列表
       const characters = await getLinkedCharacters(worldBook.id);
       setLinkedCharacters(characters);
@@ -266,6 +282,12 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
     try {
       setIsLinkingCharacter(true);
       await unlinkFromCharacter(worldBook.id, characterId);
+      
+      // 重新获取最新的世界书数据
+      const updatedWorldBook = await getWorldBook(worldBook.id);
+      if (updatedWorldBook) {
+        setWorldBook(updatedWorldBook);
+      }
       
       // 更新关联角色列表
       const characters = await getLinkedCharacters(worldBook.id);

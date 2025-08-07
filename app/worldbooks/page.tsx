@@ -50,6 +50,40 @@ export default function WorldBooksPage() {
     loadData();
   }, [loadWorldBooks, worldBooks, getLinkedCharacters]);
 
+  // 监听页面可见性变化，当页面重新可见时刷新数据
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // 页面重新可见时，重新加载关联角色信息
+        const refreshLinkedCharacters = async () => {
+          const charactersInfo: Record<string, number> = {};
+          
+          for (const worldBook of worldBooks) {
+            try {
+              const characters = await getLinkedCharacters(worldBook.id);
+              charactersInfo[worldBook.id] = characters.length;
+            } catch (error) {
+              console.error(`获取世界书 ${worldBook.id} 关联角色失败`, error);
+              charactersInfo[worldBook.id] = 0;
+            }
+          }
+          
+          setLinkedCharacters(charactersInfo);
+        };
+        
+        if (worldBooks.length > 0) {
+          refreshLinkedCharacters();
+        }
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [worldBooks, getLinkedCharacters]);
+
   // 导入世界书文件（批量）
   const handleBatchImport = async (files: File[]): Promise<ImportResult[]> => {
     const results: ImportResult[] = [];
