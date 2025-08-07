@@ -299,6 +299,9 @@ export default function ChatPage() {
     
     // 记录响应开始时间
     responseStartTimeRef.current = Date.now();
+    
+    // 用于累积流式内容的局部变量
+    let accumulatedContent = "";
 
     try {
       // 初始化发送消息管理器并使用统一的重新生成逻辑
@@ -311,7 +314,8 @@ export default function ChatPage() {
           stream: settings.enableStreaming,
           onStart: () => {
             console.log('[handleRegenerateMessage] 开始完全重新生成消息');
-            // 重新生成开始时，先清空内容
+            // 重新生成开始时，重置累积内容并清空消息
+            accumulatedContent = "";
             updateMessage({
               ...messageToRegenerate,
               id: messageId,
@@ -320,14 +324,13 @@ export default function ChatPage() {
             });
           },
           onProgress: async (chunk: string) => {
-            // 获取当前消息状态，用于累积显示
-            const currentMessage = currentMessages.find(msg => msg.id === messageId);
-            const currentContent = currentMessage?.content || "";
+            // 累积内容到局部变量
+            accumulatedContent += chunk;
             
             updateMessage({
               ...messageToRegenerate,
               id: messageId,
-              content: currentContent + chunk,
+              content: accumulatedContent,
               timestamp: new Date(),
             });
           },
@@ -415,6 +418,9 @@ export default function ChatPage() {
     
     // 记录响应开始时间
     responseStartTimeRef.current = Date.now();
+    
+    // 用于累积流式内容的局部变量
+    let accumulatedContent = "";
 
     try {
       // 使用统一的消息管理器处理变体生成
@@ -427,7 +433,8 @@ export default function ChatPage() {
           stream: settings.enableStreaming,
           onStart: () => {
             console.log('[handleGenerateVariant] 开始生成变体');
-            // 生成变体开始时，先清空内容
+            // 生成变体开始时，重置累积内容并清空消息
+            accumulatedContent = "";
             updateMessage({
               ...messageToAddVariant,
               id: messageId,
@@ -436,14 +443,13 @@ export default function ChatPage() {
             });
           },
           onProgress: async (chunk: string) => {
-            // 获取当前消息状态，用于累积显示
-            const currentMessage = currentMessages.find(msg => msg.id === messageId);
-            const currentContent = currentMessage?.content || "";
+            // 累积内容到局部变量
+            accumulatedContent += chunk;
             
             updateMessage({
               ...messageToAddVariant,
               id: messageId,
-              content: currentContent + chunk,
+              content: accumulatedContent,
               timestamp: new Date(),
             });
           },
