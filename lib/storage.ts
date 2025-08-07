@@ -2208,44 +2208,14 @@ export const apiKeyStorage = {
   
   // 增加API密钥使用次数
   async incrementApiKeyUsage(id: string): Promise<ApiKey | undefined> {
-    console.log("incrementApiKeyUsage 被调用:", {
-      id,
-      environment: typeof window === 'undefined' ? 'server' : 'client'
-    });
-
     const db = await initDB();
     const apiKey = await db.get('apiKeys', id);
     
-    console.log("从数据库获取的API密钥:", apiKey ? {
-      id: apiKey.id,
-      name: apiKey.name,
-      currentUsageCount: apiKey.usageCount,
-      enabled: apiKey.enabled
-    } : null);
-    
     if (apiKey) {
-      const oldCount = apiKey.usageCount || 0;
-      apiKey.usageCount = oldCount + 1;
+      apiKey.usageCount = (apiKey.usageCount || 0) + 1;
       apiKey.lastUsed = Date.now();
-      
-      console.log("准备更新API密钥:", {
-        id: apiKey.id,
-        name: apiKey.name,
-        oldCount,
-        newCount: apiKey.usageCount
-      });
-      
       await db.put('apiKeys', apiKey);
-      
-      console.log("API密钥更新完成:", {
-        id: apiKey.id,
-        name: apiKey.name,
-        finalUsageCount: apiKey.usageCount
-      });
-      
       return apiKey;
-    } else {
-      console.log("未找到指定ID的API密钥:", id);
     }
     
     return undefined;
@@ -2400,58 +2370,30 @@ export const apiKeyStorage = {
   
   // 获取当前活动的API密钥
   async getActiveApiKey(): Promise<ApiKey | undefined> {
-    console.log("getActiveApiKey 被调用");
-    
     const settings = await this.getApiKeySettings();
     const allKeys = await this.listApiKeys();
     const enabledKeys = allKeys.filter(key => key.enabled);
     
-    console.log("API密钥状态:", {
-      totalKeys: allKeys.length,
-      enabledKeys: enabledKeys.length,
-      rotationEnabled: settings.rotationEnabled,
-      activeKeyId: settings.activeKeyId,
-      keyNames: enabledKeys.map(k => k.name)
-    });
-    
     if (enabledKeys.length === 0) {
-      console.log("没有启用的API密钥");
       return undefined;
     }
     
     // 优先级逻辑：轮询启用时，轮询系统优先级高于手动设置
     if (settings.rotationEnabled) {
       // 轮询系统启用，使用轮询逻辑
-      console.log("使用轮询系统选择API密钥");
-      const nextKey = await this.getNextApiKey();
-      console.log("轮询系统选择的密钥:", nextKey ? {
-        id: nextKey.id,
-        name: nextKey.name,
-        usageCount: nextKey.usageCount
-      } : null);
-      return nextKey;
+      return this.getNextApiKey();
     } else {
       // 轮询系统关闭，使用手动设置的活动密钥
-      console.log("使用手动设置的活动密钥");
-      
       if (!settings.activeKeyId) {
         // 如果没有手动设置活动密钥，返回第一个可用密钥
-        console.log("没有手动设置活动密钥，使用第一个可用密钥:", enabledKeys[0]?.name);
         return enabledKeys[0];
       }
       
       // 获取手动设置的活动密钥
       const activeKey = await this.getApiKey(settings.activeKeyId);
-      console.log("手动设置的活动密钥:", activeKey ? {
-        id: activeKey.id,
-        name: activeKey.name,
-        enabled: activeKey.enabled,
-        usageCount: activeKey.usageCount
-      } : null);
       
       // 如果活动密钥不存在或已禁用，返回第一个可用密钥
       if (!activeKey || !activeKey.enabled) {
-        console.log("活动密钥不可用，使用第一个可用密钥:", enabledKeys[0]?.name);
         return enabledKeys[0];
       }
       

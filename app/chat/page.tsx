@@ -15,7 +15,6 @@ import { replaceMacros } from "@/lib/macroUtils";
 import { apiKeyStorage } from "@/lib/storage";
 import { callChatApi, handleStreamResponse, handleNonStreamResponse, ChatApiParams } from "@/lib/chatApi";
 import { useToast } from "@/components/ui/use-toast";
-import { ApiKeyDebugPanel } from "@/components/ui/api-key-debug-panel";
 
 // 定义加载类型
 type LoadingType = 'new' | 'regenerate' | 'variant';
@@ -1579,15 +1578,6 @@ export default function ChatPage() {
           canRequestReply={canRequestReply && !isLoading} // AI回复时不允许直接请求回复
         />
       </div>
-      
-      {/* API密钥调试面板 */}
-      <ApiKeyDebugPanel 
-        isVisible={uiSettings.showDebugPanel}
-        onClose={() => {
-          const { updateUISettings } = useSettingsStore.getState();
-          updateUISettings({ showDebugPanel: false });
-        }}
-      />
     </div>
   );
 }

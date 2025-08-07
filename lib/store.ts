@@ -29,7 +29,6 @@ interface SettingsState {
     showMessageNumber: boolean;
     enableQuoteHighlight: boolean;  // 启用引号高亮
     quoteHighlightColor: string;    // 引号高亮颜色
-    showDebugPanel: boolean;        // 显示调试面板
   };
   updateSettings: (settings: Partial<UserSettings>) => void;
   updateUISettings: (settings: Partial<{
@@ -38,7 +37,6 @@ interface SettingsState {
     showMessageNumber: boolean;
     enableQuoteHighlight: boolean;  // 启用引号高亮
     quoteHighlightColor: string;    // 引号高亮颜色
-    showDebugPanel: boolean;        // 显示调试面板
   }>) => void;
 }
 
@@ -74,7 +72,6 @@ export const useSettingsStore = create<SettingsState>()(
         showMessageNumber: true,
         enableQuoteHighlight: true,     // 默认启用引号高亮
         quoteHighlightColor: '#8b5cf6', // 默认使用紫色
-        showDebugPanel: false,          // 默认不显示调试面板
       },
       updateSettings: (newSettings) =>
         set((state) => {
@@ -110,9 +107,6 @@ export const useSettingsStore = create<SettingsState>()(
           }
           if (newUISettings.quoteHighlightColor !== undefined) {
             localStorage.setItem('quoteHighlightColor', newUISettings.quoteHighlightColor);
-          }
-          if (newUISettings.showDebugPanel !== undefined) {
-            localStorage.setItem('showDebugPanel', String(newUISettings.showDebugPanel));
           }
 
           return {

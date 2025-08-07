@@ -1,5 +1,4 @@
 import { apiKeyStorage } from "./storage";
-import { fallbackStorage } from "./fallbackStorage";
 
 // 聊天API参数类型
 export interface ChatApiParams {
@@ -18,85 +17,16 @@ export interface ChatApiParams {
 
 // 增加API密钥使用次数的辅助函数
 const incrementApiKeyUsageCount = async (apiKey: string) => {
-  const timestamp = new Date().toLocaleString();
-  
   try {
-    // 记录API调用时间
-    localStorage.setItem('debug_last_api_call', timestamp);
-
-    // 检查是否需要使用后备存储
-    const useFallback = fallbackStorage.shouldUseFallback();
+    // 直接通过密钥匹配找到对应的API密钥记录
+    const allKeys = await apiKeyStorage.listApiKeys();
+    const matchingKey = allKeys.find(key => key.key === apiKey && key.enabled);
     
-    // 记录调试信息
-    const debugLog = {
-      timestamp,
-      useFallback,
-      environment: typeof window === 'undefined' ? 'server' : 'client',
-      apiKeyPrefix: apiKey?.substring(0, 10) + '...'
-    };
-    
-    localStorage.setItem('debug_current_state', JSON.stringify(debugLog));
-
-    if (useFallback) {
-      // 使用后备存储
-      const activeKey = fallbackStorage.getActiveApiKey();
-      if (activeKey && activeKey.key === apiKey) {
-        fallbackStorage.incrementUsage(activeKey.id);
-        localStorage.setItem('debug_last_count_update', `${timestamp} - 后备存储更新成功`);
-      } else {
-        localStorage.setItem('debug_last_count_update', `${timestamp} - 后备存储跳过计数`);
-      }
-    } else {
-      // 使用正常的IndexedDB存储
-      
-      // 先尝试直接通过密钥找到对应的API密钥记录
-      const allKeys = await apiKeyStorage.listApiKeys();
-      const matchingKey = allKeys.find(key => key.key === apiKey && key.enabled);
-      
-      if (matchingKey) {
-        // 找到匹配的密钥，直接更新
-        await apiKeyStorage.incrementApiKeyUsage(matchingKey.id);
-        localStorage.setItem('debug_last_count_update', 
-          `${timestamp} - IndexedDB直接更新成功: ${matchingKey.name} (${(matchingKey.usageCount || 0) + 1}次)`);
-      } else {
-        // 没找到匹配的密钥，记录详细信息用于调试
-        const activeKey = await apiKeyStorage.getActiveApiKey();
-        const debugInfo = {
-          allKeysCount: allKeys.length,
-          enabledKeysCount: allKeys.filter(k => k.enabled).length,
-          activeKeyInfo: activeKey ? {
-            id: activeKey.id,
-            name: activeKey.name,
-            keyPrefix: activeKey.key.substring(0, 10) + '...',
-            usageCount: activeKey.usageCount
-          } : null,
-          requestedKeyPrefix: apiKey.substring(0, 10) + '...',
-          keyMatches: allKeys.map(k => ({
-            name: k.name,
-            keyPrefix: k.key.substring(0, 10) + '...',
-            matches: k.key === apiKey,
-            enabled: k.enabled
-          }))
-        };
-        
-        localStorage.setItem('debug_last_count_update', 
-          `${timestamp} - IndexedDB跳过计数: 密钥不匹配 ${JSON.stringify(debugInfo)}`);
-      }
+    if (matchingKey) {
+      await apiKeyStorage.incrementApiKeyUsage(matchingKey.id);
     }
-    
-    // 触发UI更新
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('api-key-debug-update'));
-    }
-    
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    localStorage.setItem('debug_last_count_update', `${timestamp} - 错误: ${errorMsg}`);
-    
-    // 触发UI更新
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('api-key-debug-update'));
-    }
+    console.error("增加API密钥使用次数失败:", error);
   }
 };
 
