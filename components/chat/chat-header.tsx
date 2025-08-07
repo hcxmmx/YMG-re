@@ -102,15 +102,8 @@ export function ChatHeader({ character }: ChatHeaderProps) {
           behavior: 'smooth'
         });
       }, 10);
-    } else {
-      // 如果导航栏将变为可见，等待导航栏显示后聚焦在头部
-      setTimeout(() => {
-        headerRef.current?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'start'
-        });
-      }, 10);
     }
+    // 显示导航栏时不进行任何滚动操作，让用户手动决定
   };
 
   // 处理标题编辑

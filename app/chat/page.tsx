@@ -90,6 +90,7 @@ export default function ChatPage() {
   const { loadPlayers } = usePlayerStore();
   const { isNavbarVisible } = useNavbar();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null); // 内层消息容器引用
   const responseStartTimeRef = useRef<number>(0);
   // 移除直接使用的useSearchParams
   const characterIdRef = useRef<string | null>(null);
@@ -97,6 +98,12 @@ export default function ChatPage() {
   const urlParamsProcessedRef = useRef(false);
   // 当前请求ID引用，用于取消请求
   const currentRequestIdRef = useRef<string | null>(null);
+  
+  // 滚动控制相关状态
+  const [isUserNearBottom, setIsUserNearBottom] = useState(true);
+  const [isUserManuallyScrolling, setIsUserManuallyScrolling] = useState(false);
+  const lastScrollTimeRef = useRef<number>(0);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // 加载正则表达式脚本
   const { loadScripts } = useRegexStore();
@@ -107,6 +114,90 @@ export default function ChatPage() {
 
   // 创建发送消息管理器
   const sendMessageManagerRef = useRef<SendMessageManager | null>(null);
+  
+  // 检测用户是否在消息容器底部附近
+  const checkIfUserNearBottom = useCallback(() => {
+    if (!messagesContainerRef.current) return true;
+    
+    const container = messagesContainerRef.current;
+    const threshold = 100; // 距离底部100px以内算作"接近底部"
+    const scrollTop = container.scrollTop;
+    const containerHeight = container.clientHeight;
+    const scrollHeight = container.scrollHeight;
+    
+    return (scrollTop + containerHeight) >= (scrollHeight - threshold);
+  }, []);
+  
+  // 智能滚动到底部（只在用户接近底部且没有手动滚动时滚动）
+  const smartScrollToBottom = useCallback(() => {
+    if (isUserNearBottom && !isUserManuallyScrolling && messagesContainerRef.current) {
+      const container = messagesContainerRef.current;
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: "smooth"
+      });
+    }
+  }, [isUserNearBottom, isUserManuallyScrolling]);
+  
+  // 强制滚动到底部（用于用户主动发送消息时）
+  const forceScrollToBottom = useCallback(() => {
+    if (messagesContainerRef.current) {
+      // 清除手动滚动状态，因为这是程序触发的滚动
+      setIsUserManuallyScrolling(false);
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+        scrollTimeoutRef.current = null;
+      }
+      
+      const container = messagesContainerRef.current;
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: "smooth"
+      });
+    }
+  }, []);
+  
+  // 处理消息容器滚动事件
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    
+    const handleScroll = () => {
+      const now = Date.now();
+      
+      // 标记用户正在手动滚动
+      setIsUserManuallyScrolling(true);
+      
+      // 清除之前的定时器
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+      
+      // 设置新的定时器，500ms后清除手动滚动状态
+      scrollTimeoutRef.current = setTimeout(() => {
+        setIsUserManuallyScrolling(false);
+        scrollTimeoutRef.current = null;
+      }, 500);
+      
+      // 节流，每100ms最多检测一次位置
+      if (now - lastScrollTimeRef.current > 100) {
+        lastScrollTimeRef.current = now;
+        setIsUserNearBottom(checkIfUserNearBottom());
+      }
+    };
+    
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    
+    // 初始检测
+    setIsUserNearBottom(checkIfUserNearBottom());
+    
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, [checkIfUserNearBottom]);
   
   // 初始化发送消息管理器
   const initializeSendMessageManager = useCallback(() => {
@@ -188,22 +279,25 @@ export default function ChatPage() {
     }
   }, [currentConversationId, loadBranches]);
 
-  // 当消息更新时滚动到底部
+  // 当消息更新时智能滚动到底部（只在用户接近底部时滚动）
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [currentMessages]);
-
-  // 当导航栏状态改变时，保持滚动位置
-  useEffect(() => {
+    // 使用 setTimeout 让滚动在 DOM 更新后执行
     const timer = setTimeout(() => {
-      // 如果有新消息，滚动到底部
-      if (currentMessages.length > 0 && !isLoading) {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }
-    }, 300); // 等待导航栏动画完成
-
+      smartScrollToBottom();
+    }, 10);
+    
     return () => clearTimeout(timer);
-  }, [isNavbarVisible, isLoading]);
+  }, [currentMessages, smartScrollToBottom]);
+
+  // 监听导航栏状态变化，重新检测用户位置
+  useEffect(() => {
+    // 导航栏状态变化可能会影响容器大小，重新检测用户位置
+    const timer = setTimeout(() => {
+      setIsUserNearBottom(checkIfUserNearBottom());
+    }, 100); // 等待布局调整完成
+    
+    return () => clearTimeout(timer);
+  }, [isNavbarVisible, checkIfUserNearBottom]);
 
   // 加载玩家数据
   useEffect(() => {
@@ -520,6 +614,10 @@ export default function ChatPage() {
 
   // 发送消息
   const handleSendMessage = async (content: string, files?: { data: string; type: string; name?: string }[]) => {
+    // 用户主动发送消息时，强制滚动到底部并标记为接近底部
+    setIsUserNearBottom(true);
+    forceScrollToBottom();
+    
     // 初始化发送消息管理器
     const sendManager = initializeSendMessageManager();
     
@@ -674,6 +772,10 @@ export default function ChatPage() {
   const handleRequestReply = async () => {
     // 安全检查：确保可以请求回复且存在最后一条用户消息
     if (!canRequestReply || !lastUserMessage) return;
+    
+    // 用户主动请求回复时，强制滚动到底部并标记为接近底部
+    setIsUserNearBottom(true);
+    forceScrollToBottom();
     
     // 初始化发送消息管理器
     const sendManager = initializeSendMessageManager();
@@ -869,7 +971,7 @@ export default function ChatPage() {
       {/* 添加SearchParamsHandler组件来处理URL参数 */}
       <SearchParamsHandler />
       <ChatHeader character={currentCharacter} />
-      <div className="flex-1 overflow-y-auto p-4">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4">
         {currentMessages.map((message, index) => {
           // 检查当前消息是否正在加载中（重新生成或变体生成）
           const isMessageLoading = isLoading && loadingMessageId === message.id;
