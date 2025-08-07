@@ -321,6 +321,7 @@ export default function ChatPage() {
           onProgress: async (chunk: string) => {
             updateMessage({
               ...messageToRegenerate,
+              id: messageId,
               content: chunk,
               timestamp: new Date(),
             });
@@ -358,6 +359,7 @@ export default function ChatPage() {
           onError: async (error: string) => {
             updateMessage({
               ...messageToRegenerate,
+              id: messageId,
               content: "重新生成消息时发生错误。",
               timestamp: new Date(),
               errorDetails: {
@@ -373,220 +375,10 @@ export default function ChatPage() {
         }
       );
       return;
-
-      // 构建请求消息历史（不包含当前消息和之后的消息）
-      const requestMessagesOriginal = currentMessages.slice(0, messageIndex);
-      
-      // 使用trimMessageHistory裁剪消息历史
-      const requestMessages = await trimMessageHistory(
-        requestMessagesOriginal,
-        settings,
-        effectiveApiKey
-      );
-      
-      console.log(`[重新生成] 消息裁剪: 从${requestMessagesOriginal.length}条消息裁剪到${requestMessages.length}条`);
-
-      // 获取当前玩家和角色名称用于宏替换
-      const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
-      const playerName = currentPlayer?.name || "玩家";
-      const characterName = currentCharacter?.name || "AI";
-
-      // 应用宏替换到系统提示词
-      const processedSystemPrompt = replaceMacros(systemPrompt, playerName, characterName);
-
-      // 生成请求ID
-      const requestId = generateRequestId();
-      console.log(`[重新生成] 发送请求: ${requestId}`);
-      
-      // 保存当前请求ID到ref中
-      currentRequestIdRef.current = requestId;
-
-      // API调用参数
-      const params = {
-        messages: requestMessages,
-        systemPrompt: processedSystemPrompt,
-        apiKey: effectiveApiKey, // 使用有效的API密钥
-        stream: settings.enableStreaming,
-        requestId, // 添加requestId
-        temperature: settings.temperature,
-        maxOutputTokens: settings.maxTokens,
-        topK: settings.topK,
-        topP: settings.topP,
-        model: settings.model,
-        safetySettings: [
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: settings.safetySettings.hateSpeech },
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: settings.safetySettings.harassment },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: settings.safetySettings.sexuallyExplicit },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: settings.safetySettings.dangerousContent }
-        ]
-      };
-
-      // 调用API获取回复
-      if (settings.enableStreaming) {
-        // 流式响应处理
-        try {
-          const apiResponse = await callChatApi(params);
-
-          if (!apiResponse.ok) {
-            // 提取API错误详情
-            const errorDetails = await extractErrorDetails(null, apiResponse);
-            
-            // 更新消息，添加错误信息
-            updateMessage({
-              ...messageToRegenerate,
-              content: "重新生成失败。",
-              timestamp: new Date(),
-              errorDetails: errorDetails,
-              messageNumber: originalMessageNumber // 保留原始楼层号
-            });
-            return;
-          }
-
-          console.log("[重新生成] 流式响应开始接收");
-
-          // 累积的响应内容
-          let accumulatedContent = "";
-          let firstChunkReceived = false;
-
-          // 处理流式数据
-          for await (const chunk of handleStreamResponse(apiResponse)) {
-            // 记录第一个内容块的时间
-            if (!firstChunkReceived) {
-              firstChunkReceived = true;
-              const firstChunkTime = Date.now() - responseStartTimeRef.current;
-              console.log(`[重新生成] 首个响应块接收时间: ${firstChunkTime}ms`);
-            }
-
-            accumulatedContent += chunk;
-            // 更新消息内容
-            updateMessage({
-              ...messageToRegenerate,
-              content: accumulatedContent,
-              timestamp: new Date(),
-              messageNumber: originalMessageNumber // 保留原始楼层号
-            });
-          }
-
-          console.log("[重新生成] 流式响应接收完成");
-
-          // 计算总响应时间并更新消息
-          const responseTime = Date.now() - responseStartTimeRef.current;
-          console.log(`[重新生成] 总响应时间: ${responseTime}ms`);
-
-          // 如果最终没有收到任何内容，显示提示信息
-          if (!accumulatedContent) {
-            console.warn("[重新生成] 流式响应未产生任何内容");
-            const errorDetails: ErrorDetails = {
-              code: 204, // No Content
-              message: "API返回了空响应",
-              timestamp: new Date().toISOString()
-            };
-            
-            updateMessage({
-              ...messageToRegenerate,
-              content: "AI未能生成回复。",
-              timestamp: new Date(),
-              responseTime: responseTime,
-              messageNumber: originalMessageNumber, // 保留原始楼层号
-              errorDetails: errorDetails
-            });
-          } else {
-            // 更新最终消息，包含响应时间，清除所有变体
-            updateMessage({
-              ...messageToRegenerate,
-              content: accumulatedContent,
-              timestamp: new Date(),
-              responseTime: responseTime,
-              alternateResponses: undefined, // 清除所有变体
-              currentResponseIndex: 0, // 重置索引
-              originalContent: undefined, // 清除原始内容，因为这个就是新的原始内容
-              messageNumber: originalMessageNumber, // 保留原始楼层号
-              errorDetails: undefined // 清除之前可能存在的错误信息
-            });
-          }
-        } catch (fetchError) {
-          // 处理网络错误
-          const errorDetails = await extractErrorDetails(fetchError);
-          updateMessage({
-            ...messageToRegenerate,
-            content: "连接API服务器失败。",
-            timestamp: new Date(),
-            errorDetails: errorDetails,
-            messageNumber: originalMessageNumber // 保留原始楼层号
-          });
-          return;
-        }
-      } else {
-        // 非流式响应
-        try {
-          const response = await callChatApi(params);
-
-          if (!response.ok) {
-            // 提取API错误详情
-            const errorDetails = await extractErrorDetails(null, response);
-            
-            // 更新消息，添加错误信息
-            updateMessage({
-              ...messageToRegenerate,
-              content: "重新生成失败。",
-              timestamp: new Date(),
-              errorDetails: errorDetails,
-              messageNumber: originalMessageNumber // 保留原始楼层号
-            });
-            return;
-          }
-
-          const responseText = await handleNonStreamResponse(response);
-          const responseTime = Date.now() - responseStartTimeRef.current;
-
-          // 更新消息，清除所有变体
-          updateMessage({
-            ...messageToRegenerate,
-            content: responseText,
-            timestamp: new Date(),
-            responseTime: responseTime,
-            alternateResponses: undefined, // 清除所有变体
-            currentResponseIndex: 0, // 重置索引
-            originalContent: undefined, // 清除原始内容，因为这个就是新的原始内容
-            messageNumber: originalMessageNumber, // 保留原始楼层号
-            errorDetails: undefined // 清除之前可能存在的错误信息
-          });
-        } catch (fetchError) {
-          // 处理网络错误
-          const errorDetails = await extractErrorDetails(fetchError);
-          updateMessage({
-            ...messageToRegenerate,
-            content: "连接API服务器失败。",
-            timestamp: new Date(),
-            errorDetails: errorDetails,
-            messageNumber: originalMessageNumber // 保留原始楼层号
-          });
-        }
-      }
     } catch (error: any) {
-      console.error("[重新生成] API调用失败:", error);
-      
-      // 提取并格式化错误信息
-      const errorDetails = await extractErrorDetails(error);
-      
-      // 更新为错误消息，并清除所有变体
-      updateMessage({
-        ...messageToRegenerate,
-        content: "重新生成失败。",
-        timestamp: new Date(),
-        errorDetails: errorDetails,
-        alternateResponses: undefined, // 清除所有变体
-        currentResponseIndex: 0, // 重置索引
-        originalContent: undefined, // 清除原始内容
-        messageNumber: originalMessageNumber // 保留原始楼层号
-      });
-    } finally {
-      // 重置UI状态
+      console.error('[handleRegenerateMessage] 执行失败:', error);
       setIsLoading(false);
       setLoadingMessageId(null);
-      
-      // 清除请求ID
-      currentRequestIdRef.current = null;
     }
   };
 
@@ -638,6 +430,7 @@ export default function ChatPage() {
           onProgress: async (chunk: string) => {
             updateMessage({
               ...messageToAddVariant,
+              id: messageId,
               content: chunk,
               timestamp: new Date(),
             });
@@ -659,6 +452,7 @@ export default function ChatPage() {
             const newVariants = [...currentAlternates, processedResponse];
             updateMessage({
               ...messageToAddVariant,
+              id: messageId,
               content: processedResponse,
               alternateResponses: newVariants,
               currentResponseIndex: newVariants.length,
@@ -674,6 +468,7 @@ export default function ChatPage() {
           onError: async (error: string) => {
             updateMessage({
               ...messageToAddVariant,
+              id: messageId,
               content: originalContent,
               timestamp: new Date(),
               errorDetails: {
@@ -689,245 +484,13 @@ export default function ChatPage() {
         }
       );
       return;
-
-      // 构建请求消息历史（不包含当前消息和之后的消息）
-      // 重要：确保只使用到用户提问的消息，不包括当前AI回复
-      const requestMessagesOriginal = currentMessages.slice(0, userMessageIndex + 1);
-      
-      console.log(`[生成变体] 消息历史构建: 从总共${currentMessages.length}条消息中选取${requestMessagesOriginal.length}条，截止到用户提问`);
-      
-      // 使用trimMessageHistory裁剪消息历史
-      const requestMessages = await trimMessageHistory(
-        requestMessagesOriginal,
-        settings,
-        effectiveApiKey
-      );
-      
-      console.log(`[生成变体] 消息裁剪: 从${requestMessagesOriginal.length}条消息裁剪到${requestMessages.length}条`);
-
-      // 获取当前玩家和角色名称用于宏替换
-      const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
-      const playerName = currentPlayer?.name || "玩家";
-      const characterName = currentCharacter?.name || "AI";
-
-      // 应用宏替换到系统提示词
-      const processedSystemPrompt = replaceMacros(systemPrompt, playerName, characterName);
-
-      // 生成请求ID
-      const requestId = generateRequestId();
-      console.log(`[生成变体] 发送请求: ${requestId}`);
-      
-      // 保存当前请求ID到ref中
-      currentRequestIdRef.current = requestId;
-
-      // API调用参数
-      const params = {
-        messages: requestMessages,
-        systemPrompt: processedSystemPrompt,
-        apiKey: effectiveApiKey, // 使用有效的API密钥
-        stream: settings.enableStreaming,
-        requestId, // 添加requestId
-        temperature: settings.temperature,
-        maxOutputTokens: settings.maxTokens,
-        topK: settings.topK,
-        topP: settings.topP,
-        model: settings.model,
-        safetySettings: [
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: settings.safetySettings.hateSpeech },
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: settings.safetySettings.harassment },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: settings.safetySettings.sexuallyExplicit },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: settings.safetySettings.dangerousContent }
-        ]
-      };
-
-      // 调用API获取回复
-      if (settings.enableStreaming) {
-        // 流式响应处理
-        const apiResponse = await callChatApi(params);
-
-        if (!apiResponse.ok) {
-          // 提取API错误详情
-          const errorDetails = await extractErrorDetails(null, apiResponse);
-          
-          // 保持原始内容，但添加错误信息
-          updateMessage({
-            ...messageToAddVariant,
-            content: originalContent,
-            timestamp: new Date(),
-            errorDetails: errorDetails
-          });
-          return;
-        }
-
-        console.log("[生成变体] 流式响应开始接收");
-
-        // 累积的响应内容
-        let accumulatedContent = "";
-        let firstChunkReceived = false;
-
-        // 处理流式数据
-        for await (const chunk of handleStreamResponse(apiResponse)) {
-          // 记录第一个内容块的时间
-          if (!firstChunkReceived) {
-            firstChunkReceived = true;
-            const firstChunkTime = Date.now() - responseStartTimeRef.current;
-            console.log(`[生成变体] 首个响应块接收时间: ${firstChunkTime}ms`);
-          }
-
-          accumulatedContent += chunk;
-          console.log(`[生成变体] 更新流式内容，时间: ${new Date().toISOString()}, 新增内容: "${chunk}"`);
-
-          // 当前所有变体（不包括原始内容）
-          const currentStreamingVariants = messageToAddVariant.alternateResponses || [];
-          
-          // 立即更新消息以显示当前累积的内容
-          updateMessage({
-            ...messageToAddVariant,
-            content: accumulatedContent, // 实时更新内容
-            alternateResponses: currentStreamingVariants, // 保持现有变体数组
-            currentResponseIndex: currentStreamingVariants.length + 1, // 设置索引为当前正在生成的变体
-            originalContent: messageToAddVariant.originalContent || originalContent, // 保留原始内容
-            timestamp: new Date(),
-            responseTime: Date.now() - responseStartTimeRef.current, // 实时响应时间
-          });
-        }
-
-        // 计算总响应时间
-        const responseTime = Date.now() - responseStartTimeRef.current;
-        console.log(`[生成变体] 总响应时间: ${responseTime}ms`);
-
-        // 如果最终没有收到任何内容，显示提示信息
-        if (!accumulatedContent) {
-          console.warn("[生成变体] 流式响应未产生任何内容");
-          const errorDetails: ErrorDetails = {
-            code: 204, // No Content
-            message: "API返回了空响应",
-            timestamp: new Date().toISOString()
-          };
-          
-          // 保持原始内容，显示错误
-          updateMessage({
-            ...messageToAddVariant,
-            content: originalContent,
-            alternateResponses: currentAlternates,
-            currentResponseIndex: 0, // 重置为原始内容
-            timestamp: new Date(),
-            errorDetails: errorDetails
-          });
-        } else {
-          // 获取当前玩家和角色名称
-          const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
-          const playerName = currentPlayer?.name || "玩家";
-          const characterName = currentCharacter?.name || "AI";
-          
-          // 应用正则表达式处理AI响应
-          let processedResponse = accumulatedContent;
-          try {
-            const { applyRegexToMessage } = useRegexStore.getState();
-            processedResponse = await applyRegexToMessage(accumulatedContent, playerName, characterName, 0, 2, currentCharacter?.id);
-          } catch (error) {
-            console.error("应用正则表达式处理AI响应时出错:", error);
-          }
-          
-          // 当前所有变体（不包括原始内容）
-          const currentVariants = messageToAddVariant.alternateResponses || [];
-          
-          // 创建新的变体数组（保存新生成的内容）
-          const newVariants = [...currentVariants, processedResponse];
-          
-          // 详细调试日志
-          console.log('[变体生成] 完成变体生成:', {
-            originalContent: originalContent.substring(0, 30) + '...',
-            existingVariants: currentVariants.length,
-            newContent: processedResponse.substring(0, 30) + '...',
-            totalVariantsAfter: newVariants.length
-          });
-          
-          // 在生成变体后，我们需要显示新生成的变体内容
-          updateMessage({
-            ...messageToAddVariant,
-            // 将内容设置为新生成的变体内容，而不是原始内容
-            content: processedResponse, // 显示新生成的变体内容
-            alternateResponses: newVariants, // 保存所有变体
-            currentResponseIndex: newVariants.length, // 设置索引为新变体的位置
-            // 如果是第一个变体，保存原始内容
-            originalContent: messageToAddVariant.originalContent || originalContent,
-            timestamp: new Date(),
-            responseTime: responseTime,
-            errorDetails: undefined // 清除可能存在的错误信息
-          });
-        }
-      } else {
-        // 非流式响应
-        const apiResponse = await callChatApi(params);
-        const result = await handleNonStreamResponse(apiResponse);
-        const responseTime = Date.now() - responseStartTimeRef.current;
-
-        // 获取当前玩家和角色名称
-        const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
-        const playerName = currentPlayer?.name || "玩家";
-        const characterName = currentCharacter?.name || "AI";
-        
-        // 应用正则表达式处理AI响应
-        let processedResponse = result;
-        try {
-          const { applyRegexToMessage } = useRegexStore.getState();
-          processedResponse = await applyRegexToMessage(result, playerName, characterName, 0, 2, currentCharacter?.id);
-        } catch (error) {
-          console.error("应用正则表达式处理AI响应时出错:", error);
-        }
-
-        // 当前所有变体（不包括原始内容）
-        const currentVariants = messageToAddVariant.alternateResponses || [];
-        
-        // 创建新的变体数组（直接追加新变体）
-        const newVariants = [...currentVariants, processedResponse];
-        
-        // 详细调试日志
-        console.log('[变体生成-非流式] 完成变体生成:', {
-          originalContent: originalContent.substring(0, 30) + '...',
-          existingVariants: currentVariants.length,
-          newContent: processedResponse.substring(0, 30) + '...',
-          totalVariantsAfter: newVariants.length
-        });
-        
-        // 在生成变体后，显示新生成的变体内容
-        updateMessage({
-          ...messageToAddVariant,
-          // 将内容设置为新生成的变体内容，而不是原始内容
-          content: processedResponse, // 显示新生成的变体内容
-          alternateResponses: newVariants, // 保存所有变体
-          currentResponseIndex: newVariants.length, // 设置索引为新变体的位置
-          // 如果是第一个变体，保存原始内容
-          originalContent: messageToAddVariant.originalContent || originalContent,
-          timestamp: new Date(),
-          responseTime: responseTime,
-          errorDetails: undefined // 清除可能存在的错误信息
-        });
-      }
     } catch (error: any) {
-      console.error("[生成变体] API调用失败:", error);
-      
-      // 提取并格式化错误信息
-      const errorDetails = await extractErrorDetails(error);
-      
-      // 保持原始内容，显示错误
-      updateMessage({
-        ...messageToAddVariant,
-        content: originalContent,
-        alternateResponses: currentAlternates,
-        currentResponseIndex: 0, // 重置为原始内容
-        timestamp: new Date(),
-        errorDetails: errorDetails
-      });
-    } finally {
-      // 重置请求ID
-      currentRequestIdRef.current = null;
+      console.error('[handleGenerateVariant] 执行失败:', error);
       setIsLoading(false);
       setLoadingMessageId(null);
     }
   };
-  
+
   // 处理消息操作
   const handleMessageAction = async (actionString: string) => {
     // 检查是否是变体生成
