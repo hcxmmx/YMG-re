@@ -311,12 +311,23 @@ export default function ChatPage() {
           stream: settings.enableStreaming,
           onStart: () => {
             console.log('[handleRegenerateMessage] 开始完全重新生成消息');
-          },
-          onProgress: async (chunk: string) => {
+            // 重新生成开始时，先清空内容
             updateMessage({
               ...messageToRegenerate,
               id: messageId,
-              content: chunk,
+              content: "",
+              timestamp: new Date(),
+            });
+          },
+          onProgress: async (chunk: string) => {
+            // 获取当前消息状态，用于累积显示
+            const currentMessage = currentMessages.find(msg => msg.id === messageId);
+            const currentContent = currentMessage?.content || "";
+            
+            updateMessage({
+              ...messageToRegenerate,
+              id: messageId,
+              content: currentContent + chunk,
               timestamp: new Date(),
             });
           },
@@ -416,12 +427,23 @@ export default function ChatPage() {
           stream: settings.enableStreaming,
           onStart: () => {
             console.log('[handleGenerateVariant] 开始生成变体');
-          },
-          onProgress: async (chunk: string) => {
+            // 生成变体开始时，先清空内容
             updateMessage({
               ...messageToAddVariant,
               id: messageId,
-              content: chunk,
+              content: "",
+              timestamp: new Date(),
+            });
+          },
+          onProgress: async (chunk: string) => {
+            // 获取当前消息状态，用于累积显示
+            const currentMessage = currentMessages.find(msg => msg.id === messageId);
+            const currentContent = currentMessage?.content || "";
+            
+            updateMessage({
+              ...messageToAddVariant,
+              id: messageId,
+              content: currentContent + chunk,
               timestamp: new Date(),
             });
           },
