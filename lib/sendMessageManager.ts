@@ -12,6 +12,11 @@ export interface SendMessageConfig {
   files?: FileData[];                  // 附件
   stream?: boolean;                    // 是否使用流式响应，默认从设置读取
   directReply?: boolean;               // 是否为直接回复模式（使用现有消息历史）
+  regenerate?: {                       // 重新生成模式配置
+    messageId: string;                 // 要重新生成的消息ID
+    beforeMessageIndex: number;        // 消息在列表中的位置
+    mode: 'replace' | 'variant';       // 'replace': 完全重新生成, 'variant': 生成变体
+  };
   onProgress?: (chunk: string) => void; // 流式响应进度回调
   onComplete?: (fullResponse: string) => void; // 完成回调
   onError?: (error: string) => void;   // 错误回调
@@ -45,7 +50,10 @@ export class SendMessageManager {
 
   // 发送新消息或直接回复
   async sendMessage(config: SendMessageConfig): Promise<string | null> {
-    const logPrefix = config.directReply ? '[SendMessageManager-DirectReply]' : '[SendMessageManager]';
+    const logPrefix = config.regenerate ? 
+                       `[SendMessageManager-${config.regenerate.mode === 'variant' ? 'GenerateVariant' : 'Regenerate'}]` : 
+                       config.directReply ? '[SendMessageManager-DirectReply]' : 
+                       '[SendMessageManager]';
     console.log(`${logPrefix} 开始处理请求`);
     
     try {
@@ -68,7 +76,11 @@ export class SendMessageManager {
       // 2. 构建消息历史
       let messageHistory: Message[];
       
-      if (config.directReply) {
+      if (config.regenerate) {
+        // 重新生成模式：使用消息历史到指定消息之前的部分
+        messageHistory = this.context.messages.slice(0, config.regenerate.beforeMessageIndex);
+        console.log(`${logPrefix} 重新生成模式，使用前${messageHistory.length}条消息`);
+      } else if (config.directReply) {
         // 直接回复模式：使用现有消息历史，不添加新消息
         messageHistory = this.context.messages;
         console.log(`${logPrefix} 直接回复模式，使用现有${messageHistory.length}条消息`);
@@ -133,7 +145,11 @@ export class SendMessageManager {
 
     } catch (error: any) {
       console.error(`${logPrefix} 请求失败:`, error);
-      const errorMessage = error.message || (config.directReply ? "请求回复时出错" : "发送消息时出错");
+      const errorMessage = error.message || 
+        (config.regenerate ? 
+          (config.regenerate.mode === 'variant' ? "生成变体时出错" : "重新生成消息时出错") :
+         config.directReply ? "请求回复时出错" : 
+         "发送消息时出错");
       config.onError?.(errorMessage);
       return null;
     } finally {
@@ -356,6 +372,40 @@ export const ChatRequests = {
   ): Promise<string | null> {
     return manager.sendMessage({
       directReply: true,
+      ...options
+    });
+  },
+
+  // 重新生成消息（完全替换）
+  async regenerateMessage(
+    manager: SendMessageManager,
+    messageId: string,
+    beforeMessageIndex: number,
+    options?: Partial<SendMessageConfig>
+  ): Promise<string | null> {
+    return manager.sendMessage({
+      regenerate: {
+        messageId,
+        beforeMessageIndex,
+        mode: 'replace'
+      },
+      ...options
+    });
+  },
+
+  // 生成变体（保留原回复）
+  async generateVariant(
+    manager: SendMessageManager,
+    messageId: string,
+    beforeMessageIndex: number,
+    options?: Partial<SendMessageConfig>
+  ): Promise<string | null> {
+    return manager.sendMessage({
+      regenerate: {
+        messageId,
+        beforeMessageIndex,
+        mode: 'variant'
+      },
       ...options
     });
   }
