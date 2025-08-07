@@ -15,6 +15,7 @@ import { replaceMacros } from "@/lib/macroUtils";
 import { apiKeyStorage } from "@/lib/storage";
 import { callChatApi, handleStreamResponse, handleNonStreamResponse, ChatApiParams } from "@/lib/chatApi";
 import { useToast } from "@/components/ui/use-toast";
+import { createSendMessageManager, SendMessageManager, type SendMessageContext } from "@/lib/sendMessageManager";
 
 // 定义加载类型
 type LoadingType = 'new' | 'regenerate' | 'variant';
@@ -109,6 +110,33 @@ export default function ChatPage() {
   // 添加状态来跟踪当前加载的类型和消息ID
   const [loadingType, setLoadingType] = useState<LoadingType>('new');
   const [loadingMessageId, setLoadingMessageId] = useState<string | null>(null);
+
+  // 创建发送消息管理器
+  const sendMessageManagerRef = useRef<SendMessageManager | null>(null);
+  
+  // 初始化发送消息管理器
+  const initializeSendMessageManager = useCallback(() => {
+    const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
+    const { applyRegexToMessage } = useRegexStore.getState();
+    
+    const context: SendMessageContext = {
+      messages: currentMessages,
+      settings,
+      currentCharacter,
+      currentPlayer,
+      toast,
+      applyRegexToMessage,
+      systemPrompt
+    };
+    
+    if (!sendMessageManagerRef.current) {
+      sendMessageManagerRef.current = createSendMessageManager(context);
+    } else {
+      sendMessageManagerRef.current.updateContext(context);
+    }
+    
+    return sendMessageManagerRef.current;
+  }, [currentMessages, settings, currentCharacter, toast, systemPrompt]);
 
   // 加载正则表达式脚本
   useEffect(() => {
@@ -806,43 +834,8 @@ export default function ChatPage() {
 
   // 发送消息
   const handleSendMessage = async (content: string, files?: { data: string; type: string; name?: string }[]) => {
-    // 检查是否有API密钥（设置中的或轮询系统中的）
-    const effectiveApiKey = await checkApiKey(settings.apiKey);
-    if (!effectiveApiKey) {
-      toast({
-        title: "API密钥未配置",
-        description: "请先在设置中配置API密钥或在扩展功能的API密钥管理中添加并启用API密钥。",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // 获取当前玩家和角色名称用于宏替换
-    const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
-    const playerName = currentPlayer?.name || "玩家";
-    const characterName = currentCharacter?.name || "AI";
-
-    // 应用宏替换到用户消息内容
-    let processedContent = replaceMacros(content, playerName, characterName);
-    
-    // 应用正则表达式处理用户输入
-    try {
-      const { applyRegexToMessage } = useRegexStore.getState();
-      processedContent = await applyRegexToMessage(processedContent, playerName, characterName, 0, 1, currentCharacter?.id); // 类型1=用户输入，传入角色ID
-    } catch (error) {
-      console.error("应用正则表达式处理用户输入时出错:", error);
-    }
-
-    // 添加用户消息
-    const userMessage: MessageType = {
-      id: generateId(),
-      role: "user",
-      content: processedContent,
-      files,
-      timestamp: new Date(),
-    };
-
-    await addMessage(userMessage);
+    // 初始化发送消息管理器
+    const sendManager = initializeSendMessageManager();
     
     // 设置加载状态
     setIsLoading(true);
@@ -852,187 +845,113 @@ export default function ChatPage() {
     // 记录响应开始时间
     responseStartTimeRef.current = Date.now();
 
+    // 创建初始空消息（AI回复）
+    let currentAssistantMessage: MessageType | null = null;
+
     try {
-      // 使用 trimMessageHistory 裁剪消息历史
-      const allMessages = [...currentMessages, userMessage];
-      const trimmedMessages = await trimMessageHistory(
-        allMessages,
-        settings,
-        effectiveApiKey
-      );
-      
-      console.log(`消息裁剪: 从${allMessages.length}条消息裁剪到${trimmedMessages.length}条`);
+      // 首先添加用户消息
+      const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
+      const playerName = currentPlayer?.name || "玩家";
+      const characterName = currentCharacter?.name || "AI";
 
-      // 应用宏替换到系统提示词
-      const processedSystemPrompt = replaceMacros(systemPrompt, playerName, characterName);
+      // 应用宏替换到用户消息内容
+      let processedContent = replaceMacros(content, playerName, characterName);
+      
+      // 应用正则表达式处理用户输入
+      try {
+        const { applyRegexToMessage } = useRegexStore.getState();
+        processedContent = await applyRegexToMessage(processedContent, playerName, characterName, 0, 1, currentCharacter?.id);
+      } catch (error) {
+        console.error("应用正则表达式处理用户输入时出错:", error);
+      }
 
-      // 生成请求ID
-      const requestId = generateRequestId();
-      console.log(`发送请求: ${requestId}`);
-      
-      // 保存当前请求ID到ref中
-      currentRequestIdRef.current = requestId;
-      
-      // API调用参数，使用裁剪后的消息
-      const params = {
-        messages: trimmedMessages,
-        systemPrompt: processedSystemPrompt,
-        apiKey: effectiveApiKey, // 使用有效的API密钥
-        stream: settings.enableStreaming,
-        requestId, // 添加requestId
-        temperature: settings.temperature,
-        maxOutputTokens: settings.maxTokens,
-        topK: settings.topK,
-        topP: settings.topP,
-        model: settings.model,
-        safetySettings: [
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: settings.safetySettings.hateSpeech },
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: settings.safetySettings.harassment },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: settings.safetySettings.sexuallyExplicit },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: settings.safetySettings.dangerousContent }
-        ]
+      // 添加用户消息
+      const userMessage: MessageType = {
+        id: generateId(),
+        role: "user",
+        content: processedContent,
+        files,
+        timestamp: new Date(),
       };
 
-      // 调用API获取回复
-      if (settings.enableStreaming) {
-        // 流式响应处理
-        const apiResponse = await callChatApi(params);
+      await addMessage(userMessage);
 
-        if (!apiResponse.ok) {
-          // 提取API错误详情
-          const errorDetails = await extractErrorDetails(null, apiResponse);
+      // 使用发送消息管理器处理AI回复
+      const response = await sendManager.sendMessage({
+        content,
+        files,
+        stream: settings.enableStreaming,
+        onStart: () => {
+          console.log('[handleSendMessage] AI回复开始生成');
+        },
+        onProgress: async (chunk: string) => {
+          // 如果还没有创建助手消息，先创建一个
+          if (!currentAssistantMessage) {
+            currentAssistantMessage = {
+              id: generateId(),
+              role: "assistant",
+              content: "",
+              timestamp: new Date(),
+            };
+            await addMessage(currentAssistantMessage);
+          }
+          
+          // 更新消息内容
+          const updatedMessage = {
+            ...currentAssistantMessage,
+            content: currentAssistantMessage.content + chunk
+          };
+          
+          currentAssistantMessage = updatedMessage;
+          updateMessage(updatedMessage);
+        },
+        onComplete: async (fullResponse: string) => {
+          console.log('[handleSendMessage] AI回复生成完成');
+          
+          // 计算响应时间
+          const responseTime = Date.now() - responseStartTimeRef.current;
+          
+          // 如果使用非流式响应，创建完整的消息
+          if (!settings.enableStreaming && !currentAssistantMessage) {
+            const assistantMessage: MessageType = {
+              id: generateId(),
+              role: "assistant",
+              content: fullResponse,
+              timestamp: new Date(),
+              responseTime: responseTime
+            };
+            await addMessage(assistantMessage);
+          } else if (currentAssistantMessage) {
+            // 更新最终内容，包含响应时间
+            const finalMessage = {
+              ...currentAssistantMessage,
+              content: fullResponse,
+              responseTime: responseTime
+            };
+            updateMessage(finalMessage);
+          }
+          
+          setIsLoading(false);
+          setLoadingMessageId(null);
+        },
+        onError: async (error: string) => {
+          console.error('[handleSendMessage] AI回复生成失败:', error);
           
           // 创建带有错误信息的助手消息
           await addMessage({
             id: generateId(),
             role: "assistant",
-            content: "API请求失败。",
+            content: "发送消息时发生错误。",
             timestamp: new Date(),
-            errorDetails: errorDetails
           });
           
-          // 清除请求ID
-          currentRequestIdRef.current = null;
-          return;
+          setIsLoading(false);
+          setLoadingMessageId(null);
         }
-
-        console.log("流式响应开始接收");
-
-        // 累积的响应内容
-        let accumulatedContent = "";
-        let firstChunkReceived = false;
-
-        // 创建初始空消息
-        const assistantMessageId = generateId();
-        const initialAssistantMessage: MessageType = {
-          id: assistantMessageId,
-          role: "assistant",
-          content: "",
-          timestamp: new Date(),
-        };
-
-        // 添加初始空消息
-        await addMessage(initialAssistantMessage);
-
-        // 处理流式数据
-        for await (const chunk of handleStreamResponse(apiResponse)) {
-          // 记录第一个内容块的时间
-          if (!firstChunkReceived) {
-            firstChunkReceived = true;
-            const firstChunkTime = Date.now() - responseStartTimeRef.current;
-            console.log(`首个响应块接收时间: ${firstChunkTime}ms`);
-          }
-
-          accumulatedContent += chunk;
-          // 更新消息内容
-          updateMessage({
-            id: assistantMessageId,
-            role: "assistant",
-            content: accumulatedContent,
-            timestamp: new Date(),
-          });
-        }
-
-        // 计算总响应时间
-        const responseTime = Date.now() - responseStartTimeRef.current;
-        console.log(`总响应时间: ${responseTime}ms`);
-
-        // 如果最终没有收到任何内容，显示提示信息
-        if (!accumulatedContent) {
-          console.warn("响应未产生任何内容");
-          updateMessage({
-            id: assistantMessageId,
-            role: "assistant",
-            content: "AI未能生成回复。",
-            timestamp: new Date(),
-            responseTime: responseTime,
-          });
-        } else {
-          // 获取当前玩家和角色名称
-          const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
-          const playerName = currentPlayer?.name || "玩家";
-          const characterName = currentCharacter?.name || "AI";
-          
-          // 应用正则表达式处理AI响应
-          let processedResponse = accumulatedContent;
-          try {
-            const { applyRegexToMessage } = useRegexStore.getState();
-            processedResponse = await applyRegexToMessage(accumulatedContent, playerName, characterName, 0, 2, currentCharacter?.id);
-          } catch (error) {
-            console.error("应用正则表达式处理AI响应时出错:", error);
-          }
-          
-          // 更新最终消息，包含响应时间
-          updateMessage({
-            id: assistantMessageId,
-            role: "assistant",
-            content: processedResponse,
-            timestamp: new Date(),
-            responseTime: responseTime
-          });
-        }
-      } else {
-        // 非流式响应
-        const apiResponse = await callChatApi(params);
-        const result = await handleNonStreamResponse(apiResponse);
-        
-        // 计算响应时间
-        const responseTime = Date.now() - responseStartTimeRef.current;
-        
-        // 获取当前玩家和角色名称
-        const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
-        const playerName = currentPlayer?.name || "玩家";
-        const characterName = currentCharacter?.name || "AI";
-        
-        // 应用正则表达式处理AI响应
-        let processedResponse = result;
-        try {
-          const { applyRegexToMessage } = useRegexStore.getState();
-          processedResponse = await applyRegexToMessage(result, playerName, characterName, 0, 2, currentCharacter?.id);
-        } catch (error) {
-          console.error("应用正则表达式处理AI响应时出错:", error);
-        }
-        
-        // 添加助手回复
-        await addMessage({
-          id: generateId(),
-          role: "assistant",
-          content: processedResponse,
-          timestamp: new Date(),
-          responseTime: responseTime
-        });
-      }
-    } catch (error: any) {
-      console.error("发送消息时出错:", error);
-      
-      // 添加错误消息
-      await addMessage({
-        id: generateId(),
-        role: "assistant",
-        content: "发送消息时发生错误。",
-        timestamp: new Date(),
       });
-    } finally {
+      
+    } catch (error: any) {
+      console.error('[handleSendMessage] 执行失败:', error);
       setIsLoading(false);
       setLoadingMessageId(null);
     }
@@ -1064,6 +983,7 @@ export default function ChatPage() {
   // ====== 直接请求回复功能 ======
   // 此功能允许用户在对话最后一条消息是用户消息时，直接点击发送按钮请求AI回复
   // 不会重复发送用户消息，而是直接根据现有消息历史生成回复
+  
   const handleRequestReply = async () => {
     // 安全检查：确保可以请求回复且存在最后一条用户消息
     if (!canRequestReply || !lastUserMessage) return;
