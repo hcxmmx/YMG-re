@@ -789,6 +789,8 @@ export const useChatStore = create<ChatState>()(
 
           // 确保角色有开场白，如果没有则设置默认值
           let finalFirstMessage = character.firstMessage;
+          let finalCharacter = character;
+          
           if (!finalFirstMessage || finalFirstMessage.trim() === '') {
             finalFirstMessage = "(主开场白为空)";
             console.log('检测到角色没有主开场白，使用默认开场白');
@@ -799,14 +801,15 @@ export const useChatStore = create<ChatState>()(
               firstMessage: finalFirstMessage
             };
             await characterStorage.saveCharacter(updatedCharacter);
+            finalCharacter = updatedCharacter; // 使用更新后的角色对象
           }
 
           // 重置状态，创建新对话
           set({
             currentConversationId: null,
             currentMessages: [],
-            currentTitle: character.name,
-            currentCharacter: character,
+            currentTitle: finalCharacter.name,
+            currentCharacter: finalCharacter, // 使用更新后的角色对象
             systemPrompt: '你是一个友好、乐于助人的AI助手。',
             branches: [],
             currentBranchId: null

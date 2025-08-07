@@ -366,10 +366,21 @@ export function Message({ message, character, onEdit, onRegenerate, isGenerating
 
   // 切换开场白
   const handleSwitchGreeting = (direction: 'prev' | 'next') => {
-    if (!character || !character.alternateGreetings || !character.firstMessage) return;
+    if (!character || !character.alternateGreetings || character.alternateGreetings.length === 0) return;
     
-    // 收集所有可能的开场白
-    const allGreetings = [character.firstMessage, ...character.alternateGreetings];
+    // 收集所有可能的开场白，包括主开场白（如果存在且不为空）
+    const allGreetings: string[] = [];
+    
+    // 如果有有效的主开场白，添加到列表
+    if (character.firstMessage && character.firstMessage.trim() !== '') {
+      allGreetings.push(character.firstMessage);
+    }
+    
+    // 添加所有可选开场白
+    allGreetings.push(...character.alternateGreetings);
+    
+    // 如果没有任何开场白，则不执行切换
+    if (allGreetings.length === 0) return;
     
     // 找到当前开场白的索引
     const currentIndex = allGreetings.findIndex(greeting => greeting === message.content);
