@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { UserSettings, Message, Conversation, Character, Branch } from './types';
-import { HarmBlockThreshold } from './types';
 import { conversationStorage, characterStorage, initializeMainBranch, presetStorage } from './storage';
 import { generateId } from './utils';
 import { openDB } from 'idb';
@@ -52,12 +51,6 @@ export const useSettingsStore = create<SettingsState>()(
         topK: 40,
         topP: 0.95,
         model: 'gemini-2.5-pro',
-        safetySettings: {
-          hateSpeech: HarmBlockThreshold.BLOCK_NONE,
-          harassment: HarmBlockThreshold.BLOCK_NONE,
-          sexuallyExplicit: HarmBlockThreshold.BLOCK_NONE,
-          dangerousContent: HarmBlockThreshold.BLOCK_NONE,
-        },
         // 上下文窗口设置
         contextWindow: 0, // 默认0表示不限制
         contextControlMode: 'token', // 默认使用token计数方式

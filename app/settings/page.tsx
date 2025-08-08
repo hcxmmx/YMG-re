@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useSettingsStore } from "@/lib/store";
-import { HarmBlockThreshold, FontFamily } from "@/lib/types";
+import { FontFamily } from "@/lib/types";
 import Link from "next/link";
 import { DataExportImport, ExportOptions } from "@/components/ui/data-export-import";
 import { exportData, importData, downloadFile } from "@/lib/dataUtils";
@@ -21,13 +21,7 @@ const AVAILABLE_MODELS = [
   { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash - 快速响应" },
 ];
 
-// 安全设置阈值选项
-const SAFETY_THRESHOLD_OPTIONS = [
-  { value: HarmBlockThreshold.BLOCK_NONE, label: "不阻止" },
-  { value: HarmBlockThreshold.BLOCK_ONLY_HIGH, label: "仅阻止高风险" },
-  { value: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE, label: "阻止中等及以上风险" },
-  { value: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE, label: "阻止低等及以上风险" },
-];
+
 
 // 上下文控制模式选项
 const CONTEXT_CONTROL_OPTIONS = [
@@ -64,12 +58,6 @@ export default function SettingsPage() {
   const [enableStreaming, setEnableStreaming] = useState(true);
   const [contextWindow, setContextWindow] = useState(0);
   const [contextControlMode, setContextControlMode] = useState<'count' | 'token'>('token');
-  const [safetySettings, setSafetySettings] = useState({
-    hateSpeech: HarmBlockThreshold.BLOCK_NONE,
-    harassment: HarmBlockThreshold.BLOCK_NONE,
-    sexuallyExplicit: HarmBlockThreshold.BLOCK_NONE,
-    dangerousContent: HarmBlockThreshold.BLOCK_NONE,
-  });
   
   // 新增字体设置状态
   const [fontFamily, setFontFamily] = useState<FontFamily>('system');
@@ -96,7 +84,6 @@ export default function SettingsPage() {
     setTopP(settings.topP);
     setModel(settings.model);
     setEnableStreaming(settings.enableStreaming);
-    setSafetySettings(settings.safetySettings);
     setContextWindow(settings.contextWindow || 0);
     setContextControlMode(settings.contextControlMode || 'token');
     // 加载字体设置
@@ -264,13 +251,7 @@ export default function SettingsPage() {
     // 这只是临时的，离开页面后会恢复到保存的设置
   }, [fontFamily, fontSize, chatFontSize]);
 
-  // 更新安全设置
-  const updateSafetySetting = (category: keyof typeof safetySettings, value: HarmBlockThreshold) => {
-    setSafetySettings(prev => ({
-      ...prev,
-      [category]: value
-    }));
-  };
+
 
   // 保存设置
   const handleSave = () => {
@@ -283,7 +264,6 @@ export default function SettingsPage() {
       topP,
       model,
       enableStreaming,
-      safetySettings,
       contextWindow,
       contextControlMode,
       // 保存字体设置
@@ -811,95 +791,7 @@ export default function SettingsPage() {
     </div>
   );
 
-  // 渲染安全设置内容
-  const renderSafetySettings = () => (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <h2 className="text-xl font-semibold">安全设置</h2>
-        <p className="text-sm text-muted-foreground">
-          控制模型对不同类型内容的过滤程度
-        </p>
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* 仇恨言论 */}
-        <div className="space-y-2">
-          <label htmlFor="hateSpeech" className="text-sm font-medium">
-            仇恨言论
-          </label>
-          <select
-            id="hateSpeech"
-            value={safetySettings.hateSpeech}
-            onChange={(e) => updateSafetySetting('hateSpeech', e.target.value as HarmBlockThreshold)}
-            className="w-full p-2 border rounded-md bg-background"
-          >
-            {SAFETY_THRESHOLD_OPTIONS.map(option => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* 骚扰内容 */}
-        <div className="space-y-2">
-          <label htmlFor="harassment" className="text-sm font-medium">
-            骚扰内容
-          </label>
-          <select
-            id="harassment"
-            value={safetySettings.harassment}
-            onChange={(e) => updateSafetySetting('harassment', e.target.value as HarmBlockThreshold)}
-            className="w-full p-2 border rounded-md bg-background"
-          >
-            {SAFETY_THRESHOLD_OPTIONS.map(option => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* 色情内容 */}
-        <div className="space-y-2">
-          <label htmlFor="sexuallyExplicit" className="text-sm font-medium">
-            色情内容
-          </label>
-          <select
-            id="sexuallyExplicit"
-            value={safetySettings.sexuallyExplicit}
-            onChange={(e) => updateSafetySetting('sexuallyExplicit', e.target.value as HarmBlockThreshold)}
-            className="w-full p-2 border rounded-md bg-background"
-          >
-            {SAFETY_THRESHOLD_OPTIONS.map(option => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* 危险内容 */}
-        <div className="space-y-2">
-          <label htmlFor="dangerousContent" className="text-sm font-medium">
-            危险内容
-          </label>
-          <select
-            id="dangerousContent"
-            value={safetySettings.dangerousContent}
-            onChange={(e) => updateSafetySetting('dangerousContent', e.target.value as HarmBlockThreshold)}
-            className="w-full p-2 border rounded-md bg-background"
-          >
-            {SAFETY_THRESHOLD_OPTIONS.map(option => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-    </div>
-  );
 
   return (
     <div className="container mx-auto p-4 max-w-3xl">
@@ -931,28 +823,21 @@ export default function SettingsPage() {
             <AccordionTrigger className="text-lg font-medium">上下文控制</AccordionTrigger>
             <AccordionContent>{renderContextSettings()}</AccordionContent>
           </AccordionItem>
-          
-          <AccordionItem value="safety">
-            <AccordionTrigger className="text-lg font-medium">安全设置</AccordionTrigger>
-            <AccordionContent>{renderSafetySettings()}</AccordionContent>
-          </AccordionItem>
         </Accordion>
       ) : (
         // 桌面设备上使用标签式布局
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid grid-cols-5 w-full">
+          <TabsList className="grid grid-cols-4 w-full">
             <TabsTrigger value="appearance">外观</TabsTrigger>
             <TabsTrigger value="api">API设置</TabsTrigger>
             <TabsTrigger value="model">模型设置</TabsTrigger>
             <TabsTrigger value="context">上下文</TabsTrigger>
-            <TabsTrigger value="safety">安全设置</TabsTrigger>
           </TabsList>
           
           <TabsContent value="appearance">{renderAppearanceSettings()}</TabsContent>
           <TabsContent value="api">{renderApiSettings()}</TabsContent>
           <TabsContent value="model">{renderModelSettings()}</TabsContent>
           <TabsContent value="context">{renderContextSettings()}</TabsContent>
-          <TabsContent value="safety">{renderSafetySettings()}</TabsContent>
         </Tabs>
       )}
 

@@ -38,14 +38,7 @@ export interface Branch {
   createdAt: number;
 }
 
-// 安全设置阈值类型
-export enum HarmBlockThreshold {
-  BLOCK_NONE = "BLOCK_NONE",
-  BLOCK_ONLY_HIGH = "BLOCK_ONLY_HIGH",
-  BLOCK_MEDIUM_AND_ABOVE = "BLOCK_MEDIUM_AND_ABOVE",
-  BLOCK_LOW_AND_ABOVE = "BLOCK_LOW_AND_ABOVE",
-  BLOCK_UNSPECIFIED = "BLOCK_UNSPECIFIED"
-}
+
 
 // 字体系列选项
 export type FontFamily = 
@@ -72,12 +65,6 @@ export interface UserSettings {
   topK: number;
   topP: number;
   model: string;
-  safetySettings: {
-    hateSpeech: HarmBlockThreshold;
-    harassment: HarmBlockThreshold;
-    sexuallyExplicit: HarmBlockThreshold;
-    dangerousContent: HarmBlockThreshold;
-  };
   // 上下文窗口相关设置
   contextWindow: number;        // 上下文窗口大小（token数或消息数）
   contextControlMode: 'count' | 'token';  // 上下文控制方式
