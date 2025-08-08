@@ -144,10 +144,11 @@ export class SendMessageManager {
         topP: this.context.settings.topP || 0.9,
         model: this.context.settings.model || 'gemini-1.5-flash',
         safetySettings: [
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: this.context.settings.safetySettings?.hateSpeech || "BLOCK_MEDIUM_AND_ABOVE" },
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: this.context.settings.safetySettings?.harassment || "BLOCK_MEDIUM_AND_ABOVE" },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: this.context.settings.safetySettings?.sexuallyExplicit || "BLOCK_MEDIUM_AND_ABOVE" },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: this.context.settings.safetySettings?.dangerousContent || "BLOCK_MEDIUM_AND_ABOVE" }
+          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'OFF' },
+          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'OFF' },
+          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'OFF' },
+          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'OFF' },
+          { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'OFF' }
         ]
       };
 
