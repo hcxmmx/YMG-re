@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
-import { useSettingsStore, usePromptPresetStore, useChatStore, useRegexStore } from "@/lib/store";
+import { useSettingsStore, usePromptPresetStore, useChatStore, useRegexStore, usePresetFolderStore } from "@/lib/store";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
@@ -200,6 +200,15 @@ export function ChatSettings() {
               conversation.currentBranchId
             );
           }
+        }
+        
+        // 应用"无预设"状态下的文件夹逻辑（启用全局预设文件夹）
+        try {
+          const presetFolderStore = usePresetFolderStore.getState();
+          await presetFolderStore.applyPresetFolders(''); // 传空ID表示无预设
+          console.log("已应用无预设状态下的文件夹逻辑");
+        } catch (error) {
+          console.error("应用无预设文件夹逻辑失败:", error);
         }
         
         // 强制刷新正则应用状态

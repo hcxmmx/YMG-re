@@ -175,7 +175,8 @@ export interface RegexFolder {
   description?: string;       // 文件夹描述（可选）
   parentId?: string;          // 父文件夹ID（可选，支持嵌套）
   disabled: boolean;          // 是否禁用（隔离）文件夹
-  type: 'global' | 'character'; // 文件夹类型：全局或角色专属
+  type: 'preset' | 'character'; // 文件夹类型：预设文件夹或角色专属文件夹
+  scope?: 'global' | 'local';   // 预设文件夹作用域：全局(所有预设启用) 或 局部(仅关联预设启用)
   createdAt: number;          // 创建时间
   updatedAt: number;          // 更新时间
   presetIds?: string[];       // 关联的预设ID列表

@@ -51,10 +51,11 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
   const [currentFolder, setCurrentFolder] = useState<RegexFolder | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderDescription, setNewFolderDescription] = useState("");
-  const [newFolderType, setNewFolderType] = useState<"global" | "character">("global");
+  const [newFolderType, setNewFolderType] = useState<"preset" | "character">("preset");
+  const [newFolderScope, setNewFolderScope] = useState<"global" | "local">("local");
   const [linkedPresetIds, setLinkedPresetIds] = useState<Set<string>>(new Set());
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
-  const [viewMode, setViewMode] = useState<"all" | "global" | "character">("all");
+  const [viewMode, setViewMode] = useState<"all" | "preset" | "character">("all");
   
   // 加载文件夹
   useEffect(() => {
@@ -76,12 +77,14 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
       name: newFolderName.trim(),
       description: newFolderDescription.trim(),
       disabled: false,
-      type: newFolderType
+      type: newFolderType,
+      scope: newFolderType === 'preset' ? newFolderScope : undefined
     });
     
     setNewFolderName("");
     setNewFolderDescription("");
-    setNewFolderType("global");
+    setNewFolderType("preset");
+    setNewFolderScope("local");
     setIsCreateDialogOpen(false);
   };
   
@@ -92,7 +95,8 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
     await updateFolder(currentFolder.id, {
       name: newFolderName.trim(),
       description: newFolderDescription.trim(),
-      type: newFolderType
+      type: newFolderType,
+      scope: newFolderType === 'preset' ? newFolderScope : undefined
     });
     
     setIsEditDialogOpen(false);
@@ -117,6 +121,7 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
     setNewFolderName(folder.name);
     setNewFolderDescription(folder.description || "");
     setNewFolderType(folder.type);
+    setNewFolderScope(folder.scope || 'local');
     setIsEditDialogOpen(true);
   };
   
@@ -181,11 +186,11 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
               全部
             </Button>
             <Button 
-              variant={viewMode === "global" ? "default" : "outline"} 
+              variant={viewMode === "preset" ? "default" : "outline"} 
               size="sm"
-              onClick={() => setViewMode("global")}
+              onClick={() => setViewMode("preset")}
             >
-              全局文件夹
+              预设文件夹
             </Button>
             <Button 
               variant={viewMode === "character" ? "default" : "outline"} 
@@ -232,12 +237,32 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
                 <div className="flex items-center space-x-2">
                   <Switch
                     id="folder-type"
-                    checked={newFolderType === "global"}
-                    onCheckedChange={(checked) => setNewFolderType(checked ? "global" : "character")}
+                    checked={newFolderType === "preset"}
+                    onCheckedChange={(checked) => setNewFolderType(checked ? "preset" : "character")}
                   />
-                  <Label htmlFor="folder-type">全局文件夹</Label>
+                  <Label htmlFor="folder-type">预设文件夹</Label>
                 </div>
               </div>
+              
+              {/* 预设文件夹作用域选择 */}
+              {newFolderType === "preset" && (
+                <div className="space-y-2">
+                  <Label htmlFor="folder-scope">作用域</Label>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="folder-scope"
+                      checked={newFolderScope === "global"}
+                      onCheckedChange={(checked) => setNewFolderScope(checked ? "global" : "local")}
+                    />
+                    <Label htmlFor="folder-scope">全局文件夹</Label>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {newFolderScope === "global" 
+                      ? "全局文件夹：在所有预设（包括无预设）启用时都会启用"
+                      : "局部文件夹：仅在关联的预设启用时才会启用"}
+                  </p>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
@@ -273,9 +298,14 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
                     {folder.disabled && (
                       <Badge variant="secondary">已禁用</Badge>
                     )}
-                    <Badge variant={folder.type === 'global' ? 'default' : 'outline'} className="ml-2">
-                      {folder.type === 'global' ? '全局' : '角色'}
+                    <Badge variant={folder.type === 'preset' ? 'default' : 'outline'} className="ml-2">
+                      {folder.type === 'preset' ? '预设' : '角色'}
                     </Badge>
+                    {folder.type === 'preset' && folder.scope && (
+                      <Badge variant={folder.scope === 'global' ? 'secondary' : 'outline'} className="ml-1 text-xs">
+                        {folder.scope === 'global' ? '全局' : '局部'}
+                      </Badge>
+                    )}
                   </div>
                 </div>
               </CardHeader>
@@ -418,12 +448,32 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
               <div className="flex items-center space-x-2">
                 <Switch
                   id="edit-folder-type"
-                  checked={newFolderType === "global"}
-                  onCheckedChange={(checked) => setNewFolderType(checked ? "global" : "character")}
+                  checked={newFolderType === "preset"}
+                  onCheckedChange={(checked) => setNewFolderType(checked ? "preset" : "character")}
                 />
-                <Label htmlFor="edit-folder-type">全局文件夹</Label>
+                <Label htmlFor="edit-folder-type">预设文件夹</Label>
               </div>
             </div>
+            
+            {/* 预设文件夹作用域选择 */}
+            {newFolderType === "preset" && (
+              <div className="space-y-2">
+                <Label htmlFor="edit-folder-scope">作用域</Label>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="edit-folder-scope"
+                    checked={newFolderScope === "global"}
+                    onCheckedChange={(checked) => setNewFolderScope(checked ? "global" : "local")}
+                  />
+                  <Label htmlFor="edit-folder-scope">全局文件夹</Label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {newFolderScope === "global" 
+                    ? "全局文件夹：在所有预设（包括无预设）启用时都会启用"
+                    : "局部文件夹：仅在关联的预设启用时才会启用"}
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
@@ -441,7 +491,7 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
             <DialogTitle>确认删除</DialogTitle>
           </DialogHeader>
           <p>
-            您确定要删除文件夹 "{currentFolder?.name}" 吗？文件夹中的所有正则脚本将被移动到默认文件夹。此操作无法撤销。
+            您确定要删除文件夹 "{currentFolder?.name}" 吗？<span className="text-destructive font-medium">文件夹中的所有正则脚本也会被一起删除</span>。此操作无法撤销。
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>

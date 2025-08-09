@@ -3183,27 +3183,40 @@ export const usePresetFolderStore = create<PresetFolderState>()(
           const presetFolders = await get().getFoldersForPreset(presetId);
           const presetFolderIds = new Set(presetFolders.map(folder => folder.id));
           
-          // 启用预设关联的文件夹，禁用其他文件夹（但不影响局部正则文件夹）
+          // 应用新的文件夹启用逻辑
           for (const folder of allFolders) {
-            // 跳过默认文件夹，它始终保持启用状态
-            if (folder.id === 'default') continue;
-            
-            // 如果是角色专属文件夹，跳过它，不改变其启用状态
+            // 跳过角色专属文件夹，不改变其启用状态
             if (folder.type === 'character') {
               console.log(`跳过角色专属文件夹: ${folder.name} (ID: ${folder.id})`);
               continue;
             }
             
-            // 对于全局正则文件夹，应用预设关联逻辑
-            const shouldBeEnabled = presetFolderIds.has(folder.id);
-            
-            // 如果状态需要改变
-            if (folder.disabled === shouldBeEnabled) {
-              // 更新文件夹状态
-              await regexFolderStorage.updateFolder(folder.id, {
-                disabled: !shouldBeEnabled
-              });
-              console.log(`${shouldBeEnabled ? '启用' : '禁用'}全局正则文件夹: ${folder.name} (ID: ${folder.id})`);
+            // 处理预设文件夹
+            if (folder.type === 'preset') {
+              let shouldBeEnabled = false;
+              
+              if (folder.scope === 'global') {
+                // 全局预设文件夹：始终启用（包括无预设时）
+                shouldBeEnabled = true;
+                console.log(`全局预设文件夹始终启用: ${folder.name} (ID: ${folder.id})`);
+              } else if (folder.scope === 'local') {
+                // 局部预设文件夹：只有关联到当前预设时才启用
+                shouldBeEnabled = presetFolderIds.has(folder.id);
+                console.log(`局部预设文件夹 ${folder.name} (ID: ${folder.id}) ${shouldBeEnabled ? '启用' : '禁用'}`);
+              } else {
+                // 兼容旧数据：没有scope的预设文件夹按局部处理
+                shouldBeEnabled = presetFolderIds.has(folder.id);
+                console.log(`兼容旧数据 - 预设文件夹 ${folder.name} (ID: ${folder.id}) ${shouldBeEnabled ? '启用' : '禁用'}`);
+              }
+              
+              // 如果状态需要改变
+              if (folder.disabled === shouldBeEnabled) {
+                // 更新文件夹状态
+                await regexFolderStorage.updateFolder(folder.id, {
+                  disabled: !shouldBeEnabled
+                });
+                console.log(`${shouldBeEnabled ? '启用' : '禁用'}预设文件夹: ${folder.name} (ID: ${folder.id})`);
+              }
             }
           }
           

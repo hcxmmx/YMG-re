@@ -206,7 +206,8 @@ export const initDB = async () => {
               name: '未分类',
               description: '默认文件夹，存放未分类的正则脚本',
               disabled: false,
-              type: 'global' as const, // 明确指定为全局类型
+              type: 'preset' as const, // 明确指定为预设类型
+              scope: 'global' as const, // 默认文件夹为全局作用域
               createdAt: Date.now(),
               updatedAt: Date.now()
             };
@@ -268,7 +269,8 @@ export const initDB = async () => {
               name: '未分类',
               description: '默认文件夹，存放未分类的正则脚本',
               disabled: false,
-              type: 'global' as const, // 明确指定为全局类型
+              type: 'preset' as const, // 明确指定为预设类型
+              scope: 'global' as const, // 默认文件夹为全局作用域
               createdAt: Date.now(),
               updatedAt: Date.now()
             };
@@ -2639,7 +2641,8 @@ export const regexFolderStorage = {
       description: folderData.description || '',
       parentId: folderData.parentId,
       disabled: folderData.disabled || false,
-      type: folderData.type || 'global', // 默认为全局文件夹
+      type: folderData.type || 'preset', // 默认为预设文件夹
+      scope: folderData.scope || (folderData.type === 'character' ? undefined : 'local'), // 预设文件夹默认为局部作用域
       createdAt: Date.now(),
       updatedAt: Date.now(),
       presetIds: folderData.presetIds || []
@@ -2697,10 +2700,9 @@ export const regexFolderStorage = {
     const allScripts = await regexStorage.listRegexScripts();
     const scriptsInFolder = allScripts.filter(script => script.folderId === id);
     
-    // 将文件夹中的脚本移动到默认文件夹
+    // 删除文件夹中的所有脚本（而不是移动到默认文件夹）
     for (const script of scriptsInFolder) {
-      script.folderId = 'default';
-      await regexStorage.saveRegexScript(script);
+      await regexStorage.deleteRegexScript(script.id);
     }
     
     // 删除文件夹
@@ -2716,7 +2718,51 @@ export const regexFolderStorage = {
   // 获取所有文件夹
   async listFolders(): Promise<RegexFolder[]> {
     const db = await initDB();
-    return db.getAll('regexFolders');
+    const folders = await db.getAll('regexFolders');
+    
+    // 数据迁移：将旧的 'global' 类型转换为 'preset'，并添加作用域
+    let needUpdate = false;
+    const migratedFolders = folders.map(folder => {
+      let updated = false;
+      let updatedFolder = { ...folder };
+      
+      // 迁移类型：'global' -> 'preset'
+      if ((folder.type as any) === 'global') {
+        updatedFolder.type = 'preset' as const;
+        updated = true;
+      }
+      
+      // 为预设文件夹添加默认作用域
+      if (updatedFolder.type === 'preset' && !updatedFolder.scope) {
+        // 默认文件夹设为全局作用域，其他设为局部作用域
+        updatedFolder.scope = folder.id === 'default' ? 'global' : 'local';
+        updated = true;
+      }
+      
+      if (updated) {
+        needUpdate = true;
+      }
+      
+      return updatedFolder;
+    });
+    
+    // 如果有数据需要迁移，批量更新
+    if (needUpdate) {
+      console.log('正在迁移文件夹数据：类型转换和作用域添加');
+      const tx = db.transaction('regexFolders', 'readwrite');
+      for (const folder of migratedFolders) {
+        const originalFolder = folders.find(f => f.id === folder.id);
+        if (originalFolder && (
+          (originalFolder.type as any) === 'global' || 
+          (originalFolder.type === 'preset' && !originalFolder.scope)
+        )) {
+          tx.store.put(folder);
+        }
+      }
+      await tx.done;
+    }
+    
+    return migratedFolders;
   },
   
   // 启用文件夹
