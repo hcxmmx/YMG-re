@@ -15,7 +15,7 @@ import { replaceMacros } from "@/lib/macroUtils";
 import { apiKeyStorage } from "@/lib/storage";
 import { callChatApi, handleStreamResponse, handleNonStreamResponse, ChatApiParams } from "@/lib/chatApi";
 import { useToast } from "@/components/ui/use-toast";
-import { createSendMessageManager, SendMessageManager, ChatRequests, AdvancedChatRequests, type SendMessageContext, type ErrorDetails, type DebugInfo, type GlobalCallbacks, type LoadingType, type RequestState, type StateSubscriber } from "@/lib/sendMessageManager";
+import { createSendMessageManager, SendMessageManager, RequestLifecycleManager, ChatRequests, AdvancedChatRequests, type SendMessageContext, type ErrorDetails, type DebugInfo, type GlobalCallbacks, type LoadingType, type RequestState, type StateSubscriber } from "@/lib/sendMessageManager";
 
 // LoadingType 现在从 sendMessageManager 导入
 
@@ -919,11 +919,12 @@ export default function ChatPage() {
   // 取消请求
   const cancelRequest = useCallback(async () => {
     const sendManager = initializeSendMessageManager();
-    const cancelled = await sendManager.cancelRequest();
+    
+    // 🆕 使用新的取消方法：先尝试API取消，再做本地清理
+    const cancelled = await sendManager.cancelRequestWithApi();
     
     if (cancelled) {
       console.log('[取消请求] 请求已成功取消');
-      // 🆕 状态清理现在由全局回调处理（通过SendMessageManager）
       currentRequestIdRef.current = null;
       
       toast({
@@ -931,7 +932,10 @@ export default function ChatPage() {
         description: "AI回复生成已停止",
       });
     } else {
-      console.log('[取消请求] 没有活动的请求可以取消');
+      console.log('[取消请求] 请求取消失败或没有活动请求');
+      // 即使API取消失败，也要做本地清理
+      sendManager.cancelRequest();
+      currentRequestIdRef.current = null;
     }
   }, [initializeSendMessageManager, toast]);
 

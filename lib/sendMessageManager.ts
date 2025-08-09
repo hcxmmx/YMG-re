@@ -56,6 +56,153 @@ export interface RequestState {
 // 🆕 状态订阅者类型
 export type StateSubscriber = (state: RequestState) => void;
 
+// 🆕 RequestLifecycleManager - 专门管理请求生命周期和状态
+export class RequestLifecycleManager {
+  private state: RequestState = {
+    isLoading: false,
+    loadingType: null,
+    loadingMessageId: null,
+    currentRequestId: null,
+    startTime: null,
+    responseTime: null,
+  };
+  
+  private subscribers: Set<StateSubscriber> = new Set();
+  private requestIdCounter = 0;
+
+  /**
+   * 订阅状态变化
+   */
+  subscribe(subscriber: StateSubscriber): () => void {
+    this.subscribers.add(subscriber);
+    // 立即通知当前状态
+    subscriber(this.state);
+    
+    // 返回取消订阅函数
+    return () => {
+      this.subscribers.delete(subscriber);
+    };
+  }
+
+  /**
+   * 获取当前状态
+   */
+  getState(): RequestState {
+    return { ...this.state };
+  }
+
+  /**
+   * 更新状态并通知订阅者
+   */
+  private updateState(updates: Partial<RequestState>) {
+    this.state = { ...this.state, ...updates };
+    
+    // 通知所有订阅者
+    this.subscribers.forEach(subscriber => {
+      try {
+        subscriber(this.state);
+      } catch (error) {
+        console.error('[RequestLifecycleManager] 状态订阅者回调出错:', error);
+      }
+    });
+  }
+
+  /**
+   * 生成唯一请求ID
+   */
+  private generateRequestId(): string {
+    return `req_${Date.now()}_${++this.requestIdCounter}`;
+  }
+
+  /**
+   * 开始请求生命周期
+   */
+  startRequest(type: LoadingType, messageId?: string): string {
+    const requestId = this.generateRequestId();
+    const startTime = Date.now();
+    
+    this.updateState({
+      isLoading: true,
+      loadingType: type,
+      loadingMessageId: messageId || null,
+      currentRequestId: requestId,
+      startTime: startTime,
+      responseTime: null,
+    });
+    
+    console.log(`[RequestLifecycleManager] 请求开始: ${type}`, requestId);
+    return requestId;
+  }
+
+  /**
+   * 结束请求生命周期
+   */
+  endRequest(): void {
+    console.log(`[RequestLifecycleManager] 请求结束:`, this.state.currentRequestId);
+    
+    this.updateState({
+      isLoading: false,
+      loadingType: null,
+      loadingMessageId: null,
+      currentRequestId: null,
+    });
+  }
+
+  /**
+   * 计算并更新响应时间
+   */
+  calculateResponseTime(): number {
+    if (this.state.startTime) {
+      const responseTime = Date.now() - this.state.startTime;
+      
+      this.updateState({
+        responseTime: responseTime,
+      });
+      
+      console.log(`[RequestLifecycleManager] 响应时间: ${responseTime}ms`);
+      return responseTime;
+    }
+    return 0;
+  }
+
+  /**
+   * 处理请求错误
+   */
+  handleError(error: any): void {
+    console.error(`[RequestLifecycleManager] 请求错误:`, this.state.currentRequestId, error);
+    
+    // 计算响应时间（即使是错误）
+    this.calculateResponseTime();
+    
+    // 结束请求
+    this.endRequest();
+  }
+
+  /**
+   * 取消当前请求
+   */
+  cancelRequest(): void {
+    if (this.state.isLoading) {
+      console.log(`[RequestLifecycleManager] 取消请求:`, this.state.currentRequestId);
+      this.endRequest();
+    }
+  }
+
+  /**
+   * 检查是否有活动请求
+   */
+  hasActiveRequest(): boolean {
+    return this.state.isLoading;
+  }
+
+  /**
+   * 获取当前请求ID
+   */
+  getCurrentRequestId(): string | null {
+    return this.state.currentRequestId;
+  }
+}
+
 // 全局回调接口
 export interface GlobalCallbacks {
   onDebugInfo?: (debugInfo: DebugInfo) => void;
@@ -89,66 +236,44 @@ export class SendMessageManager {
   private context: SendMessageContext;
   private activeRequestId: string | null = null;
   
-  // 🆕 内部状态管理
-  private state: RequestState = {
-    isLoading: false,
-    loadingType: null,
-    loadingMessageId: null,
-    currentRequestId: null,
-    startTime: null,
-    responseTime: null,
-  };
-  
-  // 🆕 状态订阅者列表
-  private subscribers: Set<StateSubscriber> = new Set();
+  // 🆕 使用RequestLifecycleManager管理状态
+  private lifecycleManager: RequestLifecycleManager;
 
   constructor(context: SendMessageContext) {
     this.context = context;
+    this.lifecycleManager = new RequestLifecycleManager();
   }
 
-  // 🆕 状态管理方法
+  // 🆕 状态管理方法 - 委托给RequestLifecycleManager
   
   /**
    * 订阅状态变化
    */
   subscribe(subscriber: StateSubscriber): () => void {
-    this.subscribers.add(subscriber);
-    // 立即通知当前状态
-    subscriber(this.state);
-    
-    // 返回取消订阅函数
-    return () => {
-      this.subscribers.delete(subscriber);
-    };
+    return this.lifecycleManager.subscribe(subscriber);
   }
 
   /**
    * 获取当前状态
    */
   getState(): RequestState {
-    return { ...this.state };
-  }
-
-  /**
-   * 更新状态并通知订阅者
-   */
-  private updateState(updates: Partial<RequestState>) {
-    const oldState = this.state;
-    this.state = { ...this.state, ...updates };
-    
-    // 通知所有订阅者
-    this.subscribers.forEach(subscriber => {
-      try {
-        subscriber(this.state);
-      } catch (error) {
-        console.error('[SendMessageManager] 状态订阅者回调出错:', error);
-      }
-    });
+    return this.lifecycleManager.getState();
   }
 
   // 更新上下文
   updateContext(context: Partial<SendMessageContext>) {
     this.context = { ...this.context, ...context };
+  }
+
+  // 🆕 取消当前请求
+  cancelRequest(): void {
+    this.lifecycleManager.cancelRequest();
+    this.activeRequestId = null;
+  }
+
+  // 🆕 检查是否有活动请求
+  hasActiveRequest(): boolean {
+    return this.lifecycleManager.hasActiveRequest();
   }
 
   // 合并全局回调和局部回调（局部回调优先）
@@ -168,20 +293,9 @@ export class SendMessageManager {
     };
   }
 
-  // 🆕 生命周期管理方法
+  // 🆕 生命周期管理方法 - 委托给RequestLifecycleManager
   private triggerRequestStart(type: LoadingType, messageId?: string) {
-    const requestId = this.generateRequestId();
-    const startTime = Date.now();
-    
-    // 🆕 更新内部状态
-    this.updateState({
-      isLoading: true,
-      loadingType: type,
-      loadingMessageId: messageId || null,
-      currentRequestId: requestId,
-      startTime: startTime,
-      responseTime: null,
-    });
+    const requestId = this.lifecycleManager.startRequest(type, messageId);
     
     // 保持向后兼容：仍然调用全局回调
     this.context.globalCallbacks?.onRequestStart?.(type, messageId);
@@ -190,13 +304,11 @@ export class SendMessageManager {
   }
 
   private triggerRequestEnd() {
-    // 🆕 更新内部状态
-    this.updateState({
-      isLoading: false,
-      loadingType: null,
-      loadingMessageId: null,
-      currentRequestId: null,
-    });
+    // 先计算响应时间
+    this.calculateAndUpdateResponseTime();
+    
+    // 结束请求
+    this.lifecycleManager.endRequest();
     
     // 保持向后兼容：仍然调用全局回调
     this.context.globalCallbacks?.onRequestEnd?.();
@@ -204,11 +316,6 @@ export class SendMessageManager {
 
   private triggerResponseTimeCalculated(startTime: number) {
     const responseTime = Date.now() - startTime;
-    
-    // 🆕 更新内部状态
-    this.updateState({
-      responseTime: responseTime,
-    });
     
     // 保持向后兼容：仍然调用全局回调
     this.context.globalCallbacks?.onResponseTimeCalculated?.(responseTime);
@@ -220,10 +327,7 @@ export class SendMessageManager {
    * 🆕 便捷方法：基于内部状态计算响应时间
    */
   private calculateAndUpdateResponseTime(): number {
-    if (this.state.startTime) {
-      return this.triggerResponseTimeCalculated(this.state.startTime);
-    }
-    return 0;
+    return this.lifecycleManager.calculateResponseTime();
   }
 
   private triggerPlayerCharacterInfo() {
@@ -395,6 +499,9 @@ export class SendMessageManager {
     } catch (error: any) {
       console.error(`${logPrefix} 请求失败:`, error);
       
+      // 🆕 使用lifecycleManager处理错误
+      this.lifecycleManager.handleError(error);
+      
       // 创建详细错误信息
       const errorDetails = await this.extractErrorDetails(error);
       const simpleMessage = config.regenerate ? 
@@ -404,8 +511,8 @@ export class SendMessageManager {
       
       config.onError?.(errorDetails, simpleMessage);
       
-      // 🆕 触发请求结束生命周期回调
-      this.triggerRequestEnd();
+      // 保持向后兼容的全局回调通知
+      this.context.globalCallbacks?.onRequestEnd?.();
       
       return null;
     } finally {
@@ -413,41 +520,43 @@ export class SendMessageManager {
     }
   }
 
-  // 取消当前请求
-  async cancelRequest(): Promise<boolean> {
-    if (!this.activeRequestId) {
+  // 🆕 取消当前请求 - 使用lifecycleManager + API调用
+  async cancelRequestWithApi(): Promise<boolean> {
+    const currentRequestId = this.lifecycleManager.getCurrentRequestId();
+    if (!currentRequestId) {
       console.log('[SendMessageManager] 没有活动的请求可以取消');
       return false;
     }
 
     try {
-      const response = await fetch(`/api/chat?requestId=${this.activeRequestId}`, {
+      const response = await fetch(`/api/chat?requestId=${currentRequestId}`, {
         method: 'DELETE'
       });
       
       const result = await response.json();
       console.log('[SendMessageManager] 请求取消结果:', result);
       
+      // 使用lifecycleManager取消请求
+      this.lifecycleManager.cancelRequest();
       this.activeRequestId = null;
       return result.success || false;
     } catch (error) {
       console.error('[SendMessageManager] 取消请求失败:', error);
+      // 即使API调用失败，也要清理本地状态
+      this.lifecycleManager.cancelRequest();
       this.activeRequestId = null;
       return false;
     }
   }
 
-  // 检查是否有活动请求
-  hasActiveRequest(): boolean {
+  // 旧方法保持兼容性（委托给lifecycleManager）
+  private hasActiveRequestLegacy(): boolean {
     return this.activeRequestId !== null;
   }
 
   // ========== 私有方法 ==========
 
-  // 生成请求ID
-  private generateRequestId(): string {
-    return 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15);
-  }
+  // generateRequestId现在由RequestLifecycleManager内部管理
 
   // 检查API密钥
   private async checkApiKey(): Promise<string | null> {
@@ -749,6 +858,11 @@ export class SendMessageManager {
 // 工厂函数：创建发送消息管理器实例
 export function createSendMessageManager(context: SendMessageContext): SendMessageManager {
   return new SendMessageManager(context);
+}
+
+// 🆕 工厂函数：创建独立的请求生命周期管理器
+export function createRequestLifecycleManager(): RequestLifecycleManager {
+  return new RequestLifecycleManager();
 }
 
 // 便捷方法：执行不同类型的请求
