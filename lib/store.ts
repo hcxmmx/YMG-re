@@ -28,6 +28,7 @@ interface SettingsState {
     showMessageNumber: boolean;
     enableQuoteHighlight: boolean;  // 启用引号高亮
     quoteHighlightColor: string;    // 引号高亮颜色
+    enablePromptDebug: boolean;     // 启用提示词调试
   };
   updateSettings: (settings: Partial<UserSettings>) => void;
   updateUISettings: (settings: Partial<{
@@ -36,6 +37,7 @@ interface SettingsState {
     showMessageNumber: boolean;
     enableQuoteHighlight: boolean;  // 启用引号高亮
     quoteHighlightColor: string;    // 引号高亮颜色
+    enablePromptDebug: boolean;     // 启用提示词调试
   }>) => void;
 }
 
@@ -65,6 +67,7 @@ export const useSettingsStore = create<SettingsState>()(
         showMessageNumber: true,
         enableQuoteHighlight: true,     // 默认启用引号高亮
         quoteHighlightColor: '#8b5cf6', // 默认使用紫色
+        enablePromptDebug: false,       // 默认禁用提示词调试
       },
       updateSettings: (newSettings) =>
         set((state) => {
@@ -100,6 +103,9 @@ export const useSettingsStore = create<SettingsState>()(
           }
           if (newUISettings.quoteHighlightColor !== undefined) {
             localStorage.setItem('quoteHighlightColor', newUISettings.quoteHighlightColor);
+          }
+          if (newUISettings.enablePromptDebug !== undefined) {
+            localStorage.setItem('enablePromptDebug', String(newUISettings.enablePromptDebug));
           }
 
           return {

@@ -15,7 +15,7 @@ import { replaceMacros } from "@/lib/macroUtils";
 import { apiKeyStorage } from "@/lib/storage";
 import { callChatApi, handleStreamResponse, handleNonStreamResponse, ChatApiParams } from "@/lib/chatApi";
 import { useToast } from "@/components/ui/use-toast";
-import { createSendMessageManager, SendMessageManager, ChatRequests, type SendMessageContext, type ErrorDetails } from "@/lib/sendMessageManager";
+import { createSendMessageManager, SendMessageManager, ChatRequests, type SendMessageContext, type ErrorDetails, type DebugInfo, type GlobalCallbacks } from "@/lib/sendMessageManager";
 
 // 定义加载类型
 type LoadingType = 'new' | 'regenerate' | 'variant';
@@ -111,6 +111,28 @@ export default function ChatPage() {
   // 添加状态来跟踪当前加载的类型和消息ID
   const [loadingType, setLoadingType] = useState<LoadingType>('new');
   const [loadingMessageId, setLoadingMessageId] = useState<string | null>(null);
+  
+  // 调试信息状态
+  const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
+  const [showDebugInfo, setShowDebugInfo] = useState(false);
+
+  // 显示调试引导面板
+  const showDebugGuide = useCallback(() => {
+    setDebugInfo({
+      systemPrompt: "🔧 调试功能已启用！请发送一条消息，系统将显示完整的提示词构建过程。",
+      messages: [],
+      apiParams: {
+        model: "等待消息发送...",
+        temperature: 0,
+        maxOutputTokens: 0,
+        topK: 0,
+        topP: 0,
+        stream: false
+      } as any,
+      timestamp: new Date().toISOString()
+    });
+    setShowDebugInfo(true);
+  }, []);
 
   // 创建发送消息管理器
   const sendMessageManagerRef = useRef<SendMessageManager | null>(null);
@@ -211,7 +233,15 @@ export default function ChatPage() {
       currentPlayer,
       toast,
       applyRegexToMessage,
-      systemPrompt
+      systemPrompt,
+      // 配置全局回调
+      globalCallbacks: {
+        onDebugInfo: (info: DebugInfo) => {
+          console.log('[SendMessageManager] 收到调试信息:', info);
+          setDebugInfo(info);
+          setShowDebugInfo(true);
+        }
+      }
     };
     
     if (!sendMessageManagerRef.current) {
@@ -1016,6 +1046,98 @@ export default function ChatPage() {
         
         <div ref={messagesEndRef} />
       </div>
+      
+      {/* 提示词调试面板 */}
+      {showDebugInfo && debugInfo && (
+        <div className="fixed top-4 right-4 w-96 max-h-[80vh] bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg overflow-hidden z-50">
+          <div className="bg-gray-100 dark:bg-gray-700 px-4 py-2 flex items-center justify-between">
+            <h3 className="font-medium text-sm">🔧 提示词调试信息</h3>
+            <button
+              onClick={() => setShowDebugInfo(false)}
+              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            >
+              ✕
+            </button>
+          </div>
+          
+          <div className="p-4 overflow-y-auto max-h-[70vh] space-y-4">
+            {/* 检查是否为引导模式 */}
+            {debugInfo.messages.length === 0 && debugInfo.systemPrompt.includes('调试功能已启用') ? (
+              /* 引导模式显示 */
+              <div className="text-center space-y-4">
+                <div className="text-4xl mb-3">🔧</div>
+                <h3 className="font-semibold text-lg text-gray-800 dark:text-gray-200">调试功能已启用</h3>
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  <p className="text-sm text-blue-800 dark:text-blue-200 mb-3">
+                    现在发送一条消息，系统将在此显示：
+                  </p>
+                  <div className="text-left text-xs text-blue-700 dark:text-blue-300 space-y-1">
+                    <div>📝 <strong>系统提示词</strong> - 包含角色描述、预设配置等</div>
+                    <div>💬 <strong>消息历史</strong> - 发送给AI的对话记录</div>
+                    <div>⚙️ <strong>API参数</strong> - 模型设置、温度参数等</div>
+                  </div>
+                </div>
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-md">
+                  <p className="text-xs text-amber-800 dark:text-amber-200">
+                    💡 <strong>提示</strong>：调试信息会在每次发送消息、重新生成或生成变体时更新
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowDebugInfo(false)}
+                  className="px-4 py-2 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                >
+                  知道了，我来试试
+                </button>
+              </div>
+            ) : (
+              /* 正常调试信息显示 */
+              <>
+                <div>
+                  <h4 className="font-medium text-sm text-gray-700 dark:text-gray-300 mb-2">系统提示词</h4>
+                  <pre className="text-xs bg-gray-50 dark:bg-gray-900 p-3 rounded border overflow-x-auto whitespace-pre-wrap">
+                    {debugInfo.systemPrompt || "无系统提示词"}
+                  </pre>
+                </div>
+                
+                <div>
+                  <h4 className="font-medium text-sm text-gray-700 dark:text-gray-300 mb-2">消息历史 ({debugInfo.messages.length}条)</h4>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {debugInfo.messages.length > 0 ? debugInfo.messages.map((msg, idx) => (
+                      <div key={idx} className="text-xs bg-gray-50 dark:bg-gray-900 p-2 rounded border">
+                        <div className="font-medium text-gray-600 dark:text-gray-400">
+                          {msg.role === 'user' ? '👤 用户' : msg.role === 'assistant' ? '🤖 助手' : '⚙️ 系统'}
+                        </div>
+                        <div className="mt-1 whitespace-pre-wrap break-words">
+                          {msg.content.length > 200 ? msg.content.substring(0, 200) + '...' : msg.content}
+                        </div>
+                      </div>
+                    )) : (
+                      <div className="text-xs text-gray-500 dark:text-gray-400 italic">暂无消息历史</div>
+                    )}
+                  </div>
+                </div>
+                
+                <div>
+                  <h4 className="font-medium text-sm text-gray-700 dark:text-gray-300 mb-2">API参数</h4>
+                  <div className="text-xs bg-gray-50 dark:bg-gray-900 p-3 rounded border space-y-1">
+                    <div><span className="font-medium">模型:</span> {debugInfo.apiParams.model}</div>
+                    <div><span className="font-medium">温度:</span> {debugInfo.apiParams.temperature}</div>
+                    <div><span className="font-medium">最大输出:</span> {debugInfo.apiParams.maxOutputTokens}</div>
+                    <div><span className="font-medium">Top-K:</span> {debugInfo.apiParams.topK}</div>
+                    <div><span className="font-medium">Top-P:</span> {debugInfo.apiParams.topP}</div>
+                    <div><span className="font-medium">流式:</span> {debugInfo.apiParams.stream ? '是' : '否'}</div>
+                  </div>
+                </div>
+                
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  调试时间: {new Date(debugInfo.timestamp).toLocaleString()}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      
       <div className="border-t">
         <ChatInput
           onSendMessage={handleSendMessage}
@@ -1025,6 +1147,7 @@ export default function ChatPage() {
           disabled={false} // 始终允许用户输入
           lastUserMessage={lastUserMessage?.content || null}
           canRequestReply={canRequestReply && !isLoading} // AI回复时不允许直接请求回复
+          onShowDebugGuide={showDebugGuide} // 调试引导面板回调
         />
       </div>
     </div>

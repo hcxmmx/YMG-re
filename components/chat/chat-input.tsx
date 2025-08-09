@@ -20,6 +20,7 @@ export interface ChatInputProps {
   disabled?: boolean;
   lastUserMessage?: string | null; // 最后一条用户消息内容
   canRequestReply?: boolean; // 是否可以直接请求回复（最后一条消息是用户消息时为true）
+  onShowDebugGuide?: () => void; // 调试引导面板回调
 }
 
 export function ChatInput({ 
@@ -29,7 +30,8 @@ export function ChatInput({
   isLoading, 
   disabled, 
   lastUserMessage, 
-  canRequestReply 
+  canRequestReply,
+  onShowDebugGuide
 }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [files, setFiles] = useState<FileData[]>([]);
@@ -249,7 +251,7 @@ export function ChatInput({
       )}
       
       <div className="flex gap-2 items-center">
-        <ChatSettings />
+        <ChatSettings onShowDebugGuide={onShowDebugGuide} />
         
         <Button
           type="button"

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSettingsStore, usePromptPresetStore, useChatStore, useRegexStore, usePresetFolderStore } from "@/lib/store";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
@@ -20,7 +21,11 @@ const AVAILABLE_MODELS = [
   { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash - 快速响应" },
 ];
 
-export function ChatSettings() {
+interface ChatSettingsProps {
+  onShowDebugGuide?: () => void;
+}
+
+export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
   const { settings, uiSettings, updateSettings, updateUISettings } = useSettingsStore();
   const { presets, currentPresetId, loadPresets, applyPreset, getPreset } = usePromptPresetStore();
   
@@ -36,7 +41,11 @@ export function ChatSettings() {
     showMessageNumber: uiSettings.showMessageNumber,
     enableQuoteHighlight: uiSettings.enableQuoteHighlight,
     quoteHighlightColor: uiSettings.quoteHighlightColor,
+    enablePromptDebug: uiSettings.enablePromptDebug || false, // 新增提示词调试开关
   });
+  
+  // 当前选中的设置标签页
+  const [activeTab, setActiveTab] = useState("presets");
   
   // 是否是第一次加载
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -136,7 +145,7 @@ export function ChatSettings() {
           }
         }
       }
-    } else if (['showResponseTime', 'showCharCount', 'showMessageNumber', 'enableQuoteHighlight', 'quoteHighlightColor'].includes(key)) {
+    } else if (['showResponseTime', 'showCharCount', 'showMessageNumber', 'enableQuoteHighlight', 'quoteHighlightColor', 'enablePromptDebug'].includes(key)) {
       updateUISettings({ [key]: value });
     }
   };
@@ -232,12 +241,17 @@ export function ChatSettings() {
           <span className="sr-only">聊天设置</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-4" align="start">
-        <div className="space-y-4">
-          <h3 className="font-medium">聊天设置</h3>
-          
-          {/* 预设选择 */}
-          <div className="space-y-2">
+      <PopoverContent className="w-96 p-4" align="start">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid grid-cols-4 w-full mb-4">
+            <TabsTrigger value="presets" className="text-xs">📋 预设</TabsTrigger>
+            <TabsTrigger value="model" className="text-xs">🤖 模型</TabsTrigger>
+            <TabsTrigger value="ui" className="text-xs">🎨 界面</TabsTrigger>
+            <TabsTrigger value="debug" className="text-xs">🔧 调试</TabsTrigger>
+          </TabsList>
+          {/* 预设管理标签页 */}
+          <TabsContent value="presets" className="space-y-4 mt-0">
+            <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium">预设</label>
               {currentPresetId && presetModified && (
@@ -297,17 +311,17 @@ export function ChatSettings() {
                 </div>
               )}
             </div>
-            <div className="flex justify-end mt-1">
-              <Button variant="link" size="sm" asChild className="h-auto p-0">
-                <Link href="/presets">管理预设</Link>
-              </Button>
+              <div className="flex justify-end mt-1">
+                <Button variant="link" size="sm" asChild className="h-auto p-0">
+                  <Link href="/presets">管理预设</Link>
+                </Button>
+              </div>
             </div>
-          </div>
+          </TabsContent>
           
-          <Separator />
-          
-          {/* 模型选择 */}
-          <div className="space-y-2">
+          {/* 模型参数标签页 */}
+          <TabsContent value="model" className="space-y-4 mt-0">
+            <div className="space-y-2">
             <label className="text-sm font-medium">模型</label>
             <select 
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -391,10 +405,9 @@ export function ChatSettings() {
               step={0.01}
               onValueChange={(value) => handleSettingChange('topP', value[0])}
             />
-          </div>
-          
-          {/* 开关选项 */}
-          <div className="space-y-3">
+            </div>
+            
+            {/* 流式输出 */}
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium">流式输出</label>
               <Switch 
@@ -402,6 +415,11 @@ export function ChatSettings() {
                 onCheckedChange={(checked) => handleSettingChange('enableStreaming', checked)}
               />
             </div>
+          </TabsContent>
+          
+          {/* 界面设置标签页 */}
+          <TabsContent value="ui" className="space-y-4 mt-0">
+            <div className="space-y-3">
             
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium">显示响应时间</label>
@@ -455,8 +473,41 @@ export function ChatSettings() {
                 </div>
               </div>
             )}
-          </div>
-        </div>
+            </div>
+          </TabsContent>
+
+          {/* 调试工具标签页 */}
+          <TabsContent value="debug" className="space-y-4 mt-0">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">提示词调试</label>
+                  <p className="text-xs text-muted-foreground">显示发送给AI的完整提示词内容</p>
+                </div>
+                <Switch 
+                  checked={localSettings.enablePromptDebug}
+                  onCheckedChange={(checked) => {
+                    handleSettingChange('enablePromptDebug', checked);
+                    // 启用时立即显示引导面板
+                    if (checked && onShowDebugGuide) {
+                      onShowDebugGuide();
+                    }
+                  }}
+                />
+              </div>
+              
+              {/* 调试工具提示 */}
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md">
+                <h4 className="text-xs font-medium text-blue-900 dark:text-blue-100 mb-1">
+                  💡 关于提示词调试
+                </h4>
+                <p className="text-xs text-blue-800 dark:text-blue-200">
+                  启用后，在发送消息时会显示最终构建的提示词内容，包括系统提示词、角色描述、对话历史等，帮助您了解AI接收到的完整上下文。
+                </p>
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
       </PopoverContent>
     </Popover>
   );

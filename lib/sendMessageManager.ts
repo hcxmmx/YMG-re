@@ -6,6 +6,14 @@ import { trimMessageHistory } from './tokenUtils';
 import { generateId } from './utils';
 import type { FileData } from '@/components/chat/chat-input';
 
+// 调试信息接口
+export interface DebugInfo {
+  systemPrompt: string;        // 最终的系统提示词
+  messages: Message[];         // 发送给API的消息列表
+  apiParams: ChatApiParams;    // 完整的API参数
+  timestamp: string;           // 调试信息生成时间
+}
+
 // 错误详情接口
 export interface ErrorDetails {
   code: number;        // HTTP状态码或API错误代码
@@ -29,6 +37,16 @@ export interface SendMessageConfig {
   onComplete?: (fullResponse: string) => void; // 完成回调
   onError?: (errorDetails: ErrorDetails, errorMessage?: string) => void;   // 错误回调
   onStart?: () => void;                // 开始回调
+  onDebugInfo?: (debugInfo: DebugInfo) => void; // 调试信息回调
+}
+
+// 全局回调接口
+export interface GlobalCallbacks {
+  onDebugInfo?: (debugInfo: DebugInfo) => void;
+  onProgress?: (chunk: string) => void;
+  onStart?: () => void;
+  onComplete?: (fullResponse: string) => void;
+  onError?: (errorDetails: ErrorDetails, errorMessage?: string) => void;
 }
 
 // 发送消息上下文接口
@@ -40,6 +58,7 @@ export interface SendMessageContext {
   toast: any;
   applyRegexToMessage: (content: string, playerName: string, characterName: string, priority: number, type: number, characterId?: string) => Promise<string>;
   systemPrompt: string;
+  globalCallbacks?: GlobalCallbacks; // 全局回调配置
 }
 
 // 发送消息管理器类
@@ -56,8 +75,28 @@ export class SendMessageManager {
     this.context = { ...this.context, ...context };
   }
 
+  // 合并全局回调和局部回调（局部回调优先）
+  private mergeCallbacks(config: SendMessageConfig): SendMessageConfig {
+    const globalCallbacks = this.context.globalCallbacks;
+    if (!globalCallbacks) {
+      return config; // 没有全局回调，直接返回
+    }
+
+    return {
+      ...config,
+      onDebugInfo: config.onDebugInfo || globalCallbacks.onDebugInfo,
+      onProgress: config.onProgress || globalCallbacks.onProgress,
+      onStart: config.onStart || globalCallbacks.onStart,
+      onComplete: config.onComplete || globalCallbacks.onComplete,
+      onError: config.onError || globalCallbacks.onError,
+    };
+  }
+
   // 发送新消息或直接回复
   async sendMessage(config: SendMessageConfig): Promise<string | null> {
+    // 合并全局回调和局部回调
+    config = this.mergeCallbacks(config);
+    
     const logPrefix = config.regenerate ? 
                        `[SendMessageManager-${config.regenerate.mode === 'variant' ? 'GenerateVariant' : 'Regenerate'}]` : 
                        config.directReply ? '[SendMessageManager-DirectReply]' : 
@@ -152,11 +191,25 @@ export class SendMessageManager {
         ]
       };
 
-      // 6. 调用API
+      // 6. 生成调试信息（如果启用）
+      if (config.onDebugInfo && typeof window !== 'undefined') {
+        const enablePromptDebug = localStorage.getItem('enablePromptDebug') === 'true';
+        if (enablePromptDebug) {
+          const debugInfo: DebugInfo = {
+            systemPrompt,
+            messages: trimmedMessages,
+            apiParams,
+            timestamp: new Date().toISOString()
+          };
+          config.onDebugInfo(debugInfo);
+        }
+      }
+
+      // 7. 调用API
       config.onStart?.();
       const response = await this.callApi(apiParams);
 
-      // 7. 处理响应
+      // 8. 处理响应
       if (apiParams.stream) {
         return await this.handleStreamResponse(response, config);
       } else {
