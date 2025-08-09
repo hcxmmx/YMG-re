@@ -543,10 +543,27 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
             </Link>
           </Button>
           <h1 className="text-2xl font-bold">编辑预设</h1>
+          {id === 'default' && (
+            <Badge variant="secondary" className="ml-3">
+              默认预设
+            </Badge>
+          )}
         </div>
         
         <Button onClick={handleSave}>保存预设</Button>
       </div>
+      
+      {/* 默认预设提示 */}
+      {id === 'default' && (
+        <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-md">
+          <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">
+            ℹ️ 关于默认预设
+          </h4>
+          <p className="text-xs text-blue-800 dark:text-blue-200">
+            默认预设是系统的基础预设，适用于一般对话场景。你可以修改其内容来自定义默认行为，但不能删除此预设。
+          </p>
+        </div>
+      )}
       
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
         <TabsList className="grid w-full grid-cols-3">

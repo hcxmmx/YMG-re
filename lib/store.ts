@@ -1261,7 +1261,7 @@ export const usePromptPresetStore = create<PromptPresetState>()(
   persist(
     (set, get) => ({
       presets: [],
-      currentPresetId: null,
+      currentPresetId: 'default',
       isLoading: false,
       error: null,
       
@@ -1309,7 +1309,7 @@ export const usePromptPresetStore = create<PromptPresetState>()(
           await promptPresetStorage.deletePromptPreset(id);
           set(state => ({
             presets: state.presets.filter(p => p.id !== id),
-            currentPresetId: state.currentPresetId === id ? null : state.currentPresetId,
+            currentPresetId: state.currentPresetId === id ? 'default' : state.currentPresetId,
             isLoading: false
           }));
         } catch (error) {
@@ -1323,8 +1323,13 @@ export const usePromptPresetStore = create<PromptPresetState>()(
       
       // 应用预设 - 更新系统提示词和模型参数
       applyPreset: async (id: string) => {
-        const preset = get().presets.find(p => p.id === id);
-        if (!preset) return;
+        // 处理空ID或无预设情况 - 映射到默认预设
+        const targetId = id || 'default';
+        const preset = get().presets.find(p => p.id === targetId);
+        if (!preset) {
+          console.error(`预设 ID ${targetId} 不存在`);
+          return;
+        }
         
         try {
           set({ isLoading: true, error: null });
@@ -1503,7 +1508,9 @@ export const usePromptPresetStore = create<PromptPresetState>()(
       
       // 设置当前预设ID
       setCurrentPresetId: (id: string | null) => {
-        set({ currentPresetId: id });
+        // 将null或空字符串映射到默认预设
+        const targetId = id || 'default';
+        set({ currentPresetId: targetId });
       },
     }),
     {
@@ -3179,8 +3186,11 @@ export const usePresetFolderStore = create<PresetFolderState>()(
           // 获取所有文件夹
           const allFolders = await regexFolderStorage.listFolders();
           
+          // 处理无预设情况 - 使用默认预设ID
+          const targetPresetId = presetId || 'default';
+          
           // 获取预设关联的文件夹ID
-          const presetFolders = await get().getFoldersForPreset(presetId);
+          const presetFolders = await get().getFoldersForPreset(targetPresetId);
           const presetFolderIds = new Set(presetFolders.map(folder => folder.id));
           
           // 应用新的文件夹启用逻辑

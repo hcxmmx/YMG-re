@@ -88,6 +88,12 @@ export default function PresetsPage() {
   
   // 处理删除
   const handleDelete = async (id: string, name: string) => {
+    // 防止删除默认预设
+    if (id === 'default') {
+      alert('默认预设不能删除');
+      return;
+    }
+    
     if (confirm(`确定要删除预设 "${name}" 吗？此操作不可撤销。`)) {
       await deletePreset(id);
     }

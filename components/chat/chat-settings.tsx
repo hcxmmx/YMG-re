@@ -159,78 +159,8 @@ export function ChatSettings() {
     // 如果已经在应用预设中，忽略新的请求
     if (isApplying) return;
     
-    if (!presetId) {
-      try {
-        setIsApplying(true);
-        
-        // 清除预设时，重置为默认值
-        // 先更新系统提示词为默认值
-        const chatStore = useChatStore.getState();
-        chatStore.setSystemPrompt('你是一个友好、乐于助人的AI助手。');
-        const defaultSystemPrompt = '你是一个友好、乐于助人的AI助手。';
-        
-        // 更新设置为默认值
-        const settingsStore = useSettingsStore.getState();
-        const defaultSettings = {
-          temperature: 1,
-          maxTokens: 65535,
-          topK: 40,
-          topP: 0.95,
-        };
-        settingsStore.updateSettings(defaultSettings);
-        
-        // 更新预设ID
-        usePromptPresetStore.getState().setCurrentPresetId(null);
-        
-        // 重要修复：确保当前会话的系统提示词也被保存到IndexedDB
-        const { currentConversationId, currentMessages, currentTitle } = chatStore;
-        
-        // 如果有当前会话，同步更新到IndexedDB
-        if (currentConversationId) {
-          // 获取当前会话的分支信息
-          const conversation = await conversationStorage.getConversation(currentConversationId);
-          if (conversation) {
-            console.log("同步更新当前会话的默认系统提示词到IndexedDB");
-            await conversationStorage.saveConversation(
-              currentConversationId,
-              currentTitle,
-              currentMessages,
-              defaultSystemPrompt, // 使用默认系统提示词
-              conversation.branches || [],
-              conversation.currentBranchId
-            );
-          }
-        }
-        
-        // 应用"无预设"状态下的文件夹逻辑（启用全局预设文件夹）
-        try {
-          const presetFolderStore = usePresetFolderStore.getState();
-          await presetFolderStore.applyPresetFolders(''); // 传空ID表示无预设
-          console.log("已应用无预设状态下的文件夹逻辑");
-        } catch (error) {
-          console.error("应用无预设文件夹逻辑失败:", error);
-        }
-        
-        // 强制刷新正则应用状态
-        const regexStore = useRegexStore.getState();
-        regexStore.setRegexUpdateTimestamp(Date.now());
-        
-        // 添加延迟，确保状态已更新
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        setApplySuccess(true);
-        setTimeout(() => setApplySuccess(false), 2000);
-        
-        // 重置修改状态和原始参数
-        setPresetModified(false);
-        setOriginalPresetParams(null);
-      } catch (error) {
-        console.error("重置预设失败:", error);
-      } finally {
-        setIsApplying(false);
-      }
-      return;
-    }
+    // 如果选择的是当前预设，直接返回
+    if (presetId === currentPresetId) return;
     
     // 确保预设已完全加载
     if (!presetsLoaded) {
@@ -338,11 +268,10 @@ export function ChatSettings() {
                   isApplying ? "opacity-50" : "",
                   presetModified ? "border-amber-500" : ""
                 )}
-                value={currentPresetId || ""}
+                value={currentPresetId || "default"}
                 onChange={(e) => handlePresetChange(e.target.value)}
                 disabled={isApplying || !presetsLoaded}
               >
-                <option value="">-- 无预设（自定义设置）--</option>
                 {presets.map((preset) => (
                   <option key={preset.id} value={preset.id}>
                     {preset.name} {presetModified && currentPresetId === preset.id ? "(已修改)" : ""}

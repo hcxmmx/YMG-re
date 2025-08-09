@@ -77,21 +77,24 @@ export function PresetListItem({ preset, onExport, onDelete }: PresetListItemPro
           </Tooltip>
         </TooltipProvider>
         
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="icon"
-                className="h-8 w-8 text-destructive hover:text-destructive"
-                onClick={() => onDelete(preset.id, preset.name)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>删除预设</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        {/* 默认预设不显示删除按钮 */}
+        {preset.id !== 'default' && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="icon"
+                  className="h-8 w-8 text-destructive hover:text-destructive"
+                  onClick={() => onDelete(preset.id, preset.name)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>删除预设</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
         
         <TooltipProvider>
           <Tooltip>

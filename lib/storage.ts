@@ -1809,10 +1809,52 @@ export const promptPresetStorage = {
   
   async listPromptPresets() {
     const db = await initDB();
-    return db.getAllFromIndex('promptPresets', 'by-updatedAt');
+    const presets = await db.getAllFromIndex('promptPresets', 'by-updatedAt');
+    
+    // 确保默认预设存在
+    const hasDefaultPreset = presets.some(preset => preset.id === 'default');
+    if (!hasDefaultPreset) {
+      console.log('创建默认预设...');
+      const defaultPreset = await this.createDefaultPreset();
+      presets.unshift(defaultPreset); // 将默认预设放在列表最前面
+    }
+    
+    return presets;
+  },
+  
+  // 创建默认预设
+  async createDefaultPreset(): Promise<PromptPreset> {
+    const defaultPreset: PromptPreset = {
+      id: 'default',
+      name: '默认预设',
+      description: '系统默认的基础预设，适用于一般对话场景',
+      temperature: 1,
+      maxTokens: 65535,
+      topK: 40,
+      topP: 0.95,
+      prompts: [
+        {
+          identifier: 'system',
+          name: '系统提示词',
+          content: '你是一个友好、乐于助人的AI助手。',
+          enabled: true
+        }
+      ],
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    
+    await this.savePromptPreset(defaultPreset);
+    console.log('默认预设创建完成');
+    return defaultPreset;
   },
   
   async deletePromptPreset(id: string) {
+    // 防止删除默认预设
+    if (id === 'default') {
+      throw new Error('不能删除默认预设');
+    }
+    
     const db = await initDB();
     await db.delete('promptPresets', id);
   },
