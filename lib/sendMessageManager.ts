@@ -43,6 +43,19 @@ export interface SendMessageConfig {
 // 加载类型定义
 export type LoadingType = 'new' | 'regenerate' | 'variant';
 
+// 🆕 内部请求状态接口
+export interface RequestState {
+  isLoading: boolean;
+  loadingType: LoadingType | null;
+  loadingMessageId: string | null;
+  currentRequestId: string | null;
+  startTime: number | null;
+  responseTime: number | null;
+}
+
+// 🆕 状态订阅者类型
+export type StateSubscriber = (state: RequestState) => void;
+
 // 全局回调接口
 export interface GlobalCallbacks {
   onDebugInfo?: (debugInfo: DebugInfo) => void;
@@ -75,9 +88,62 @@ export interface SendMessageContext {
 export class SendMessageManager {
   private context: SendMessageContext;
   private activeRequestId: string | null = null;
+  
+  // 🆕 内部状态管理
+  private state: RequestState = {
+    isLoading: false,
+    loadingType: null,
+    loadingMessageId: null,
+    currentRequestId: null,
+    startTime: null,
+    responseTime: null,
+  };
+  
+  // 🆕 状态订阅者列表
+  private subscribers: Set<StateSubscriber> = new Set();
 
   constructor(context: SendMessageContext) {
     this.context = context;
+  }
+
+  // 🆕 状态管理方法
+  
+  /**
+   * 订阅状态变化
+   */
+  subscribe(subscriber: StateSubscriber): () => void {
+    this.subscribers.add(subscriber);
+    // 立即通知当前状态
+    subscriber(this.state);
+    
+    // 返回取消订阅函数
+    return () => {
+      this.subscribers.delete(subscriber);
+    };
+  }
+
+  /**
+   * 获取当前状态
+   */
+  getState(): RequestState {
+    return { ...this.state };
+  }
+
+  /**
+   * 更新状态并通知订阅者
+   */
+  private updateState(updates: Partial<RequestState>) {
+    const oldState = this.state;
+    this.state = { ...this.state, ...updates };
+    
+    // 通知所有订阅者
+    this.subscribers.forEach(subscriber => {
+      try {
+        subscriber(this.state);
+      } catch (error) {
+        console.error('[SendMessageManager] 状态订阅者回调出错:', error);
+      }
+    });
   }
 
   // 更新上下文
@@ -104,17 +170,60 @@ export class SendMessageManager {
 
   // 🆕 生命周期管理方法
   private triggerRequestStart(type: LoadingType, messageId?: string) {
+    const requestId = this.generateRequestId();
+    const startTime = Date.now();
+    
+    // 🆕 更新内部状态
+    this.updateState({
+      isLoading: true,
+      loadingType: type,
+      loadingMessageId: messageId || null,
+      currentRequestId: requestId,
+      startTime: startTime,
+      responseTime: null,
+    });
+    
+    // 保持向后兼容：仍然调用全局回调
     this.context.globalCallbacks?.onRequestStart?.(type, messageId);
+    
+    return requestId;
   }
 
   private triggerRequestEnd() {
+    // 🆕 更新内部状态
+    this.updateState({
+      isLoading: false,
+      loadingType: null,
+      loadingMessageId: null,
+      currentRequestId: null,
+    });
+    
+    // 保持向后兼容：仍然调用全局回调
     this.context.globalCallbacks?.onRequestEnd?.();
   }
 
   private triggerResponseTimeCalculated(startTime: number) {
     const responseTime = Date.now() - startTime;
+    
+    // 🆕 更新内部状态
+    this.updateState({
+      responseTime: responseTime,
+    });
+    
+    // 保持向后兼容：仍然调用全局回调
     this.context.globalCallbacks?.onResponseTimeCalculated?.(responseTime);
+    
     return responseTime;
+  }
+
+  /**
+   * 🆕 便捷方法：基于内部状态计算响应时间
+   */
+  private calculateAndUpdateResponseTime(): number {
+    if (this.state.startTime) {
+      return this.triggerResponseTimeCalculated(this.state.startTime);
+    }
+    return 0;
   }
 
   private triggerPlayerCharacterInfo() {
@@ -159,18 +268,16 @@ export class SendMessageManager {
                        '[SendMessageManager]';
     console.log(`${logPrefix} 开始处理请求`);
     
-    // 🆕 触发请求开始生命周期回调
+    // 🆕 触发请求开始生命周期回调（内部管理状态和请求ID）
     const loadingType: LoadingType = config.regenerate ? 
       (config.regenerate.mode === 'variant' ? 'variant' : 'regenerate') : 'new';
     const messageId = config.regenerate?.messageId;
-    this.triggerRequestStart(loadingType, messageId);
+    const requestId = this.triggerRequestStart(loadingType, messageId);
     
-    // 记录请求开始时间，用于后续计算响应时间
-    const requestStartTime = Date.now();
+    // 🆕 使用内部状态管理的请求ID和开始时间
+    this.activeRequestId = requestId;
     
     try {
-      // 生成请求ID
-      this.activeRequestId = this.generateRequestId();
       
       // 1. 检查API密钥
       const apiKey = await this.checkApiKey();
@@ -517,6 +624,9 @@ export class SendMessageManager {
       console.error('[SendMessageManager] 应用正则表达式处理完整AI输出时出错:', error);
     }
 
+    // 🆕 计算并更新响应时间
+    this.calculateAndUpdateResponseTime();
+    
     config.onComplete?.(processedFullResponse);
     
     // 🆕 触发请求完成生命周期回调
@@ -553,6 +663,9 @@ export class SendMessageManager {
       console.error('[SendMessageManager] 应用正则表达式处理AI输出时出错:', error);
     }
 
+    // 🆕 计算并更新响应时间
+    this.calculateAndUpdateResponseTime();
+    
     config.onComplete?.(processedResponse);
     
     // 🆕 触发请求完成生命周期回调
@@ -697,6 +810,118 @@ export const ChatRequests = {
         mode: 'variant'
       },
       ...options
+    });
+  }
+};
+
+// 🆕 高级API：自动状态管理的便捷方法
+export const AdvancedChatRequests = {
+  /**
+   * 🆕 发送新消息 - 自动状态管理版本
+   * 只需要提供内容和基本回调，状态管理自动处理
+   */
+  async sendMessage(
+    manager: SendMessageManager,
+    content: string,
+    options?: {
+      files?: FileData[];
+      onStart?: () => void;
+      onProgress?: (chunk: string) => void;
+      onComplete?: (response: string) => void;
+      onError?: (error: ErrorDetails, message?: string) => void;
+      stream?: boolean;
+    }
+  ): Promise<string | null> {
+    return manager.sendMessage({
+      content,
+      files: options?.files,
+      directReply: false,
+      stream: options?.stream,
+      onStart: options?.onStart,
+      onProgress: options?.onProgress,
+      onComplete: options?.onComplete,
+      onError: options?.onError,
+    });
+  },
+
+  /**
+   * 🆕 重新生成消息 - 自动状态管理版本
+   */
+  async regenerateMessage(
+    manager: SendMessageManager,
+    messageId: string,
+    beforeMessageIndex: number,
+    options?: {
+      onStart?: () => void;
+      onProgress?: (chunk: string) => void;
+      onComplete?: (response: string) => void;
+      onError?: (error: ErrorDetails, message?: string) => void;
+      stream?: boolean;
+    }
+  ): Promise<string | null> {
+    return manager.sendMessage({
+      regenerate: {
+        messageId,
+        beforeMessageIndex,
+        mode: 'replace'
+      },
+      stream: options?.stream,
+      onStart: options?.onStart,
+      onProgress: options?.onProgress,
+      onComplete: options?.onComplete,
+      onError: options?.onError,
+    });
+  },
+
+  /**
+   * 🆕 生成变体 - 自动状态管理版本
+   */
+  async generateVariant(
+    manager: SendMessageManager,
+    messageId: string,
+    beforeMessageIndex: number,
+    options?: {
+      onStart?: () => void;
+      onProgress?: (chunk: string) => void;
+      onComplete?: (response: string) => void;
+      onError?: (error: ErrorDetails, message?: string) => void;
+      stream?: boolean;
+    }
+  ): Promise<string | null> {
+    return manager.sendMessage({
+      regenerate: {
+        messageId,
+        beforeMessageIndex,
+        mode: 'variant'
+      },
+      stream: options?.stream,
+      onStart: options?.onStart,
+      onProgress: options?.onProgress,
+      onComplete: options?.onComplete,
+      onError: options?.onError,
+    });
+  },
+
+  /**
+   * 🆕 直接请求回复 - 自动状态管理版本
+   */
+  async requestDirectReply(
+    manager: SendMessageManager,
+    options?: {
+      onStart?: () => void;
+      onProgress?: (chunk: string) => void;
+      onComplete?: (response: string) => void;
+      onError?: (error: ErrorDetails, message?: string) => void;
+      stream?: boolean;
+    }
+  ): Promise<string | null> {
+    return manager.sendMessage({
+      directReply: true,
+      stream: options?.stream,
+      onStart: options?.onStart,
+      onProgress: options?.onProgress,
+      onComplete: options?.onComplete,
+      onError: options?.onError,
     });
   }
 };

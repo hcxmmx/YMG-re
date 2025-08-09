@@ -15,7 +15,7 @@ import { replaceMacros } from "@/lib/macroUtils";
 import { apiKeyStorage } from "@/lib/storage";
 import { callChatApi, handleStreamResponse, handleNonStreamResponse, ChatApiParams } from "@/lib/chatApi";
 import { useToast } from "@/components/ui/use-toast";
-import { createSendMessageManager, SendMessageManager, ChatRequests, type SendMessageContext, type ErrorDetails, type DebugInfo, type GlobalCallbacks, type LoadingType } from "@/lib/sendMessageManager";
+import { createSendMessageManager, SendMessageManager, ChatRequests, AdvancedChatRequests, type SendMessageContext, type ErrorDetails, type DebugInfo, type GlobalCallbacks, type LoadingType, type RequestState, type StateSubscriber } from "@/lib/sendMessageManager";
 
 // LoadingType 现在从 sendMessageManager 导入
 
@@ -233,70 +233,33 @@ export default function ChatPage() {
       toast,
       applyRegexToMessage,
       systemPrompt,
-      // 配置全局回调
+      // 🆕 简化的全局回调配置 - 只保留调试功能，其他由内部状态管理
       globalCallbacks: {
         onDebugInfo: (info: DebugInfo) => {
           console.log('[SendMessageManager] 收到调试信息:', info);
           setDebugInfo(info);
           setShowDebugInfo(true);
         },
-        
-        // 🆕 请求生命周期管理
-        onRequestStart: (type: LoadingType, messageId?: string) => {
-          console.log(`[SendMessageManager] 请求开始: ${type}`, messageId ? `消息ID: ${messageId}` : '');
-          setIsLoading(true);
-          setLoadingType(type);
-          setLoadingMessageId(messageId || null);
-          
-          // 记录响应开始时间
-          responseStartTimeRef.current = Date.now();
-        },
-        
-        onRequestEnd: () => {
-          console.log('[SendMessageManager] 请求结束');
-          setIsLoading(false);
-          setLoadingMessageId(null);
-        },
-        
-        onResponseTimeCalculated: (responseTime: number) => {
-          console.log(`[SendMessageManager] 响应时间: ${responseTime}ms`);
-          // 可以在这里添加性能监控逻辑
-        },
-        
-        onPlayerCharacterInfo: (playerName: string, characterName: string) => {
-          console.log(`[SendMessageManager] 玩家角色信息: ${playerName} -> ${characterName}`);
-        },
-        
-        onRegexProcessing: async (content: string, isInput: boolean): Promise<string> => {
-          console.log(`[SendMessageManager] 正则处理: ${isInput ? '用户输入' : 'AI响应'}`);
-          
-          try {
-            const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
-            const { applyRegexToMessage } = useRegexStore.getState();
-            
-            const playerName = currentPlayer?.name || "玩家";
-            const characterName = currentCharacter?.name || "AI";
-            const priority = 0;
-            const type = isInput ? 1 : 2; // 1=用户输入, 2=AI响应
-            
-            return await applyRegexToMessage(
-              content, 
-              playerName, 
-              characterName, 
-              priority, 
-              type, 
-              currentCharacter?.id
-            );
-          } catch (error) {
-            console.error(`[SendMessageManager] 正则处理失败: ${isInput ? '用户输入' : 'AI响应'}`, error);
-            return content; // 出错时返回原始内容
-          }
-        }
       }
     };
     
     if (!sendMessageManagerRef.current) {
       sendMessageManagerRef.current = createSendMessageManager(context);
+      
+      // 🆕 订阅内部状态变化
+      sendMessageManagerRef.current.subscribe((state: RequestState) => {
+        console.log('[SendMessageManager] 状态变化:', state);
+        
+        // 同步UI状态
+        setIsLoading(state.isLoading);
+        setLoadingType(state.loadingType || 'new');
+        setLoadingMessageId(state.loadingMessageId);
+        
+        // 更新响应开始时间引用（为了兼容现有代码）
+        if (state.startTime) {
+          responseStartTimeRef.current = state.startTime;
+        }
+      });
     } else {
       sendMessageManagerRef.current.updateContext(context);
     }
@@ -475,23 +438,12 @@ export default function ChatPage() {
     try {
       // 初始化发送消息管理器并使用统一的重新生成逻辑
       const sendManager = initializeSendMessageManager();
-      await ChatRequests.regenerateMessage(
+      await AdvancedChatRequests.regenerateMessage(
         sendManager,
         messageId,
         messageIndex,
         {
           stream: settings.enableStreaming,
-          onStart: () => {
-            console.log('[handleRegenerateMessage] 开始完全重新生成消息');
-            // 重新生成开始时，重置累积内容并清空消息
-            accumulatedContent = "";
-            updateMessage({
-              ...messageToRegenerate,
-              id: messageId,
-              content: "",
-              timestamp: new Date(),
-            });
-          },
           onProgress: async (chunk: string) => {
             // 累积内容到局部变量
             accumulatedContent += chunk;
@@ -504,23 +456,14 @@ export default function ChatPage() {
             });
           },
           onComplete: async (fullResponse: string) => {
-            const responseTime = Date.now() - responseStartTimeRef.current;
-            const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
-            const playerName = currentPlayer?.name || "玩家";
-            const characterName = currentCharacter?.name || "AI";
-            
-            let processedResponse = fullResponse;
-            try {
-              const { applyRegexToMessage } = useRegexStore.getState();
-              processedResponse = await applyRegexToMessage(fullResponse, playerName, characterName, 0, 2, currentCharacter?.id);
-            } catch (error) {
-              console.error("应用正则表达式处理AI响应时出错:", error);
-            }
+            // 🆕 响应时间和正则处理现在由SendMessageManager内部管理
+            const state = sendManager.getState();
+            const responseTime = state.responseTime || 0;
             
             updateMessage({
               id: messageId,
               role: "assistant",
-              content: processedResponse,
+              content: fullResponse, // 现在fullResponse已经是处理过的内容
               timestamp: new Date(),
               responseTime: responseTime,
               messageNumber: originalMessageNumber,
@@ -529,8 +472,6 @@ export default function ChatPage() {
               originalContent: undefined,
               errorDetails: undefined
             });
-            
-            // 🆕 状态清理现在由全局回调处理
           },
           onError: async (errorDetails: ErrorDetails, error?: string) => {
             updateMessage({
@@ -585,7 +526,7 @@ export default function ChatPage() {
     try {
       // 使用统一的消息管理器处理变体生成
       const sendManager = initializeSendMessageManager();
-      await ChatRequests.generateVariant(
+      await AdvancedChatRequests.generateVariant(
         sendManager,
         messageId,
         messageIndex,
@@ -717,14 +658,10 @@ export default function ChatPage() {
 
       await addMessage(userMessage);
 
-      // 使用发送消息管理器处理AI回复
-      const response = await sendManager.sendMessage({
-        content,
-        files,
+      // 🆕 使用高级API - 自动状态管理
+      const response = await AdvancedChatRequests.sendMessage(sendManager, content, {
+        files: files,
         stream: settings.enableStreaming,
-        onStart: () => {
-          console.log('[handleSendMessage] AI回复开始生成');
-        },
         onProgress: async (chunk: string) => {
           // 如果还没有创建助手消息，先创建一个
           if (!currentAssistantMessage) {
@@ -749,8 +686,9 @@ export default function ChatPage() {
         onComplete: async (fullResponse: string) => {
           console.log('[handleSendMessage] AI回复生成完成');
           
-          // 计算响应时间
-          const responseTime = Date.now() - responseStartTimeRef.current;
+          // 🆕 响应时间现在由SendMessageManager内部管理
+          const state = sendManager.getState();
+          const responseTime = state.responseTime || 0;
           
           // 如果使用非流式响应，创建完整的消息
           if (!settings.enableStreaming && !currentAssistantMessage) {
@@ -771,8 +709,6 @@ export default function ChatPage() {
             };
             updateMessage(finalMessage);
           }
-          
-          // 🆕 状态清理现在由全局回调处理
         },
         onError: async (errorDetails: ErrorDetails, error?: string) => {
           console.error('[handleSendMessage] AI回复生成失败:', errorDetails);
@@ -785,8 +721,6 @@ export default function ChatPage() {
             timestamp: new Date(),
             errorDetails
           });
-          
-          // 🆕 状态清理现在由全局回调处理
         }
       });
       
@@ -841,7 +775,7 @@ export default function ChatPage() {
 
     try {
       // 使用统一的请求管理器执行直接回复请求
-      const response = await ChatRequests.requestDirectReply(sendManager, {
+      const response = await AdvancedChatRequests.requestDirectReply(sendManager, {
         stream: settings.enableStreaming,
         onStart: () => {
           console.log('[handleRequestReply] 开始直接请求回复');
