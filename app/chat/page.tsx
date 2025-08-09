@@ -15,10 +15,9 @@ import { replaceMacros } from "@/lib/macroUtils";
 import { apiKeyStorage } from "@/lib/storage";
 import { callChatApi, handleStreamResponse, handleNonStreamResponse, ChatApiParams } from "@/lib/chatApi";
 import { useToast } from "@/components/ui/use-toast";
-import { createSendMessageManager, SendMessageManager, ChatRequests, type SendMessageContext, type ErrorDetails, type DebugInfo, type GlobalCallbacks } from "@/lib/sendMessageManager";
+import { createSendMessageManager, SendMessageManager, ChatRequests, type SendMessageContext, type ErrorDetails, type DebugInfo, type GlobalCallbacks, type LoadingType } from "@/lib/sendMessageManager";
 
-// 定义加载类型
-type LoadingType = 'new' | 'regenerate' | 'variant';
+// LoadingType 现在从 sendMessageManager 导入
 
 
 
@@ -240,6 +239,58 @@ export default function ChatPage() {
           console.log('[SendMessageManager] 收到调试信息:', info);
           setDebugInfo(info);
           setShowDebugInfo(true);
+        },
+        
+        // 🆕 请求生命周期管理
+        onRequestStart: (type: LoadingType, messageId?: string) => {
+          console.log(`[SendMessageManager] 请求开始: ${type}`, messageId ? `消息ID: ${messageId}` : '');
+          setIsLoading(true);
+          setLoadingType(type);
+          setLoadingMessageId(messageId || null);
+          
+          // 记录响应开始时间
+          responseStartTimeRef.current = Date.now();
+        },
+        
+        onRequestEnd: () => {
+          console.log('[SendMessageManager] 请求结束');
+          setIsLoading(false);
+          setLoadingMessageId(null);
+        },
+        
+        onResponseTimeCalculated: (responseTime: number) => {
+          console.log(`[SendMessageManager] 响应时间: ${responseTime}ms`);
+          // 可以在这里添加性能监控逻辑
+        },
+        
+        onPlayerCharacterInfo: (playerName: string, characterName: string) => {
+          console.log(`[SendMessageManager] 玩家角色信息: ${playerName} -> ${characterName}`);
+        },
+        
+        onRegexProcessing: async (content: string, isInput: boolean): Promise<string> => {
+          console.log(`[SendMessageManager] 正则处理: ${isInput ? '用户输入' : 'AI响应'}`);
+          
+          try {
+            const currentPlayer = usePlayerStore.getState().getCurrentPlayer();
+            const { applyRegexToMessage } = useRegexStore.getState();
+            
+            const playerName = currentPlayer?.name || "玩家";
+            const characterName = currentCharacter?.name || "AI";
+            const priority = 0;
+            const type = isInput ? 1 : 2; // 1=用户输入, 2=AI响应
+            
+            return await applyRegexToMessage(
+              content, 
+              playerName, 
+              characterName, 
+              priority, 
+              type, 
+              currentCharacter?.id
+            );
+          } catch (error) {
+            console.error(`[SendMessageManager] 正则处理失败: ${isInput ? '用户输入' : 'AI响应'}`, error);
+            return content; // 出错时返回原始内容
+          }
         }
       }
     };
@@ -416,13 +467,7 @@ export default function ChatPage() {
     
     console.log('[重新生成] 清除所有变体并准备重新生成消息');
     
-    // 设置加载状态
-    setIsLoading(true);
-    setLoadingType('regenerate');
-    setLoadingMessageId(messageId);
-    
-    // 记录响应开始时间
-    responseStartTimeRef.current = Date.now();
+    // 🆕 状态管理现在由全局回调处理
     
     // 用于累积流式内容的局部变量
     let accumulatedContent = "";
@@ -485,8 +530,7 @@ export default function ChatPage() {
               errorDetails: undefined
             });
             
-            setIsLoading(false);
-            setLoadingMessageId(null);
+            // 🆕 状态清理现在由全局回调处理
           },
           onError: async (errorDetails: ErrorDetails, error?: string) => {
             updateMessage({
@@ -497,16 +541,14 @@ export default function ChatPage() {
               errorDetails
             });
             
-            setIsLoading(false);
-            setLoadingMessageId(null);
+            // 🆕 状态清理现在由全局回调处理
           }
         }
       );
       return;
     } catch (error: any) {
       console.error('[handleRegenerateMessage] 执行失败:', error);
-      setIsLoading(false);
-      setLoadingMessageId(null);
+      // 🆕 状态清理现在由全局回调处理
     }
   };
 
@@ -535,13 +577,7 @@ export default function ChatPage() {
     // 准备变体数据
     const currentAlternates = messageToAddVariant.alternateResponses || [];
     
-    // 设置加载状态
-    setIsLoading(true);
-    setLoadingType('variant');
-    setLoadingMessageId(messageId);
-    
-    // 记录响应开始时间
-    responseStartTimeRef.current = Date.now();
+    // 🆕 状态管理现在由全局回调处理
     
     // 用于累积流式内容的局部变量
     let accumulatedContent = "";
@@ -604,8 +640,7 @@ export default function ChatPage() {
               errorDetails: undefined
             });
             
-            setIsLoading(false);
-            setLoadingMessageId(null);
+            // 🆕 状态清理现在由全局回调处理
           },
           onError: async (errorDetails: ErrorDetails, error?: string) => {
             updateMessage({
@@ -616,16 +651,14 @@ export default function ChatPage() {
               errorDetails
             });
             
-            setIsLoading(false);
-            setLoadingMessageId(null);
+            // 🆕 状态清理现在由全局回调处理
           }
         }
       );
       return;
     } catch (error: any) {
       console.error('[handleGenerateVariant] 执行失败:', error);
-      setIsLoading(false);
-      setLoadingMessageId(null);
+      // 🆕 状态清理现在由全局回调处理
     }
   };
 
@@ -651,13 +684,7 @@ export default function ChatPage() {
     // 初始化发送消息管理器
     const sendManager = initializeSendMessageManager();
     
-    // 设置加载状态
-    setIsLoading(true);
-    setLoadingType('new');
-    setLoadingMessageId(null);
-
-    // 记录响应开始时间
-    responseStartTimeRef.current = Date.now();
+    // 🆕 状态管理现在由全局回调处理
 
     // 创建初始空消息（AI回复）
     let currentAssistantMessage: MessageType | null = null;
@@ -745,8 +772,7 @@ export default function ChatPage() {
             updateMessage(finalMessage);
           }
           
-          setIsLoading(false);
-          setLoadingMessageId(null);
+          // 🆕 状态清理现在由全局回调处理
         },
         onError: async (errorDetails: ErrorDetails, error?: string) => {
           console.error('[handleSendMessage] AI回复生成失败:', errorDetails);
@@ -760,15 +786,13 @@ export default function ChatPage() {
             errorDetails
           });
           
-          setIsLoading(false);
-          setLoadingMessageId(null);
+          // 🆕 状态清理现在由全局回调处理
         }
       });
       
     } catch (error: any) {
       console.error('[handleSendMessage] 执行失败:', error);
-      setIsLoading(false);
-      setLoadingMessageId(null);
+      // 🆕 状态清理现在由全局回调处理
     }
   };
 
@@ -810,12 +834,7 @@ export default function ChatPage() {
     // 初始化发送消息管理器
     const sendManager = initializeSendMessageManager();
     
-    setIsLoading(true);
-    setLoadingType('new');
-    setLoadingMessageId(null);
-
-    // 记录响应开始时间
-    responseStartTimeRef.current = Date.now();
+    // 🆕 状态管理现在由全局回调处理
 
     // 创建初始空消息（AI回复）
     let currentAssistantMessage: MessageType | null = null;
@@ -874,8 +893,7 @@ export default function ChatPage() {
             updateMessage(finalMessage);
           }
           
-          setIsLoading(false);
-          setLoadingMessageId(null);
+          // 🆕 状态清理现在由全局回调处理
         },
         onError: async (errorDetails: ErrorDetails, error?: string) => {
           console.error('[handleRequestReply] 直接回复生成失败:', errorDetails);
@@ -889,15 +907,13 @@ export default function ChatPage() {
             errorDetails
           });
           
-          setIsLoading(false);
-          setLoadingMessageId(null);
+          // 🆕 状态清理现在由全局回调处理
         }
       });
       
     } catch (error: any) {
       console.error('[handleRequestReply] 执行失败:', error);
-      setIsLoading(false);
-      setLoadingMessageId(null);
+      // 🆕 状态清理现在由全局回调处理
     }
   };
 
@@ -973,8 +989,7 @@ export default function ChatPage() {
     
     if (cancelled) {
       console.log('[取消请求] 请求已成功取消');
-      setIsLoading(false);
-      setLoadingMessageId(null);
+      // 🆕 状态清理现在由全局回调处理（通过SendMessageManager）
       currentRequestIdRef.current = null;
       
       toast({
@@ -984,7 +999,7 @@ export default function ChatPage() {
     } else {
       console.log('[取消请求] 没有活动的请求可以取消');
     }
-  }, [initializeSendMessageManager, setIsLoading, setLoadingMessageId, toast]);
+  }, [initializeSendMessageManager, toast]);
 
   // 在组件卸载时取消请求
   useEffect(() => {

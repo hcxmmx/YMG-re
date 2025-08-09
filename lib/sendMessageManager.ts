@@ -40,6 +40,9 @@ export interface SendMessageConfig {
   onDebugInfo?: (debugInfo: DebugInfo) => void; // 调试信息回调
 }
 
+// 加载类型定义
+export type LoadingType = 'new' | 'regenerate' | 'variant';
+
 // 全局回调接口
 export interface GlobalCallbacks {
   onDebugInfo?: (debugInfo: DebugInfo) => void;
@@ -47,6 +50,13 @@ export interface GlobalCallbacks {
   onStart?: () => void;
   onComplete?: (fullResponse: string) => void;
   onError?: (errorDetails: ErrorDetails, errorMessage?: string) => void;
+  
+  // 🆕 生命周期管理回调
+  onRequestStart?: (type: LoadingType, messageId?: string) => void;
+  onRequestEnd?: () => void;
+  onResponseTimeCalculated?: (responseTime: number) => void;
+  onPlayerCharacterInfo?: (playerName: string, characterName: string) => void;
+  onRegexProcessing?: (content: string, isInput: boolean) => Promise<string>;
 }
 
 // 发送消息上下文接口
@@ -92,6 +102,52 @@ export class SendMessageManager {
     };
   }
 
+  // 🆕 生命周期管理方法
+  private triggerRequestStart(type: LoadingType, messageId?: string) {
+    this.context.globalCallbacks?.onRequestStart?.(type, messageId);
+  }
+
+  private triggerRequestEnd() {
+    this.context.globalCallbacks?.onRequestEnd?.();
+  }
+
+  private triggerResponseTimeCalculated(startTime: number) {
+    const responseTime = Date.now() - startTime;
+    this.context.globalCallbacks?.onResponseTimeCalculated?.(responseTime);
+    return responseTime;
+  }
+
+  private triggerPlayerCharacterInfo() {
+    const playerName = this.context.currentPlayer?.name || "玩家";
+    const characterName = this.context.currentCharacter?.name || "AI";
+    this.context.globalCallbacks?.onPlayerCharacterInfo?.(playerName, characterName);
+    return { playerName, characterName };
+  }
+
+  private async triggerRegexProcessing(content: string, isInput: boolean): Promise<string> {
+    if (this.context.globalCallbacks?.onRegexProcessing) {
+      return await this.context.globalCallbacks.onRegexProcessing(content, isInput);
+    }
+    
+    // 回退到原始的正则处理逻辑
+    try {
+      const { playerName, characterName } = this.triggerPlayerCharacterInfo();
+      const priority = 0;
+      const type = isInput ? 1 : 2; // 1=用户输入, 2=AI响应
+      return await this.context.applyRegexToMessage(
+        content, 
+        playerName, 
+        characterName, 
+        priority, 
+        type, 
+        this.context.currentCharacter?.id
+      );
+    } catch (error) {
+      console.error(`应用正则表达式处理${isInput ? '用户输入' : 'AI响应'}时出错:`, error);
+      return content; // 出错时返回原始内容
+    }
+  }
+
   // 发送新消息或直接回复
   async sendMessage(config: SendMessageConfig): Promise<string | null> {
     // 合并全局回调和局部回调
@@ -102,6 +158,15 @@ export class SendMessageManager {
                        config.directReply ? '[SendMessageManager-DirectReply]' : 
                        '[SendMessageManager]';
     console.log(`${logPrefix} 开始处理请求`);
+    
+    // 🆕 触发请求开始生命周期回调
+    const loadingType: LoadingType = config.regenerate ? 
+      (config.regenerate.mode === 'variant' ? 'variant' : 'regenerate') : 'new';
+    const messageId = config.regenerate?.messageId;
+    this.triggerRequestStart(loadingType, messageId);
+    
+    // 记录请求开始时间，用于后续计算响应时间
+    const requestStartTime = Date.now();
     
     try {
       // 生成请求ID
@@ -123,6 +188,10 @@ export class SendMessageManager {
         description: errorMessage,
         variant: "destructive",
       });
+      
+      // 🆕 触发请求结束生命周期回调
+      this.triggerRequestEnd();
+      
       return null;
     }
 
@@ -227,6 +296,10 @@ export class SendMessageManager {
         "发送消息时出错";
       
       config.onError?.(errorDetails, simpleMessage);
+      
+      // 🆕 触发请求结束生命周期回调
+      this.triggerRequestEnd();
+      
       return null;
     } finally {
       this.activeRequestId = null;
@@ -445,6 +518,10 @@ export class SendMessageManager {
     }
 
     config.onComplete?.(processedFullResponse);
+    
+    // 🆕 触发请求完成生命周期回调
+    this.triggerRequestEnd();
+    
     return processedFullResponse;
   }
 
@@ -477,6 +554,10 @@ export class SendMessageManager {
     }
 
     config.onComplete?.(processedResponse);
+    
+    // 🆕 触发请求完成生命周期回调
+    this.triggerRequestEnd();
+    
     return processedResponse;
   }
 
