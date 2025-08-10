@@ -30,6 +30,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useRegexFolderStore, useRegexStore, usePresetFolderStore } from "@/lib/store";
 import { RegexFolder } from "@/lib/types";
@@ -111,7 +117,7 @@ function FolderPanel({
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <ScrollArea className="h-[400px]">
+        <ScrollArea className="h-[300px] lg:h-[400px]">
           <div className="p-4 space-y-2">
             {/* 全部文件夹选项 */}
             <div 
@@ -367,7 +373,7 @@ function RegexPanel({
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <ScrollArea className="h-[400px]">
+        <ScrollArea className="h-[300px] lg:h-[400px]">
           <div className="p-4">
             {sortedScripts.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
@@ -393,7 +399,7 @@ function RegexPanel({
                   <div
                     key={script.id}
                     className={cn(
-                      "flex items-center gap-2 p-2 rounded-md hover:bg-muted/30",
+                      "flex items-center gap-2 p-2 rounded-md hover:bg-muted/30 min-w-0",
                       script.disabled && "opacity-60"
                     )}
                   >
@@ -402,6 +408,7 @@ function RegexPanel({
                       onCheckedChange={(checked) => 
                         onScriptSelect(script.id, !!checked)
                       }
+                      className="flex-shrink-0"
                     />
                     <div className="flex-1 min-w-0">
                       <div className={cn(
@@ -413,35 +420,36 @@ function RegexPanel({
                       <div className="text-xs text-muted-foreground truncate">
                         {script.findRegex}
                       </div>
-                      <div className="flex gap-1 mt-1">
+                      <div className="flex flex-wrap gap-1 mt-1">
                         <Badge 
                           variant={script.scope === 'character' ? 'secondary' : 'outline'} 
-                          className="text-xs"
+                          className="text-xs flex-shrink-0"
                         >
                           {script.scope === 'character' ? '局部' : '全局'}
                         </Badge>
                         {script.placement.includes(1) && (
-                          <Badge variant="outline" className="text-xs">用户</Badge>
+                          <Badge variant="outline" className="text-xs flex-shrink-0">用户</Badge>
                         )}
                         {script.placement.includes(2) && (
-                          <Badge variant="outline" className="text-xs">AI</Badge>
+                          <Badge variant="outline" className="text-xs flex-shrink-0">AI</Badge>
                         )}
                         {script.placement.includes(3) && (
-                          <Badge variant="outline" className="text-xs">命令</Badge>
+                          <Badge variant="outline" className="text-xs flex-shrink-0">命令</Badge>
                         )}
                         {script.placement.includes(4) && (
-                          <Badge variant="outline" className="text-xs">提示词</Badge>
+                          <Badge variant="outline" className="text-xs flex-shrink-0">提示词</Badge>
                         )}
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
                       <TooltipProvider>
+                        {/* 启用/禁用按钮 - 始终显示 */}
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8"
+                              className="h-8 w-8 flex-shrink-0"
                               onClick={() => onToggleEnabled(script.id)}
                             >
                               {script.disabled ? (
@@ -456,47 +464,82 @@ function RegexPanel({
                           </TooltipContent>
                         </Tooltip>
                         
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => onEdit(script.id)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>编辑</TooltipContent>
-                        </Tooltip>
-                        
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => onExport(script.id)}
-                            >
-                              <Download className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>导出</TooltipContent>
-                        </Tooltip>
-                        
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                              onClick={() => onDelete(script.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>删除</TooltipContent>
-                        </Tooltip>
+                        {/* 桌面端：显示所有按钮 */}
+                        <div className="hidden md:flex items-center gap-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => onEdit(script.id)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>编辑</TooltipContent>
+                          </Tooltip>
+                          
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => onExport(script.id)}
+                              >
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>导出</TooltipContent>
+                          </Tooltip>
+                          
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                                onClick={() => onDelete(script.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>删除</TooltipContent>
+                          </Tooltip>
+                        </div>
+
+                        {/* 移动端：下拉菜单 */}
+                        <div className="md:hidden">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 flex-shrink-0"
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-32">
+                              <DropdownMenuItem onClick={() => onEdit(script.id)}>
+                                <Edit className="h-4 w-4 mr-2" />
+                                编辑
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => onExport(script.id)}>
+                                <Download className="h-4 w-4 mr-2" />
+                                导出
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => onDelete(script.id)}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                删除
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </TooltipProvider>
                     </div>
                   </div>
@@ -830,7 +873,7 @@ export function PresetRegexManager({ presetId, onUpdate }: PresetRegexManagerPro
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[500px]">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-auto lg:h-[500px]">
         {/* 左侧文件夹面板 */}
         <FolderPanel
           folders={folders}
