@@ -1,23 +1,19 @@
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import type { Message } from "./types";
 import { apiKeyStorage } from "./storage";
+import { 
+  GeminiConfig, 
+  UnifiedApiParams,
+  GEMINI_DEFAULTS, 
+  getDefaultModel,
+  buildGeminiConfig 
+} from "./config/gemini-config";
 
-export interface GeminiParams {
-  temperature?: number;
-  topK?: number;
-  topP?: number;
-  maxOutputTokens?: number;
-  model?: string;
-  safetySettings?: Array<{
-    category: string;
-    threshold: string;
-  }>;
-  abortSignal?: AbortSignal; // 添加AbortSignal支持
-}
+// 保持向后兼容的接口
+export type GeminiParams = Omit<UnifiedApiParams, 'messages' | 'systemPrompt' | 'apiKey' | 'stream' | 'requestId'>;
 
 export class GeminiService {
   public genAI: GoogleGenAI;
-  private defaultModel: string = "gemini-2.5-pro";
   private apiKey: string;
   private activeKeyId: string | null = null;
 
@@ -223,21 +219,31 @@ export class GeminiService {
       // 使用活动API密钥
       await this.getActiveApiKey();
       
+      // 构建统一配置
+      const config = buildGeminiConfig(this.apiKey, {
+        model: getDefaultModel(params.model),
+        temperature: params.temperature,
+        topK: params.topK,
+        topP: params.topP,
+        maxOutputTokens: params.maxOutputTokens,
+        abortSignal: params.abortSignal
+      });
+
       // 创建生成内容请求
       const result = await this.genAI.models.generateContent({
-        model: params.model || this.defaultModel,
+        model: config.model!,
         contents: formattedContents,
         config: {
-          temperature: params.temperature ?? 0.7,
-          topK: params.topK ?? 40,
-          topP: params.topP ?? 0.95,
-          maxOutputTokens: params.maxOutputTokens ?? 1024,
+          temperature: config.temperature,
+          topK: config.topK,
+          topP: config.topP,
+          maxOutputTokens: config.maxOutputTokens,
           systemInstruction: finalSystemPrompt,
-          safetySettings: params.safetySettings?.map(setting => ({
+          safetySettings: (params.safetySettings || config.safetySettings)?.map(setting => ({
             category: setting.category as HarmCategory,
             threshold: setting.threshold as HarmBlockThreshold,
           })),
-          abortSignal: params.abortSignal, // 添加AbortSignal支持
+          abortSignal: config.abortSignal,
         }
       });
       
@@ -270,21 +276,31 @@ export class GeminiService {
       // 使用活动API密钥
       await this.getActiveApiKey();
       
+      // 构建统一配置
+      const config = buildGeminiConfig(this.apiKey, {
+        model: getDefaultModel(params.model),
+        temperature: params.temperature,
+        topK: params.topK,
+        topP: params.topP,
+        maxOutputTokens: params.maxOutputTokens,
+        abortSignal: params.abortSignal
+      });
+
       // 创建流式生成内容请求
       const result = await this.genAI.models.generateContentStream({
-        model: params.model || this.defaultModel,
+        model: config.model!,
         contents: formattedContents,
         config: {
-          temperature: params.temperature ?? 0.7,
-          topK: params.topK ?? 40,
-          topP: params.topP ?? 0.95,
-          maxOutputTokens: params.maxOutputTokens ?? 1024,
+          temperature: config.temperature,
+          topK: config.topK,
+          topP: config.topP,
+          maxOutputTokens: config.maxOutputTokens,
           systemInstruction: finalSystemPrompt,
-          safetySettings: params.safetySettings?.map(setting => ({
+          safetySettings: (params.safetySettings || config.safetySettings)?.map(setting => ({
             category: setting.category as HarmCategory,
             threshold: setting.threshold as HarmBlockThreshold,
           })),
-          abortSignal: params.abortSignal, // 添加AbortSignal支持
+          abortSignal: config.abortSignal,
         }
       });
 

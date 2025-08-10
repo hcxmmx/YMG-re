@@ -1,47 +1,17 @@
 import { apiKeyStorage } from "./storage";
+import { UnifiedApiParams } from "./config/gemini-config";
 
-// 聊天API参数类型
-export interface ChatApiParams {
-  messages: any[];
-  systemPrompt?: string;
-  apiKey: string;
-  stream: boolean;
-  requestId?: string;
-  temperature?: number;
-  maxOutputTokens?: number;
-  topK?: number;
-  topP?: number;
-  model?: string;
-  safetySettings?: any[];
-}
-
-// 增加API密钥使用次数的辅助函数
-const incrementApiKeyUsageCount = async (apiKey: string) => {
-  try {
-    // 直接通过密钥匹配找到对应的API密钥记录
-    const allKeys = await apiKeyStorage.listApiKeys();
-    const matchingKey = allKeys.find(key => key.key === apiKey && key.enabled);
-    
-    if (matchingKey) {
-      await apiKeyStorage.incrementApiKeyUsage(matchingKey.id);
-    }
-  } catch (error) {
-    console.error("增加API密钥使用次数失败:", error);
-  }
-};
+// 重新导出统一接口以保持向后兼容
+export type ChatApiParams = UnifiedApiParams;
 
 // 统一的API调用函数
+// 注意: API密钥使用次数将由GeminiService内部自动处理，无需在此重复处理
 export async function callChatApi(params: ChatApiParams): Promise<Response> {
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
   });
-
-  // 成功时自动增加使用次数
-  if (response.ok) {
-    await incrementApiKeyUsageCount(params.apiKey);
-  }
 
   return response;
 }

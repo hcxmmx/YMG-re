@@ -15,11 +15,10 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { PWAInstallPrompt } from "@/components/ui/pwa-install-prompt";
 import { Switch } from "@/components/ui/switch";
 
-// 可用的Gemini模型列表
-const AVAILABLE_MODELS = [
-  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro - 高级功能" },
-  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash - 快速响应" },
-];
+import { GEMINI_MODEL_OPTIONS } from "@/lib/config/gemini-config";
+
+// 使用统一的模型配置
+const AVAILABLE_MODELS = GEMINI_MODEL_OPTIONS;
 
 
 

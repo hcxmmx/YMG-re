@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GeminiService, GeminiParams } from "@/lib/gemini";
+import { UnifiedApiParams } from "@/lib/config/gemini-config";
 import type { Message } from "@/lib/types";
 
 // 用于存储活动请求的AbortController

@@ -15,12 +15,10 @@ import { cn } from "@/lib/utils";
 import { conversationStorage } from "@/lib/storage";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { GEMINI_MODEL_OPTIONS } from "@/lib/config/gemini-config";
 
-// 可用的Gemini模型列表
-const AVAILABLE_MODELS = [
-  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro - 高级功能" },
-  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash - 快速响应" },
-];
+// 使用统一的模型配置
+const AVAILABLE_MODELS = GEMINI_MODEL_OPTIONS;
 
 interface ChatSettingsProps {
   onShowDebugGuide?: () => void;

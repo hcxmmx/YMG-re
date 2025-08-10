@@ -1,5 +1,6 @@
 import { Message } from './types';
 import { ChatApiParams, callChatApi, handleStreamResponse, handleNonStreamResponse } from './chatApi';
+import { buildGeminiConfig } from './config/gemini-config';
 import { apiKeyStorage } from './storage';
 import { replaceMacros } from './macroUtils';
 import { trimMessageHistory } from './tokenUtils';
@@ -450,25 +451,21 @@ export class SendMessageManager {
       // 4. 处理系统提示词
       const systemPrompt = await this.processSystemPrompt();
 
-      // 5. 准备API参数
+      // 5. 准备API参数（使用统一配置）
+      const geminiConfig = buildGeminiConfig(apiKey, {
+        model: this.context.settings.model || 'gemini-2.5-flash',
+        temperature: this.context.settings.temperature,
+        maxOutputTokens: this.context.settings.maxTokens,
+        topK: this.context.settings.topK,
+        topP: this.context.settings.topP,
+      });
+
       const apiParams: ChatApiParams = {
         messages: trimmedMessages,
         systemPrompt,
-        apiKey,
         stream: config.stream ?? this.context.settings.enableStreaming,
         requestId: this.activeRequestId,
-        temperature: this.context.settings.temperature || 0.7,
-        maxOutputTokens: this.context.settings.maxTokens || 1000,
-        topK: this.context.settings.topK || 40,
-        topP: this.context.settings.topP || 0.9,
-        model: this.context.settings.model || 'gemini-1.5-flash',
-        safetySettings: [
-          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'OFF' },
-          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'OFF' },
-          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'OFF' },
-          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'OFF' },
-          { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'OFF' }
-        ]
+        ...geminiConfig // 展开统一配置（包含apiKey）
       };
 
       // 6. 生成调试信息（如果启用）
