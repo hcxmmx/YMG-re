@@ -417,9 +417,6 @@ function RegexPanel({
                       )}>
                         {script.scriptName}
                       </div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {script.findRegex}
-                      </div>
                       <div className="flex flex-wrap gap-1 mt-1">
                         <Badge 
                           variant={script.scope === 'character' ? 'secondary' : 'outline'} 
