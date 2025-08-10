@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Send, Image, File, FileText } from "lucide-react";
 import { ChatSettings } from "./chat-settings";
+import { useSettingsStore } from "@/lib/store";
 
 export interface FileData {
   data: string;  // DataURL或文本内容
@@ -39,6 +40,7 @@ export function ChatInput({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [isPWA, setIsPWA] = useState(false);
+  const { uiSettings } = useSettingsStore();
 
   // 自动调整textarea高度
   const adjustTextareaHeight = () => {
@@ -110,14 +112,42 @@ export function ChatInput({
     }, 0);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // 按Ctrl+Enter或Cmd+Enter发送消息
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      const form = e.currentTarget.form;
-      if (form) form.requestSubmit();
+  // 获取快捷键提示文本
+  const getHotkeyHint = () => {
+    const { sendHotkey } = uiSettings;
+    switch (sendHotkey) {
+      case 'enter':
+        return 'Enter 发送 | Shift+Enter 换行';
+      case 'shiftEnter':
+        return 'Shift+Enter 发送 | Enter 换行';
+      case 'ctrlEnter':
+      default:
+        return 'Ctrl+Enter 发送 | Enter 换行';
     }
-    // 单独按Enter键允许换行（默认行为）
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const { sendHotkey } = uiSettings;
+    
+    if (e.key === 'Enter') {
+      if (sendHotkey === 'enter' && !e.shiftKey) {
+        // Enter键直接发送（除非按住Shift）
+        e.preventDefault();
+        const form = e.currentTarget.form;
+        if (form) form.requestSubmit();
+      } else if (sendHotkey === 'ctrlEnter' && (e.ctrlKey || e.metaKey)) {
+        // Ctrl+Enter发送
+        e.preventDefault();
+        const form = e.currentTarget.form;
+        if (form) form.requestSubmit();
+      } else if (sendHotkey === 'shiftEnter' && e.shiftKey) {
+        // Shift+Enter发送
+        e.preventDefault();
+        const form = e.currentTarget.form;
+        if (form) form.requestSubmit();
+      }
+      // 其他情况允许换行（默认行为）
+    }
   };
 
   const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
@@ -271,7 +301,7 @@ export function ChatInput({
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={handleInputFocus}
-          placeholder={canRequestReply ? "输入新消息或按发送键请求回复...\nCtrl+Enter 发送" : "输入消息...\nCtrl+Enter 发送"}
+          placeholder={canRequestReply ? `输入新消息或按发送键请求回复...\n${getHotkeyHint()}` : `输入消息...\n${getHotkeyHint()}`}
           className="flex-1 min-h-[40px] resize-none overflow-hidden"
           disabled={disabled}
           autoFocus

@@ -14,6 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { conversationStorage } from "@/lib/storage";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // 可用的Gemini模型列表
 const AVAILABLE_MODELS = [
@@ -42,6 +43,7 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
     enableQuoteHighlight: uiSettings.enableQuoteHighlight,
     quoteHighlightColor: uiSettings.quoteHighlightColor,
     enablePromptDebug: uiSettings.enablePromptDebug || false, // 新增提示词调试开关
+    sendHotkey: uiSettings.sendHotkey || 'ctrlEnter', // 发送快捷键设置
   });
   
   // 当前选中的设置标签页
@@ -79,6 +81,7 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
       showMessageNumber: uiSettings.showMessageNumber,
       enableQuoteHighlight: uiSettings.enableQuoteHighlight,
       quoteHighlightColor: uiSettings.quoteHighlightColor,
+      sendHotkey: uiSettings.sendHotkey || 'ctrlEnter',
     }));
   }, [settings, uiSettings]);
   
@@ -496,6 +499,41 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
                 />
               </div>
               
+              {/* 快捷键设置 */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">发送快捷键</label>
+                  <p className="text-xs text-muted-foreground">自定义消息发送的快捷键组合</p>
+                </div>
+                <Select
+                  value={localSettings.sendHotkey}
+                  onValueChange={(value) => handleSettingChange('sendHotkey', value)}
+                >
+                  <SelectTrigger className="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ctrlEnter">Ctrl+Enter</SelectItem>
+                    <SelectItem value="enter">Enter</SelectItem>
+                    <SelectItem value="shiftEnter">Shift+Enter</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 快捷键说明 */}
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-md">
+                <h4 className="text-xs font-medium text-amber-900 dark:text-amber-100 mb-1">
+                  ⌨️ 快捷键说明
+                </h4>
+                <div className="text-xs text-amber-800 dark:text-amber-200 space-y-1">
+                  <p><strong>Ctrl+Enter:</strong> 传统模式 - Ctrl+Enter发送，Enter换行</p>
+                  <p><strong>Enter:</strong> 快捷模式 - Enter发送，Shift+Enter换行</p>
+                  <p><strong>Shift+Enter:</strong> 混合模式 - Shift+Enter发送，Enter换行</p>
+                </div>
+              </div>
+
+              <Separator />
+
               {/* 调试工具提示 */}
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md">
                 <h4 className="text-xs font-medium text-blue-900 dark:text-blue-100 mb-1">

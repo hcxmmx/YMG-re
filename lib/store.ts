@@ -29,6 +29,7 @@ interface SettingsState {
     enableQuoteHighlight: boolean;  // 启用引号高亮
     quoteHighlightColor: string;    // 引号高亮颜色
     enablePromptDebug: boolean;     // 启用提示词调试
+    sendHotkey: 'ctrlEnter' | 'enter' | 'shiftEnter';  // 发送快捷键
   };
   updateSettings: (settings: Partial<UserSettings>) => void;
   updateUISettings: (settings: Partial<{
@@ -38,6 +39,7 @@ interface SettingsState {
     enableQuoteHighlight: boolean;  // 启用引号高亮
     quoteHighlightColor: string;    // 引号高亮颜色
     enablePromptDebug: boolean;     // 启用提示词调试
+    sendHotkey: 'ctrlEnter' | 'enter' | 'shiftEnter';  // 发送快捷键
   }>) => void;
 }
 
@@ -68,6 +70,7 @@ export const useSettingsStore = create<SettingsState>()(
         enableQuoteHighlight: true,     // 默认启用引号高亮
         quoteHighlightColor: '#8b5cf6', // 默认使用紫色
         enablePromptDebug: false,       // 默认禁用提示词调试
+        sendHotkey: 'ctrlEnter',        // 默认使用Ctrl+Enter发送
       },
       updateSettings: (newSettings) =>
         set((state) => {
@@ -106,6 +109,9 @@ export const useSettingsStore = create<SettingsState>()(
           }
           if (newUISettings.enablePromptDebug !== undefined) {
             localStorage.setItem('enablePromptDebug', String(newUISettings.enablePromptDebug));
+          }
+          if (newUISettings.sendHotkey !== undefined) {
+            localStorage.setItem('sendHotkey', newUISettings.sendHotkey);
           }
 
           return {
