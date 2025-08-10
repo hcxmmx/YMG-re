@@ -1,100 +1,103 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
+  console.log('📥 代理API被调用');
+  
   try {
-    const body = await request.json();
-    const { url, method = 'GET', headers = {}, body: requestBody } = body;
+    // 解析请求体
+    const requestData = await request.json();
+    console.log('📋 收到的请求数据:', {
+      url: requestData.url,
+      method: requestData.method,
+      hasHeaders: !!requestData.headers,
+      hasBody: !!requestData.body
+    });
 
+    const { url, method = 'GET', headers = {}, body: requestBody } = requestData;
+
+    // 基本验证
     if (!url) {
-      return NextResponse.json(
-        { error: '缺少URL参数' },
-        { status: 400 }
-      );
+      console.error('❌ 缺少URL参数');
+      return NextResponse.json({ error: '缺少URL参数', success: false }, { status: 400 });
     }
 
-    // 验证URL格式
+    // URL格式验证
     let targetUrl: URL;
     try {
       targetUrl = new URL(url);
-    } catch {
-      return NextResponse.json(
-        { error: '无效的URL格式' },
-        { status: 400 }
-      );
+    } catch (e) {
+      console.error('❌ 无效的URL格式:', url);
+      return NextResponse.json({ error: '无效的URL格式', success: false }, { status: 400 });
     }
 
-    // 安全检查 - 只允许HTTP和HTTPS协议
+    // 协议验证
     if (!['http:', 'https:'].includes(targetUrl.protocol)) {
-      return NextResponse.json(
-        { error: '不支持的协议，只允许HTTP和HTTPS' },
-        { status: 400 }
-      );
+      console.error('❌ 不支持的协议:', targetUrl.protocol);
+      return NextResponse.json({ error: '不支持的协议', success: false }, { status: 400 });
     }
 
-    // 防止内部网络访问
+    // 安全检查 - 防止访问内网
     const hostname = targetUrl.hostname.toLowerCase();
-    if (
-      hostname === 'localhost' ||
-      hostname === '127.0.0.1' ||
-      hostname.startsWith('192.168.') ||
-      hostname.startsWith('10.') ||
-      hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) ||
-      hostname.endsWith('.local')
-    ) {
-      return NextResponse.json(
-        { error: '不允许访问内部网络地址' },
-        { status: 403 }
-      );
-    }
-
-    console.log(`🔄 代理请求: ${method} ${url}`);
-
-    // 清理请求头，移除可能导致问题的头部
-    const cleanHeaders = { ...headers };
-    const headersToRemove = [
-      'host', 'origin', 'referer', 'x-forwarded-for',
-      'x-forwarded-proto', 'x-forwarded-host', 'x-real-ip',
-      'sec-fetch-mode', 'sec-fetch-site', 'sec-fetch-dest',
-      'sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform'
-    ];
+    const dangerousHosts = ['localhost', '127.0.0.1'];
+    const dangerousPatterns = [/^192\.168\./, /^10\./, /^172\.(1[6-9]|2[0-9]|3[0-1])\./];
     
-    headersToRemove.forEach(header => {
-      delete cleanHeaders[header];
-      delete cleanHeaders[header.toLowerCase()];
-    });
-
-    // 添加基本请求头
-    cleanHeaders['User-Agent'] = 'MMG2-Proxy/1.0';
-    if (!cleanHeaders['Accept']) {
-      cleanHeaders['Accept'] = 'application/json, text/plain, */*';
+    if (dangerousHosts.includes(hostname) || 
+        dangerousPatterns.some(pattern => pattern.test(hostname)) ||
+        hostname.endsWith('.local')) {
+      console.error('❌ 禁止访问内网地址:', hostname);
+      return NextResponse.json({ error: '禁止访问内网地址', success: false }, { status: 403 });
     }
 
-    // 发送代理请求
-    const fetchOptions: RequestInit = {
-      method,
-      headers: cleanHeaders,
-      signal: AbortSignal.timeout(30000), // 30秒超时
+    console.log(`🚀 开始代理请求: ${method} ${url}`);
+
+    // 准备请求头
+    const proxyHeaders: Record<string, string> = {
+      'User-Agent': 'MMG2-Proxy/1.0',
+      'Accept': 'application/json, text/plain, */*',
+      ...headers
     };
 
-    if (method !== 'GET' && method !== 'HEAD' && requestBody) {
-      fetchOptions.body = typeof requestBody === 'string' ? requestBody : JSON.stringify(requestBody);
+    // 移除危险的请求头
+    const dangerousHeaders = ['host', 'origin', 'referer'];
+    dangerousHeaders.forEach(header => {
+      delete proxyHeaders[header];
+      delete proxyHeaders[header.toLowerCase()];
+    });
+
+    // 准备fetch选项
+    const fetchOptions: RequestInit = {
+      method: method.toUpperCase(),
+      headers: proxyHeaders,
+    };
+
+    // 如果有请求体，添加到选项中
+    if (requestBody && ['POST', 'PUT', 'PATCH'].includes(method.toUpperCase())) {
+      fetchOptions.body = requestBody;
+      console.log('📤 添加请求体，长度:', typeof requestBody === 'string' ? requestBody.length : 'unknown');
     }
 
+    // 发送请求
     const response = await fetch(url, fetchOptions);
-    
-    // 获取响应数据
+    console.log(`📨 收到响应: ${response.status} ${response.statusText}`);
+
+    // 解析响应
     const contentType = response.headers.get('content-type') || '';
-    let responseData;
-    
-    if (contentType.includes('application/json')) {
-      responseData = await response.json();
-    } else {
-      responseData = await response.text();
+    let responseData: any;
+
+    try {
+      if (contentType.includes('application/json')) {
+        responseData = await response.json();
+      } else {
+        responseData = await response.text();
+      }
+    } catch (parseError) {
+      console.error('❌ 解析响应失败:', parseError);
+      responseData = await response.text(); // 降级到文本
     }
 
-    console.log(`✅ 代理响应: ${response.status} ${response.statusText}`);
+    console.log('✅ 代理请求成功');
 
-    // 返回响应
+    // 返回结果
     return NextResponse.json({
       success: response.ok,
       status: response.status,
@@ -104,35 +107,63 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('❌ 代理请求失败:', error);
+    console.error('❌ 代理请求出错:', error);
     
-    const errorMessage = error instanceof Error ? error.message : '未知错误';
+    const errorMsg = error instanceof Error ? error.message : String(error);
     
-    return NextResponse.json(
-      { 
-        error: `代理请求失败: ${errorMessage}`,
-        success: false 
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      error: `代理请求失败: ${errorMsg}`,
+      success: false
+    }, { status: 500 });
   }
 }
 
-// 也支持GET请求（用于简单的URL代理）
+// 支持GET请求（用于简单的URL代理）
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.searchParams.get('url');
   
   if (!url) {
     return NextResponse.json(
-      { error: '缺少URL参数' },
+      { error: '缺少URL参数', success: false },
       { status: 400 }
     );
   }
 
-  // 转发到POST处理器
-  const mockRequest = {
-    json: async () => ({ url, method: 'GET' })
-  } as NextRequest;
+  console.log('📥 GET代理请求:', url);
 
-  return POST(mockRequest);
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'MMG2-Proxy/1.0',
+        'Accept': 'application/json, text/plain, */*'
+      }
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    let data: any;
+
+    if (contentType.includes('application/json')) {
+      data = await response.json();
+    } else {
+      data = await response.text();
+    }
+
+    return NextResponse.json({
+      success: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      data,
+      contentType
+    });
+
+  } catch (error) {
+    console.error('❌ GET代理请求失败:', error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    
+    return NextResponse.json({
+      error: `GET代理请求失败: ${errorMsg}`,
+      success: false
+    }, { status: 500 });
+  }
 }
