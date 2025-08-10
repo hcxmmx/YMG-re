@@ -69,12 +69,35 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
     return folder.type === viewMode;
   });
   
+  // 生成唯一的文件夹名称
+  const generateUniqueFolderName = (baseName: string, type: 'preset' | 'character', excludeId?: string): string => {
+    const existingNames = folders
+      .filter(f => f.type === type && f.id !== excludeId)
+      .map(f => f.name);
+    
+    if (!existingNames.includes(baseName)) {
+      return baseName;
+    }
+    
+    let counter = 1;
+    let uniqueName = `${baseName} (${counter})`;
+    
+    while (existingNames.includes(uniqueName)) {
+      counter++;
+      uniqueName = `${baseName} (${counter})`;
+    }
+    
+    return uniqueName;
+  };
+
   // 处理创建文件夹
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
     
+    const uniqueName = generateUniqueFolderName(newFolderName.trim(), newFolderType);
+    
     await createFolder({
-      name: newFolderName.trim(),
+      name: uniqueName,
       description: newFolderDescription.trim(),
       disabled: false,
       type: newFolderType,
@@ -92,8 +115,10 @@ export function FolderManagement({ onFolderSelect }: FolderManagementProps) {
   const handleEditFolder = async () => {
     if (!currentFolder || !newFolderName.trim()) return;
     
+    const uniqueName = generateUniqueFolderName(newFolderName.trim(), newFolderType, currentFolder.id);
+    
     await updateFolder(currentFolder.id, {
-      name: newFolderName.trim(),
+      name: uniqueName,
       description: newFolderDescription.trim(),
       type: newFolderType,
       scope: newFolderType === 'preset' ? newFolderScope : undefined

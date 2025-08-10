@@ -93,7 +93,7 @@ export function FolderBatchImport({
               fileName: file.name,
               id: script.id,
               name: script.scriptName,
-              message: `成功导入脚本: ${script.scriptName} 至 ${folders.find(f => f.id === selectedFolderId)?.name || '未知文件夹'}`
+              message: `成功导入脚本: ${script.scriptName} 至 ${folders.filter(f => f.type === 'preset').find(f => f.id === selectedFolderId)?.name || '未知文件夹'}`
             });
           } else {
             importResults.push({
@@ -171,11 +171,16 @@ export function FolderBatchImport({
                   <SelectValue placeholder="选择文件夹" />
                 </SelectTrigger>
                 <SelectContent>
-                  {folders.map(folder => (
-                    <SelectItem key={folder.id} value={folder.id}>
-                      {folder.name}
-                    </SelectItem>
-                  ))}
+                  {folders
+                    .filter(folder => folder.type === 'preset')
+                    .map(folder => (
+                      <SelectItem key={folder.id} value={folder.id}>
+                        {folder.name}
+                        {folder.scope === 'global' && (
+                          <span className="ml-1 text-xs text-muted-foreground">(全局)</span>
+                        )}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>

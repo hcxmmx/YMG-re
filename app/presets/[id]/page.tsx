@@ -21,7 +21,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 import { useResponsiveView } from "@/lib/useResponsiveView";
 import { ViewToggle } from "@/components/ui/view-toggle";
-import { RegexPresetFolders } from "@/components/extensions/regex-preset-folders";
+import { PresetRegexManager } from "@/components/extensions/preset-regex-manager";
 import {
   DndContext,
   closestCenter,
@@ -761,7 +761,7 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
         </TabsContent>
         
         <TabsContent value="regex" className="space-y-4">
-          <RegexPresetFolders presetId={id} onUpdate={() => loadPresets()} />
+          <PresetRegexManager presetId={id} onUpdate={() => loadPresets()} />
         </TabsContent>
       </Tabs>
       

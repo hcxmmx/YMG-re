@@ -22,7 +22,7 @@ interface QuickFolderCreateProps {
 }
 
 export function QuickFolderCreate({ onFolderCreated }: QuickFolderCreateProps) {
-  const { createFolder } = useRegexFolderStore();
+  const { createFolder, folders } = useRegexFolderStore();
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [folderName, setFolderName] = useState("");
@@ -47,14 +47,37 @@ export function QuickFolderCreate({ onFolderCreated }: QuickFolderCreateProps) {
     }
   };
   
+  // 生成唯一的文件夹名称
+  const generateUniqueFolderName = (baseName: string, type: 'preset' | 'character'): string => {
+    const existingNames = folders
+      .filter(f => f.type === type)
+      .map(f => f.name);
+    
+    if (!existingNames.includes(baseName)) {
+      return baseName;
+    }
+    
+    let counter = 1;
+    let uniqueName = `${baseName} (${counter})`;
+    
+    while (existingNames.includes(uniqueName)) {
+      counter++;
+      uniqueName = `${baseName} (${counter})`;
+    }
+    
+    return uniqueName;
+  };
+
   // 创建文件夹
   const handleCreateFolder = async () => {
     if (!folderName.trim()) return;
     
     setIsCreating(true);
     try {
+      const uniqueName = generateUniqueFolderName(folderName.trim(), folderType);
+      
       const newFolder = await createFolder({
-        name: folderName.trim(),
+        name: uniqueName,
         description: folderDescription.trim(),
         disabled: false,
         type: folderType,
