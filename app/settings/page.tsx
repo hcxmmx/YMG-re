@@ -832,19 +832,34 @@ export default function SettingsPage() {
               placeholder="https://api.openai.com/v1"
               className="max-w-md"
             />
-            {/* 🔥 HTTP端点警告 */}
+            {/* 🔥 自定义端点警告 */}
+            {openaiBaseURL && (openaiApiType === 'CUSTOM' || openaiApiType === 'OTHER') && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-md max-w-md">
+                <div className="flex items-start space-x-2">
+                  <div className="text-blue-600">ℹ️</div>
+                  <div className="text-sm text-blue-700">
+                    <p className="font-medium">自定义端点提示</p>
+                    <p>
+                      自定义端点将通过代理访问以避免CORS限制和混合内容问题。
+                      这可以确保更好的兼容性。
+                    </p>
+                    <p className="mt-1 text-xs text-blue-600">
+                      注意：代理模式下暂不支持流式响应。
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            {/* 🔥 HTTP端点特别警告 */}
             {openaiBaseURL && openaiBaseURL.startsWith('http://') && (
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-md max-w-md">
                 <div className="flex items-start space-x-2">
                   <div className="text-amber-600">⚠️</div>
                   <div className="text-sm text-amber-700">
-                    <p className="font-medium">HTTP端点检测</p>
+                    <p className="font-medium">HTTP协议警告</p>
                     <p>
-                      您使用的是HTTP协议端点。为了安全性，应用将通过代理访问此端点。
-                      建议联系服务提供商以获取HTTPS版本的端点。
-                    </p>
-                    <p className="mt-1 text-xs text-amber-600">
-                      注意：HTTP端点暂不支持流式响应，可能影响体验。
+                      检测到HTTP协议端点，存在安全风险。强烈建议联系服务提供商
+                      获取HTTPS版本的端点。
                     </p>
                   </div>
                 </div>

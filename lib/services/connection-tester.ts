@@ -203,15 +203,17 @@ export class ConnectionTester {
 
     console.log(`🔍 获取模型列表: ${url}`);
 
-    // 🔥 检测是否为HTTP端点，如果是则使用代理
+    // 🔥 检测是否需要使用代理
     const urlObj = new URL(url);
     const isHttpEndpoint = urlObj.protocol === 'http:';
+    const isCustomEndpoint = config.apiType === OPENAI_API_TYPES.CUSTOM || config.apiType === OPENAI_API_TYPES.OTHER;
+    const shouldUseProxy = isHttpEndpoint || isCustomEndpoint;
     
     let response: Response;
     
-    if (isHttpEndpoint && typeof window !== 'undefined') {
-      // 对于HTTP端点，使用代理避免混合内容错误
-      console.log(`⚠️ 检测到HTTP端点，使用代理请求: ${url}`);
+    if (shouldUseProxy && typeof window !== 'undefined') {
+      // 对于HTTP端点或自定义端点，使用代理避免混合内容错误和CORS问题
+      console.log(`🔄 使用代理请求 (${isHttpEndpoint ? 'HTTP' : 'CORS'}): ${url}`);
       
       const proxyResponse = await fetch('/api/proxy', {
         method: 'POST',
@@ -223,7 +225,7 @@ export class ConnectionTester {
           method: 'GET',
           headers: { ...headers, ...config.customHeaders }
         }),
-        signal: AbortSignal.timeout(30000) // 30秒超时
+        // 使用自定义超时而不是AbortSignal.timeout以确保兼容性
       });
 
       if (!proxyResponse.ok) {
@@ -245,11 +247,11 @@ export class ConnectionTester {
         text: async () => typeof proxyData.data === 'string' ? proxyData.data : JSON.stringify(proxyData.data)
       } as Response;
     } else {
-      // 对于HTTPS端点，直接请求
+      // 对于官方端点（OpenAI、OpenRouter等），直接请求
       response = await fetch(url, {
         method: 'GET',
         headers: { ...headers, ...config.customHeaders },
-        signal: AbortSignal.timeout(15000) // 15秒超时，给公益站更多时间
+        // 使用自定义超时而不是AbortSignal.timeout以确保兼容性
       });
     }
 

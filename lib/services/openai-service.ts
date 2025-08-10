@@ -125,15 +125,17 @@ export class OpenAIService {
     });
 
     try {
-      // 🔥 检测是否为HTTP端点，如果是则使用代理
+      // 🔥 检测是否需要使用代理
       const urlObj = new URL(url);
       const isHttpEndpoint = urlObj.protocol === 'http:';
+      const isCustomEndpoint = this.config.apiType === OPENAI_API_TYPES.CUSTOM || this.config.apiType === OPENAI_API_TYPES.OTHER;
+      const shouldUseProxy = isHttpEndpoint || isCustomEndpoint;
       
       let response: Response;
       
-      if (isHttpEndpoint && typeof window !== 'undefined') {
-        // 对于HTTP端点，使用代理避免混合内容错误
-        console.log(`⚠️ 检测到HTTP端点，使用代理发送聊天请求: ${url}`);
+      if (shouldUseProxy && typeof window !== 'undefined') {
+        // 对于HTTP端点或自定义端点，使用代理避免混合内容错误和CORS问题
+        console.log(`🔄 使用代理发送聊天请求 (${isHttpEndpoint ? 'HTTP' : 'CORS'}): ${url}`);
         
         const proxyResponse = await fetch('/api/proxy', {
           method: 'POST',
@@ -169,7 +171,7 @@ export class OpenAIService {
           body: null // 注意：代理模式下不支持流式响应
         } as Response;
       } else {
-        // 对于HTTPS端点，直接请求
+        // 对于官方端点（OpenAI、OpenRouter等），直接请求
         response = await fetch(url, {
           method: 'POST',
           headers,
