@@ -185,6 +185,14 @@ export function buildOpenAIApiParams(
     ...config.customParams
   };
 
+  console.log('🔧 构建OpenAI API参数:', {
+    model: params.model,
+    messageCount: params.messages?.length,
+    stream: params.stream,
+    max_tokens: params.max_tokens,
+    temperature: params.temperature
+  });
+
   // 移除undefined值
   Object.keys(params).forEach(key => {
     if (params[key] === undefined) {

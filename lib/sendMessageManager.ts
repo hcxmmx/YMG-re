@@ -305,6 +305,13 @@ export class SendMessageManager {
 
   // 🆕 取消当前请求
   cancelRequest(): void {
+    // 🔥 修复：立即中止HTTP请求
+    if (this.currentAbortController) {
+      console.log('[SendMessageManager] 中止HTTP请求');
+      this.currentAbortController.abort();
+      this.currentAbortController = null;
+    }
+    
     this.lifecycleManager.cancelRequest();
     this.activeRequestId = null;
   }
@@ -489,6 +496,20 @@ export class SendMessageManager {
       const systemPrompt = await this.processSystemPrompt();
 
       // 5. 更新API配置并准备调用
+      // 🔥 修复流式设置逻辑：根据API类型使用正确的设置
+      let useStreaming: boolean;
+      if (config.stream !== undefined) {
+        // 如果明确指定了stream，使用指定值
+        useStreaming = config.stream;
+      } else {
+        // 否则根据API类型使用对应的流式设置
+        if (this.context.settings.apiType === 'openai') {
+          useStreaming = this.context.settings.openaiStream ?? true;
+        } else {
+          useStreaming = this.context.settings.enableStreaming;
+        }
+      }
+      
       this.updateApiConfiguration();
       
       // 构建统一的消息格式，包含系统提示词
@@ -544,8 +565,20 @@ export class SendMessageManager {
       
       let fullResponse: string;
       
-      if (config.stream ?? this.context.settings.enableStreaming) {
+      console.log('🔄 SendMessageManager请求模式:', {
+        useStreaming,
+        configStream: config.stream,
+        settingsEnableStreaming: this.context.settings.enableStreaming,
+        settingsOpenaiStream: this.context.settings.openaiStream,
+        apiType: this.context.settings.apiType,
+        messageCount: allMessages.length,
+        决策逻辑: config.stream !== undefined ? '使用明确指定' : 
+                 this.context.settings.apiType === 'openai' ? '使用OpenAI流式设置' : '使用Gemini流式设置'
+      });
+
+      if (useStreaming) {
         // 流式响应
+        console.log('🌊 使用流式响应');
         fullResponse = await this.apiRouter.sendMessage(
           allMessages,
           (chunk: string) => {
@@ -555,12 +588,19 @@ export class SendMessageManager {
         );
       } else {
         // 非流式响应
+        console.log('📄 使用非流式响应');
         fullResponse = await this.apiRouter.sendMessage(
           allMessages,
           undefined,
           abortController.signal
         );
       }
+      
+      console.log('📝 API响应结果:', {
+        hasResponse: !!fullResponse,
+        responseLength: fullResponse?.length,
+        firstChars: fullResponse ? fullResponse.substring(0, 50) : 'null'
+      });
 
       // 8. 处理响应和清理
       if (fullResponse) {
@@ -603,7 +643,7 @@ export class SendMessageManager {
     }
   }
 
-  // 🆕 取消当前请求 - 使用lifecycleManager + API调用
+  // 🆕 取消当前请求 - 使用lifecycleManager + AbortController
   async cancelRequestWithApi(): Promise<boolean> {
     const currentRequestId = this.lifecycleManager.getCurrentRequestId();
     if (!currentRequestId) {
@@ -612,20 +652,22 @@ export class SendMessageManager {
     }
 
     try {
-      const response = await fetch(`/api/chat?requestId=${currentRequestId}`, {
-        method: 'DELETE'
-      });
+      console.log(`[SendMessageManager] 取消请求: ${currentRequestId}`);
       
-      const result = await response.json();
-      console.log('[SendMessageManager] 请求取消结果:', result);
+      // 🔥 关键修复：立即中止HTTP请求
+      if (this.currentAbortController) {
+        console.log('[SendMessageManager] 中止HTTP请求');
+        this.currentAbortController.abort();
+        this.currentAbortController = null;
+      }
       
       // 使用lifecycleManager取消请求
       this.lifecycleManager.cancelRequest();
       this.activeRequestId = null;
-      return result.success || false;
+      return true;
     } catch (error) {
       console.error('[SendMessageManager] 取消请求失败:', error);
-      // 即使API调用失败，也要清理本地状态
+      // 即使出错，也要清理本地状态
       this.lifecycleManager.cancelRequest();
       this.activeRequestId = null;
       return false;

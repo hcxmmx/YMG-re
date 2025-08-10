@@ -131,6 +131,23 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
       openaiPresencePenalty: settings.openaiPresencePenalty || 0,
       openaiStream: settings.openaiStream ?? true,
     }));
+    
+    // 🆕 从缓存加载模型列表
+    if (settings.apiType === 'openai' && settings.openaiApiType && settings.openaiBaseURL) {
+      const { getCachedModels } = useSettingsStore.getState();
+      const cachedModels = getCachedModels(
+        settings.apiType, 
+        settings.openaiApiType, 
+        settings.openaiBaseURL
+      );
+      if (cachedModels) {
+        setAvailableModels(cachedModels);
+        console.log('💾 [聊天设置] 从缓存加载模型列表:', cachedModels);
+      } else {
+        // 如果没有缓存，重置可用模型列表
+        setAvailableModels([]);
+      }
+    }
   }, [settings, uiSettings]);
   
   // 加载预设
@@ -197,9 +214,20 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
       
       setConnectionTestResult(result);
       
-      // 如果测试成功且返回了模型列表，更新可用模型
+      // 如果测试成功且返回了模型列表，更新可用模型并缓存
       if (result.success && result.models) {
         setAvailableModels(result.models);
+        
+        // 🆕 缓存模型列表
+        if (localSettings.apiType === 'openai') {
+          const { cacheModels } = useSettingsStore.getState();
+          cacheModels(
+            localSettings.apiType, 
+            localSettings.openaiApiType || 'OPENAI', 
+            localSettings.openaiBaseURL || '', 
+            result.models
+          );
+        }
         
         // 🔥 重要：自动选择第一个可用模型并更新设置
         if (result.models.length > 0) {
@@ -209,7 +237,6 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
           } else {
             handleSettingChange('model', firstModel);
           }
-
         }
       }
       
@@ -464,6 +491,12 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
                     if (endpoint) {
                       handleSettingChange('openaiBaseURL', endpoint.baseURL);
                     }
+                    
+                    // 🆕 清除旧的模型缓存，重置可用模型列表
+                    const { clearModelCache } = useSettingsStore.getState();
+                    clearModelCache('openai', localSettings.openaiApiType, localSettings.openaiBaseURL);
+                    setAvailableModels([]);
+                    console.log('🗑️ [聊天设置] 端点类型改变，清除模型缓存');
                   }}
                 >
                   {Object.entries(OPENAI_API_TYPES).map(([key, value]) => (

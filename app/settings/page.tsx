@@ -134,6 +134,20 @@ export default function SettingsPage() {
       setOpenaiCustomParams('{}');
     }
     
+    // 🆕 从缓存加载模型列表
+    if (settings.apiType === 'openai' && settings.openaiApiType && settings.openaiBaseURL) {
+      const { getCachedModels } = useSettingsStore.getState();
+      const cachedModels = getCachedModels(
+        settings.apiType, 
+        settings.openaiApiType, 
+        settings.openaiBaseURL
+      );
+      if (cachedModels) {
+        setAvailableModels(cachedModels);
+        console.log('💾 从缓存加载模型列表:', cachedModels);
+      }
+    }
+    
     // 加载字体设置
     setFontFamily(settings.fontFamily || 'system');
     
@@ -330,15 +344,20 @@ export default function SettingsPage() {
       
       setConnectionTestResult(result);
       
-      // 如果测试成功且返回了模型列表，更新可用模型
+      // 如果测试成功且返回了模型列表，更新可用模型并缓存
       if (result.success && result.models) {
         setAvailableModels(result.models);
+        
+        // 🆕 缓存模型列表
+        if (apiType === 'openai') {
+          const { cacheModels } = useSettingsStore.getState();
+          cacheModels(apiType, openaiApiType, openaiBaseURL, result.models);
+        }
         
         // 🔥 重要：自动选择第一个可用模型
         if (result.models.length > 0) {
           const firstModel = result.models[0];
           setOpenaiModel(firstModel);
-
         }
       }
       
@@ -773,6 +792,12 @@ export default function SettingsPage() {
                 if (endpoint) {
                   setOpenaiBaseURL(endpoint.baseURL);
                 }
+                
+                // 🆕 清除旧的模型缓存，重置可用模型列表
+                const { clearModelCache } = useSettingsStore.getState();
+                clearModelCache('openai', openaiApiType, openaiBaseURL);
+                setAvailableModels([]);
+                console.log('🗑️ 端点类型改变，清除模型缓存');
               }}
               className="w-full max-w-md p-2 border rounded-md bg-background"
             >

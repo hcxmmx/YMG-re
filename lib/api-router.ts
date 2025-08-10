@@ -139,6 +139,14 @@ export class ApiRouter {
     // 转换消息格式为OpenAI格式
     const openaiMessages = this.convertToOpenAIFormat(messages);
     
+    console.log('🔄 发送OpenAI消息调试:', {
+      isStreaming: !!onProgress,
+      messageCount: openaiMessages.length,
+      model: this.currentConfig?.openai?.model,
+      baseURL: this.currentConfig?.openai?.baseURL,
+      stream: this.currentConfig?.openai?.stream
+    });
+    
     const response = await this.openaiService.sendChatRequest(
       openaiMessages,
       onProgress,

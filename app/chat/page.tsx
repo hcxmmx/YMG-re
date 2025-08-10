@@ -807,8 +807,10 @@ export default function ChatPage() {
           // 计算响应时间
           const responseTime = Date.now() - responseStartTimeRef.current;
           
-          // 如果使用非流式响应，创建完整的消息
-          if (!settings.enableStreaming && !currentAssistantMessage) {
+          // 🔥 修复：确保消息总是被处理，无论流式设置如何
+          if (!currentAssistantMessage) {
+            // 没有现有消息，创建新消息（无论流式设置）
+            console.log('✅ [handleRequestReply] 创建新的助手消息');
             const assistantMessage: MessageType = {
               id: generateId(),
               role: "assistant",
@@ -817,8 +819,9 @@ export default function ChatPage() {
               responseTime: responseTime
             };
             await addMessage(assistantMessage);
-          } else if (currentAssistantMessage) {
-            // 更新最终内容，包含响应时间
+          } else {
+            // 有现有消息，更新内容
+            console.log('✅ [handleRequestReply] 更新现有助手消息');
             const finalMessage = {
               ...currentAssistantMessage,
               content: fullResponse,

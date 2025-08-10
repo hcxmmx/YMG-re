@@ -90,6 +90,15 @@ export interface UserSettings {
   openaiStream?: boolean;
   openaiCustomHeaders?: Record<string, string>;
   openaiCustomParams?: Record<string, any>;
+  
+  // 模型列表缓存
+  cachedModels?: Record<string, {
+    models: string[];
+    timestamp: number;
+    apiType: string;
+    endpointType?: string;
+    baseURL?: string;
+  }>;
 }
 
 // 对话类型

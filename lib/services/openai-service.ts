@@ -230,8 +230,36 @@ export class OpenAIService {
 
   // 处理非流式响应
   private async handleNonStreamResponse(response: Response): Promise<string> {
-    const data: OpenAIResponse = await response.json();
-    return data.choices[0]?.message?.content || '';
+    console.log('🔍 处理非流式响应...');
+    const responseText = await response.text();
+    console.log('📄 原始响应:', responseText.substring(0, 500) + (responseText.length > 500 ? '...' : ''));
+    
+    try {
+      const data: OpenAIResponse = JSON.parse(responseText);
+      console.log('📊 解析后的数据结构:', {
+        hasChoices: !!data.choices,
+        choicesLength: data.choices?.length,
+        firstChoice: data.choices?.[0] ? {
+          hasMessage: !!data.choices[0].message,
+          messageRole: data.choices[0].message?.role,
+          hasContent: !!data.choices[0].message?.content,
+          contentLength: data.choices[0].message?.content?.length
+        } : null
+      });
+      
+      const content = data.choices[0]?.message?.content || '';
+      console.log('✅ 提取的内容:', content ? `"${content.substring(0, 100)}..."` : '❌ 空内容');
+      
+      if (!content) {
+        console.warn('⚠️ 非流式响应返回空内容，完整响应:', data);
+      }
+      
+      return content;
+    } catch (error) {
+      console.error('❌ 解析非流式响应失败:', error);
+      console.log('📄 失败的响应文本:', responseText);
+      throw new Error(`解析非流式响应失败: ${error}`);
+    }
   }
 
   // 清理敏感信息用于日志输出

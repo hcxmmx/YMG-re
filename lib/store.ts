@@ -41,11 +41,16 @@ interface SettingsState {
     enablePromptDebug: boolean;     // 启用提示词调试
     sendHotkey: 'ctrlEnter' | 'enter' | 'shiftEnter';  // 发送快捷键
   }>) => void;
+  
+  // 🆕 模型列表缓存方法
+  cacheModels: (apiType: 'gemini' | 'openai', endpointType: string, baseURL: string, models: string[]) => void;
+  getCachedModels: (apiType: 'gemini' | 'openai', endpointType: string, baseURL: string) => string[] | null;
+  clearModelCache: (apiType: 'gemini' | 'openai', endpointType?: string, baseURL?: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set) => ({
+    (set): SettingsState => ({
       settings: {
         theme: 'system',
         language: 'zh-CN',
@@ -64,10 +69,10 @@ export const useSettingsStore = create<SettingsState>()(
         chatFontSize: 100, // 默认100%的聊天消息字体大小
         
         // ===== 新增API配置默认值 =====
-        apiType: 'gemini' as const, // 默认使用Gemini
+        apiType: 'gemini' as 'gemini' | 'openai', // 默认使用Gemini
         
         // OpenAI兼容端点默认配置
-        openaiApiType: 'OPENAI',
+        openaiApiType: 'OPENAI' as string,
         openaiBaseURL: 'https://api.openai.com/v1',
         openaiApiKey: '',
         openaiModel: 'gpt-4o-mini',
@@ -134,6 +139,77 @@ export const useSettingsStore = create<SettingsState>()(
           return {
             uiSettings: { ...state.uiSettings, ...newUISettings },
           };
+        }),
+      
+      // 🆕 模型列表缓存方法实现
+      cacheModels: (apiType: 'gemini' | 'openai', endpointType: string, baseURL: string, models: string[]) =>
+        set((state) => {
+          const cacheKey = `${apiType}_${endpointType}_${baseURL}`;
+          const cachedModels = state.settings.cachedModels || {};
+          
+          console.log(`💾 缓存模型列表: ${cacheKey}`, models);
+          
+          return {
+            settings: {
+              ...state.settings,
+              cachedModels: {
+                ...cachedModels,
+                [cacheKey]: {
+                  models,
+                  timestamp: Date.now(),
+                  apiType,
+                  endpointType,
+                  baseURL
+                }
+              }
+            }
+          };
+        }),
+      
+      getCachedModels: (apiType: 'gemini' | 'openai', endpointType: string, baseURL: string) => {
+        const state = useSettingsStore.getState();
+        const cacheKey = `${apiType}_${endpointType}_${baseURL}`;
+        const cached = state.settings.cachedModels?.[cacheKey];
+        
+        if (cached) {
+          console.log(`📦 读取缓存模型列表: ${cacheKey}`, cached.models);
+          return cached.models;
+        }
+        
+        console.log(`❌ 未找到缓存模型列表: ${cacheKey}`);
+        return null;
+      },
+      
+      clearModelCache: (apiType: 'gemini' | 'openai', endpointType?: string, baseURL?: string) =>
+        set((state) => {
+          const cachedModels = state.settings.cachedModels || {};
+          
+          if (endpointType && baseURL) {
+            // 清除特定配置的缓存
+            const cacheKey = `${apiType}_${endpointType}_${baseURL}`;
+            const { [cacheKey]: removed, ...remaining } = cachedModels;
+            console.log(`🗑️ 清除特定模型缓存: ${cacheKey}`);
+            
+            return {
+              settings: {
+                ...state.settings,
+                cachedModels: remaining
+              }
+            };
+          } else {
+            // 清除某个API类型的所有缓存
+            const filteredCache = Object.fromEntries(
+              Object.entries(cachedModels).filter(([key]) => !key.startsWith(`${apiType}_`))
+            );
+            console.log(`🗑️ 清除${apiType}的所有模型缓存`);
+            
+            return {
+              settings: {
+                ...state.settings,
+                cachedModels: filteredCache
+              }
+            };
+          }
         }),
     }),
     {
