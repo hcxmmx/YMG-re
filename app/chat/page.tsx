@@ -128,7 +128,29 @@ export default function ChatPage() {
         topP: 0,
         stream: false
       } as any,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      // 添加UnifiedDebugInfo必需的属性
+      apiType: settings.apiType || 'gemini',
+      endpoint: settings.apiType === 'openai' 
+        ? (settings.openaiBaseURL || 'https://api.openai.com/v1')
+        : 'Google Gemini API',
+      model: settings.apiType === 'openai' 
+        ? (settings.openaiModel || 'gpt-4o-mini')
+        : (settings.model || 'gemini-2.5-pro'),
+      parameters: settings.apiType === 'openai' ? {
+        temperature: settings.openaiTemperature || 1.0,
+        max_tokens: settings.openaiMaxTokens || 4096,
+        top_p: settings.openaiTopP || 1.0,
+        frequency_penalty: settings.openaiFrequencyPenalty || 0,
+        presence_penalty: settings.openaiPresencePenalty || 0,
+        stream: settings.openaiStream ?? true
+      } : {
+        temperature: settings.temperature || 1,
+        maxOutputTokens: settings.maxTokens || 65535,
+        topK: settings.topK || 40,
+        topP: settings.topP || 0.95,
+        stream: settings.enableStreaming
+      }
     });
     setShowDebugInfo(true);
   }, []);
@@ -1076,12 +1098,12 @@ export default function ChatPage() {
                 <div>
                   <h4 className="font-medium text-sm text-gray-700 dark:text-gray-300 mb-2">API参数</h4>
                   <div className="text-xs bg-gray-50 dark:bg-gray-900 p-3 rounded border space-y-1">
-                    <div><span className="font-medium">模型:</span> {debugInfo.apiParams.model}</div>
-                    <div><span className="font-medium">温度:</span> {debugInfo.apiParams.temperature}</div>
-                    <div><span className="font-medium">最大输出:</span> {debugInfo.apiParams.maxOutputTokens}</div>
-                    <div><span className="font-medium">Top-K:</span> {debugInfo.apiParams.topK}</div>
-                    <div><span className="font-medium">Top-P:</span> {debugInfo.apiParams.topP}</div>
-                    <div><span className="font-medium">流式:</span> {debugInfo.apiParams.stream ? '是' : '否'}</div>
+                    <div><span className="font-medium">模型:</span> {debugInfo.apiParams?.model || debugInfo.model}</div>
+                    <div><span className="font-medium">温度:</span> {debugInfo.apiParams?.temperature || debugInfo.parameters?.temperature}</div>
+                    <div><span className="font-medium">最大输出:</span> {debugInfo.apiParams?.maxOutputTokens || debugInfo.parameters?.maxOutputTokens || debugInfo.parameters?.max_tokens}</div>
+                    <div><span className="font-medium">Top-K:</span> {debugInfo.apiParams?.topK || debugInfo.parameters?.topK}</div>
+                    <div><span className="font-medium">Top-P:</span> {debugInfo.apiParams?.topP || debugInfo.parameters?.topP || debugInfo.parameters?.top_p}</div>
+                    <div><span className="font-medium">流式:</span> {debugInfo.apiParams?.stream !== undefined ? (debugInfo.apiParams.stream ? '是' : '否') : (debugInfo.parameters?.stream ? '是' : '否')}</div>
                   </div>
                 </div>
                 
