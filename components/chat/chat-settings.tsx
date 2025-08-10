@@ -81,6 +81,7 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
       showMessageNumber: uiSettings.showMessageNumber,
       enableQuoteHighlight: uiSettings.enableQuoteHighlight,
       quoteHighlightColor: uiSettings.quoteHighlightColor,
+      enablePromptDebug: uiSettings.enablePromptDebug || false,
       sendHotkey: uiSettings.sendHotkey || 'ctrlEnter',
     }));
   }, [settings, uiSettings]);
@@ -148,7 +149,7 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
           }
         }
       }
-    } else if (['showResponseTime', 'showCharCount', 'showMessageNumber', 'enableQuoteHighlight', 'quoteHighlightColor', 'enablePromptDebug'].includes(key)) {
+    } else if (['showResponseTime', 'showCharCount', 'showMessageNumber', 'enableQuoteHighlight', 'quoteHighlightColor', 'enablePromptDebug', 'sendHotkey'].includes(key)) {
       updateUISettings({ [key]: value });
     }
   };
