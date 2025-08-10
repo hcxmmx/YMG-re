@@ -128,8 +128,33 @@ export class OpenAIService {
       // 🔥 检测是否需要使用代理
       const urlObj = new URL(url);
       const isHttpEndpoint = urlObj.protocol === 'http:';
+      
+      // 预定义的官方域名，这些不需要代理
+      const officialDomains = [
+        'api.openai.com',
+        'openrouter.ai', 
+        'api.groq.com',
+        'api.deepseek.com',
+        'api.aimlapi.com'
+      ];
+      
+      const isOfficialDomain = officialDomains.includes(urlObj.hostname);
       const isCustomEndpoint = this.config.apiType === OPENAI_API_TYPES.CUSTOM || this.config.apiType === OPENAI_API_TYPES.OTHER;
-      const shouldUseProxy = isHttpEndpoint || isCustomEndpoint;
+      
+      // 使用代理的条件：HTTP协议 或 非官方域名
+      const shouldUseProxy = isHttpEndpoint || !isOfficialDomain;
+      
+      // 🔍 详细调试信息
+      console.log('🔍 [OpenAI Service] 代理检测:', {
+        url,
+        hostname: urlObj.hostname,
+        protocol: urlObj.protocol,
+        apiType: this.config.apiType,
+        isHttpEndpoint,
+        isOfficialDomain,
+        isCustomEndpoint,
+        shouldUseProxy
+      });
       
       let response: Response;
       

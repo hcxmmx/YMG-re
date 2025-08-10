@@ -832,15 +832,30 @@ export default function SettingsPage() {
               placeholder="https://api.openai.com/v1"
               className="max-w-md"
             />
-            {/* 🔥 自定义端点警告 */}
-            {openaiBaseURL && (openaiApiType === 'CUSTOM' || openaiApiType === 'OTHER') && (
+            {/* 🔥 第三方端点警告 */}
+            {openaiBaseURL && (() => {
+              try {
+                const urlObj = new URL(openaiBaseURL);
+                const officialDomains = [
+                  'api.openai.com',
+                  'openrouter.ai',
+                  'api.groq.com', 
+                  'api.deepseek.com',
+                  'api.aimlapi.com'
+                ];
+                const isThirdParty = !officialDomains.includes(urlObj.hostname);
+                return isThirdParty;
+              } catch {
+                return false;
+              }
+            })() && (
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-md max-w-md">
                 <div className="flex items-start space-x-2">
                   <div className="text-blue-600">ℹ️</div>
                   <div className="text-sm text-blue-700">
-                    <p className="font-medium">自定义端点提示</p>
+                    <p className="font-medium">第三方端点提示</p>
                     <p>
-                      自定义端点将通过代理访问以避免CORS限制和混合内容问题。
+                      检测到第三方端点，将通过代理访问以避免CORS限制。
                       这可以确保更好的兼容性。
                     </p>
                     <p className="mt-1 text-xs text-blue-600">

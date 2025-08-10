@@ -519,14 +519,28 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
                   placeholder="https://api.openai.com/v1"
                   className="text-sm"
                 />
-                {/* 🔥 自定义端点提示 */}
-                {localSettings.openaiBaseURL && (localSettings.openaiApiType === 'CUSTOM' || localSettings.openaiApiType === 'OTHER') && (
+                {/* 🔥 第三方端点提示 */}
+                {localSettings.openaiBaseURL && (() => {
+                  try {
+                    const urlObj = new URL(localSettings.openaiBaseURL);
+                    const officialDomains = [
+                      'api.openai.com',
+                      'openrouter.ai',
+                      'api.groq.com', 
+                      'api.deepseek.com',
+                      'api.aimlapi.com'
+                    ];
+                    return !officialDomains.includes(urlObj.hostname);
+                  } catch {
+                    return false;
+                  }
+                })() && (
                   <div className="p-2 bg-blue-50 border border-blue-200 rounded text-xs">
                     <div className="flex items-start space-x-1">
                       <span className="text-blue-600">ℹ️</span>
                       <div className="text-blue-700">
-                        <p className="font-medium">自定义端点</p>
-                        <p>将通过代理访问以避免CORS限制，确保兼容性。</p>
+                        <p className="font-medium">第三方端点</p>
+                        <p>将通过代理访问以避免CORS限制。</p>
                         {localSettings.openaiBaseURL.startsWith('http://') && (
                           <p className="mt-1 text-amber-600 font-medium">⚠️ HTTP协议存在安全风险</p>
                         )}
