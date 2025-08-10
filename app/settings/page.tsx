@@ -16,6 +16,8 @@ import { PWAInstallPrompt } from "@/components/ui/pwa-install-prompt";
 import { Switch } from "@/components/ui/switch";
 
 import { GEMINI_MODEL_OPTIONS } from "@/lib/config/gemini-config";
+import { OPENAI_MODEL_OPTIONS, OPENAI_API_TYPES, PREDEFINED_ENDPOINTS, buildOpenAIConfig } from "@/lib/config/openai-config";
+import { ConnectionTester, ConnectionTestResult } from "@/lib/services/connection-tester";
 
 // 使用统一的模型配置
 const AVAILABLE_MODELS = GEMINI_MODEL_OPTIONS;
@@ -58,6 +60,23 @@ export default function SettingsPage() {
   const [contextWindow, setContextWindow] = useState(0);
   const [contextControlMode, setContextControlMode] = useState<'count' | 'token'>('token');
   
+  // ===== 新增API类型相关状态 =====
+  const [apiType, setApiType] = useState<'gemini' | 'openai'>('gemini');
+  
+  // OpenAI兼容端点状态
+  const [openaiApiType, setOpenaiApiType] = useState<keyof typeof OPENAI_API_TYPES>('OPENAI');
+  const [openaiBaseURL, setOpenaiBaseURL] = useState('https://api.openai.com/v1');
+  const [openaiApiKey, setOpenaiApiKey] = useState('');
+  const [openaiModel, setOpenaiModel] = useState('gpt-4o-mini');
+  const [openaiMaxTokens, setOpenaiMaxTokens] = useState(4096);
+  const [openaiTemperature, setOpenaiTemperature] = useState(1.0);
+  const [openaiTopP, setOpenaiTopP] = useState(1.0);
+  const [openaiFrequencyPenalty, setOpenaiFrequencyPenalty] = useState(0);
+  const [openaiPresencePenalty, setOpenaiPresencePenalty] = useState(0);
+  const [openaiStream, setOpenaiStream] = useState(true);
+  const [openaiCustomHeaders, setOpenaiCustomHeaders] = useState('{}');
+  const [openaiCustomParams, setOpenaiCustomParams] = useState('{}');
+  
   // 新增字体设置状态
   const [fontFamily, setFontFamily] = useState<FontFamily>('system');
   const [fontSize, setFontSize] = useState(100);
@@ -73,6 +92,11 @@ export default function SettingsPage() {
   // 导入导出状态
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  
+  // ===== 连接测试状态 =====
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [connectionTestResult, setConnectionTestResult] = useState<ConnectionTestResult | null>(null);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
 
   // 加载已保存的设置
   useEffect(() => {
@@ -85,6 +109,31 @@ export default function SettingsPage() {
     setEnableStreaming(settings.enableStreaming);
     setContextWindow(settings.contextWindow || 0);
     setContextControlMode(settings.contextControlMode || 'token');
+    
+    // ===== 加载新的API设置 =====
+    setApiType(settings.apiType || 'gemini');
+    
+    // 加载OpenAI兼容端点设置
+    setOpenaiApiType((settings.openaiApiType as keyof typeof OPENAI_API_TYPES) || 'OPENAI');
+    setOpenaiBaseURL(settings.openaiBaseURL || 'https://api.openai.com/v1');
+    setOpenaiApiKey(settings.openaiApiKey || '');
+    setOpenaiModel(settings.openaiModel || 'gpt-4o-mini');
+    setOpenaiMaxTokens(settings.openaiMaxTokens || 4096);
+    setOpenaiTemperature(settings.openaiTemperature || 1.0);
+    setOpenaiTopP(settings.openaiTopP || 1.0);
+    setOpenaiFrequencyPenalty(settings.openaiFrequencyPenalty || 0);
+    setOpenaiPresencePenalty(settings.openaiPresencePenalty || 0);
+    setOpenaiStream(settings.openaiStream !== undefined ? settings.openaiStream : true);
+    
+    // 解析JSON字符串
+    try {
+      setOpenaiCustomHeaders(JSON.stringify(settings.openaiCustomHeaders || {}, null, 2));
+      setOpenaiCustomParams(JSON.stringify(settings.openaiCustomParams || {}, null, 2));
+    } catch (e) {
+      setOpenaiCustomHeaders('{}');
+      setOpenaiCustomParams('{}');
+    }
+    
     // 加载字体设置
     setFontFamily(settings.fontFamily || 'system');
     
@@ -250,25 +299,122 @@ export default function SettingsPage() {
     // 这只是临时的，离开页面后会恢复到保存的设置
   }, [fontFamily, fontSize, chatFontSize]);
 
+  // ===== 连接测试功能 =====
+  const handleTestConnection = async () => {
+    setIsTestingConnection(true);
+    setConnectionTestResult(null);
+    
+    try {
+      let result: ConnectionTestResult;
+      
+      if (apiType === 'gemini') {
+        result = await ConnectionTester.testGeminiConnection(apiKey);
+      } else {
+        const openaiConfig = buildOpenAIConfig({
+          apiType: OPENAI_API_TYPES[openaiApiType],
+          baseURL: openaiBaseURL,
+          apiKey: openaiApiKey,
+          model: openaiModel,
+          maxTokens: openaiMaxTokens,
+          temperature: openaiTemperature,
+          topP: openaiTopP,
+          frequencyPenalty: openaiFrequencyPenalty,
+          presencePenalty: openaiPresencePenalty,
+          stream: openaiStream,
+          customHeaders: JSON.parse(openaiCustomHeaders || '{}'),
+          customParams: JSON.parse(openaiCustomParams || '{}')
+        });
+        
+        result = await ConnectionTester.testOpenAIConnection(openaiConfig);
+      }
+      
+      setConnectionTestResult(result);
+      
+      // 如果测试成功且返回了模型列表，更新可用模型
+      if (result.success && result.models) {
+        setAvailableModels(result.models);
+        
+        // 🔥 重要：自动选择第一个可用模型
+        if (result.models.length > 0) {
+          const firstModel = result.models[0];
+          setOpenaiModel(firstModel);
+
+        }
+      }
+      
+      // 显示测试结果
+      toast({
+        title: result.success ? "连接测试成功" : "连接测试失败",
+        description: result.success 
+          ? `响应时间: ${result.responseTime}ms` 
+          : result.error,
+        variant: result.success ? "default" : "destructive",
+      });
+    } catch (error) {
+      console.error('连接测试出错:', error);
+      toast({
+        title: "连接测试失败",
+        description: "测试过程中发生未知错误",
+        variant: "destructive",
+      });
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
+
 
 
   // 保存设置
   const handleSave = () => {
-    // 更新Zustand存储
-    updateSettings({
-      apiKey,
-      temperature,
-      maxTokens,
-      topK,
-      topP,
-      model,
-      enableStreaming,
-      contextWindow,
-      contextControlMode,
-      // 保存字体设置
-      fontFamily,
-      fontSize,
-      chatFontSize,
+    try {
+      // 解析自定义JSON配置
+      let parsedCustomHeaders = {};
+      let parsedCustomParams = {};
+      
+      try {
+        parsedCustomHeaders = JSON.parse(openaiCustomHeaders);
+        parsedCustomParams = JSON.parse(openaiCustomParams);
+      } catch (e) {
+        toast({
+          title: "配置错误",
+          description: "自定义头部或参数不是有效的JSON格式",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // 更新Zustand存储
+      updateSettings({
+        apiKey,
+        temperature,
+        maxTokens,
+        topK,
+        topP,
+        model,
+        enableStreaming,
+        contextWindow,
+        contextControlMode,
+        // 保存字体设置
+        fontFamily,
+        fontSize,
+        chatFontSize,
+        
+        // ===== 保存新的API设置 =====
+        apiType,
+        
+        // OpenAI兼容端点设置
+        openaiApiType: openaiApiType, // 直接保存键名，不转换
+        openaiBaseURL,
+        openaiApiKey,
+        openaiModel,
+        openaiMaxTokens,
+        openaiTemperature,
+        openaiTopP,
+        openaiFrequencyPenalty,
+        openaiPresencePenalty,
+        openaiStream,
+        openaiCustomHeaders: parsedCustomHeaders,
+        openaiCustomParams: parsedCustomParams,
     });
 
     // 确保字体设置也被保存到localStorage
@@ -295,7 +441,20 @@ export default function SettingsPage() {
 
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
-  };
+    
+    toast({
+      title: "设置已保存",
+      description: "您的设置已成功保存",
+    });
+  } catch (error) {
+    console.error('保存设置时出错:', error);
+    toast({
+      title: "保存失败",
+      description: "保存设置时发生错误，请重试",
+      variant: "destructive",
+    });
+  }
+};
 
   // 处理字体系列变更
   const handleFontFamilyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -508,70 +667,371 @@ export default function SettingsPage() {
   // 渲染API设置内容
   const renderApiSettings = () => (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <h2 className="text-xl font-semibold">API密钥</h2>
-        <p className="text-sm text-muted-foreground">
-          提供Gemini API密钥以使用此应用
-        </p>
+      {/* API类型选择 */}
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <h2 className="text-xl font-semibold">API配置</h2>
+          <p className="text-sm text-muted-foreground">
+            选择要使用的API类型并配置相应的密钥和端点
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium">API类型</label>
+          <select
+            value={apiType}
+            onChange={(e) => setApiType(e.target.value as 'gemini' | 'openai')}
+            className="w-full max-w-md p-2 border rounded-md bg-background"
+          >
+            <option value="gemini">Gemini (Google AI)</option>
+            <option value="openai">OpenAI兼容端点</option>
+          </select>
+        </div>
       </div>
 
-      <div className="space-y-4">
-        <Input
-          type="password"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          placeholder="输入您的Gemini API密钥"
-          className="max-w-md"
-        />
-        <p className="text-xs text-muted-foreground">
-          <a
-            href="https://ai.google.dev/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline"
-          >
-            点击这里
-          </a>{" "}
-          获取Gemini API密钥
-        </p>
-        
-        {/* 应用安装 */}
-        <div className="mt-8 pt-4 border-t">
-          <h3 className="text-lg font-semibold mb-2">应用安装</h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            将此应用安装到您的设备，以获得离线使用体验和更好的性能
-          </p>
-          <PWAInstallPrompt className="mt-2" />
+      {/* Gemini API设置 */}
+      {apiType === 'gemini' && (
+        <div className="space-y-4 p-4 border rounded-lg">
+          <h3 className="text-lg font-semibold">Gemini API配置</h3>
           
-          {/* PWA自动更新设置 */}
-          <div className="mt-4 flex items-center justify-between">
-            <div>
-              <p className="font-medium">PWA自动更新</p>
-              <p className="text-xs text-muted-foreground">
-                有更新时自动应用，无需手动确认
-              </p>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">API密钥</label>
+            <Input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="输入您的Gemini API密钥"
+              className="max-w-md"
+            />
+            <p className="text-xs text-muted-foreground">
+              <a
+                href="https://ai.google.dev/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                点击这里
+              </a>{" "}
+              获取Gemini API密钥
+            </p>
+          </div>
+          
+          {/* Gemini连接测试 */}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleTestConnection}
+              disabled={isTestingConnection || !apiKey}
+              className="flex-1"
+            >
+              {isTestingConnection ? "测试中..." : "测试连接"}
+            </Button>
+          </div>
+          
+          {/* 连接测试结果显示 */}
+          {connectionTestResult && apiType === 'gemini' && (
+            <div className={`p-3 rounded-md text-sm ${
+              connectionTestResult.success 
+                ? 'bg-green-50 text-green-800 border border-green-200' 
+                : 'bg-red-50 text-red-800 border border-red-200'
+            }`}>
+              <div className="flex justify-between">
+                <span>状态: {connectionTestResult.success ? '✅ 连接成功' : '❌ 连接失败'}</span>
+                {connectionTestResult.responseTime && (
+                  <span>响应时间: {connectionTestResult.responseTime}ms</span>
+                )}
+              </div>
+              {connectionTestResult.error && (
+                <div className="mt-1">错误: {connectionTestResult.error}</div>
+              )}
+              {connectionTestResult.apiInfo && (
+                <div className="mt-1 text-xs opacity-75">
+                  端点: {connectionTestResult.apiInfo.endpoint} | 模型: {connectionTestResult.apiInfo.model}
+                </div>
+              )}
             </div>
-            <Switch 
-              checked={pwaAutoUpdate}
-              onCheckedChange={setPwaAutoUpdate}
+          )}
+        </div>
+      )}
+
+      {/* OpenAI兼容端点设置 */}
+      {apiType === 'openai' && (
+        <div className="space-y-4 p-4 border rounded-lg">
+          <h3 className="text-lg font-semibold">OpenAI兼容端点配置</h3>
+          
+          {/* 端点类型选择 */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">端点类型</label>
+            <select
+              value={openaiApiType}
+              onChange={(e) => {
+                const newType = e.target.value as keyof typeof OPENAI_API_TYPES;
+                setOpenaiApiType(newType);
+                // 自动更新Base URL
+                const endpoint = PREDEFINED_ENDPOINTS[OPENAI_API_TYPES[newType] as keyof typeof PREDEFINED_ENDPOINTS];
+                if (endpoint) {
+                  setOpenaiBaseURL(endpoint.baseURL);
+                }
+              }}
+              className="w-full max-w-md p-2 border rounded-md bg-background"
+            >
+              {Object.entries(OPENAI_API_TYPES).map(([key, value]) => (
+                <option key={key} value={key}>
+                  {PREDEFINED_ENDPOINTS[value as keyof typeof PREDEFINED_ENDPOINTS]?.name || value}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Base URL */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Base URL</label>
+            <Input
+              type="url"
+              value={openaiBaseURL}
+              onChange={(e) => setOpenaiBaseURL(e.target.value)}
+              placeholder="https://api.openai.com/v1"
+              className="max-w-md"
             />
           </div>
-        </div>
-        
-        {/* 数据备份与恢复 */}
-        <div className="mt-8 pt-4 border-t">
-          <h3 className="text-lg font-semibold mb-2">数据备份与恢复</h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            导出或导入您的应用数据
-          </p>
+
+          {/* API密钥 */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">API密钥</label>
+            <Input
+              type="password"
+              value={openaiApiKey}
+              onChange={(e) => setOpenaiApiKey(e.target.value)}
+              placeholder="输入您的API密钥"
+              className="max-w-md"
+            />
+            {openaiApiType === 'CUSTOM' && (
+              <p className="text-xs text-muted-foreground">
+                自定义端点可能不需要API密钥
+              </p>
+            )}
+          </div>
+
+          {/* 模型选择 */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">模型</label>
+            <div className="flex gap-2">
+              <select
+                value={openaiModel}
+                onChange={(e) => setOpenaiModel(e.target.value)}
+                className="flex-1 max-w-md p-2 border rounded-md bg-background"
+              >
+                {/* 如果测试成功并获取到模型列表，优先显示 */}
+                {availableModels.length > 0 && apiType === 'openai' ? (
+                  availableModels.map((model: string) => (
+                    <option key={model} value={model}>{model}</option>
+                  ))
+                ) : (
+                  PREDEFINED_ENDPOINTS[OPENAI_API_TYPES[openaiApiType] as keyof typeof PREDEFINED_ENDPOINTS]?.models.map((model: string) => (
+                    <option key={model} value={model}>{model}</option>
+                  )) || Object.entries(OPENAI_MODEL_OPTIONS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))
+                )}
+              </select>
+              
+              {/* 刷新模型列表按钮 */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleTestConnection}
+                disabled={isTestingConnection || !openaiBaseURL}
+                title="测试连接并获取模型列表"
+              >
+                {isTestingConnection ? "🔄" : "🔄"}
+              </Button>
+            </div>
+          </div>
           
-          <DataExportImport 
-            onExport={handleExport}
-            onImport={handleImport}
-            isExporting={isExporting}
-            isImporting={isImporting}
+          {/* OpenAI连接测试 */}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleTestConnection}
+              disabled={isTestingConnection || !openaiBaseURL}
+              className="flex-1"
+            >
+              {isTestingConnection ? "测试中..." : "测试连接"}
+            </Button>
+          </div>
+          
+          {/* 连接测试结果显示 */}
+          {connectionTestResult && apiType === 'openai' && (
+            <div className={`p-3 rounded-md text-sm ${
+              connectionTestResult.success 
+                ? 'bg-green-50 text-green-800 border border-green-200' 
+                : 'bg-red-50 text-red-800 border border-red-200'
+            }`}>
+              <div className="flex justify-between">
+                <span>状态: {connectionTestResult.success ? '✅ 连接成功' : '❌ 连接失败'}</span>
+                {connectionTestResult.responseTime && (
+                  <span>响应时间: {connectionTestResult.responseTime}ms</span>
+                )}
+              </div>
+              {connectionTestResult.error && (
+                <div className="mt-1">错误: {connectionTestResult.error}</div>
+              )}
+              {connectionTestResult.models && connectionTestResult.models.length > 0 && (
+                <div className="mt-1 text-xs opacity-75">
+                  发现 {connectionTestResult.models.length} 个可用模型
+                </div>
+              )}
+              {connectionTestResult.apiInfo && (
+                <div className="mt-1 text-xs opacity-75">
+                  端点: {connectionTestResult.apiInfo.endpoint} | 模型: {connectionTestResult.apiInfo.model}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 高级参数 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">最大令牌数</label>
+              <Input
+                type="number"
+                min="1"
+                max="32768"
+                value={openaiMaxTokens}
+                onChange={(e) => setOpenaiMaxTokens(parseInt(e.target.value) || 4096)}
+                className="w-full"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">温度 (0-2)</label>
+              <Input
+                type="number"
+                min="0"
+                max="2"
+                step="0.1"
+                value={openaiTemperature}
+                onChange={(e) => setOpenaiTemperature(parseFloat(e.target.value) || 1.0)}
+                className="w-full"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Top P (0-1)</label>
+              <Input
+                type="number"
+                min="0"
+                max="1"
+                step="0.01"
+                value={openaiTopP}
+                onChange={(e) => setOpenaiTopP(parseFloat(e.target.value) || 1.0)}
+                className="w-full"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">频率惩罚</label>
+              <Input
+                type="number"
+                min="-2"
+                max="2"
+                step="0.1"
+                value={openaiFrequencyPenalty}
+                onChange={(e) => setOpenaiFrequencyPenalty(parseFloat(e.target.value) || 0)}
+                className="w-full"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">存在惩罚</label>
+              <Input
+                type="number"
+                min="-2"
+                max="2"
+                step="0.1"
+                value={openaiPresencePenalty}
+                onChange={(e) => setOpenaiPresencePenalty(parseFloat(e.target.value) || 0)}
+                className="w-full"
+              />
+            </div>
+
+            <div className="space-y-2 flex items-center justify-between">
+              <label className="text-sm font-medium">启用流式输出</label>
+              <Switch 
+                checked={openaiStream}
+                onCheckedChange={setOpenaiStream}
+              />
+            </div>
+          </div>
+
+          {/* 自定义端点的高级配置 */}
+          {openaiApiType === 'CUSTOM' && (
+            <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
+              <h4 className="text-md font-semibold">高级配置</h4>
+              
+              <div className="space-y-2">
+                <label className="text-sm font-medium">自定义请求头 (JSON格式)</label>
+                <textarea
+                  value={openaiCustomHeaders}
+                  onChange={(e) => setOpenaiCustomHeaders(e.target.value)}
+                  placeholder='{"Authorization": "Bearer your-token"}'
+                  className="w-full h-20 p-2 text-sm font-mono border rounded-md bg-background"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">自定义请求参数 (JSON格式)</label>
+                <textarea
+                  value={openaiCustomParams}
+                  onChange={(e) => setOpenaiCustomParams(e.target.value)}
+                  placeholder='{"custom_param": "value"}'
+                  className="w-full h-20 p-2 text-sm font-mono border rounded-md bg-background"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+        
+      {/* 应用安装 */}
+      <div className="mt-8 pt-4 border-t">
+        <h3 className="text-lg font-semibold mb-2">应用安装</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          将此应用安装到您的设备，以获得离线使用体验和更好的性能
+        </p>
+        <PWAInstallPrompt className="mt-2" />
+        
+        {/* PWA自动更新设置 */}
+        <div className="mt-4 flex items-center justify-between">
+          <div>
+            <p className="font-medium">PWA自动更新</p>
+            <p className="text-xs text-muted-foreground">
+              有更新时自动应用，无需手动确认
+            </p>
+          </div>
+          <Switch 
+            checked={pwaAutoUpdate}
+            onCheckedChange={setPwaAutoUpdate}
           />
         </div>
+      </div>
+      
+      {/* 数据备份与恢复 */}
+      <div className="mt-8 pt-4 border-t">
+        <h3 className="text-lg font-semibold mb-2">数据备份与恢复</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          导出或导入您的应用数据
+        </p>
+        
+        <DataExportImport 
+          onExport={handleExport}
+          onImport={handleImport}
+          isExporting={isExporting}
+          isImporting={isImporting}
+        />
       </div>
     </div>
   );

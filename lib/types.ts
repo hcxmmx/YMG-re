@@ -72,6 +72,24 @@ export interface UserSettings {
   fontFamily: FontFamily; // 字体系列
   fontSize: number; // 全局字体大小（百分比，100 = 100%）
   chatFontSize: number; // 聊天消息字体大小（百分比，100 = 100%）
+  
+  // ===== 新增API配置选项 =====
+  // API类型选择
+  apiType: 'gemini' | 'openai';
+  
+  // OpenAI兼容端点配置
+  openaiApiType?: string; // 使用OPENAI_API_TYPES的键名
+  openaiBaseURL?: string;
+  openaiApiKey?: string;
+  openaiModel?: string;
+  openaiMaxTokens?: number;
+  openaiTemperature?: number;
+  openaiTopP?: number;
+  openaiFrequencyPenalty?: number;
+  openaiPresencePenalty?: number;
+  openaiStream?: boolean;
+  openaiCustomHeaders?: Record<string, string>;
+  openaiCustomParams?: Record<string, any>;
 }
 
 // 对话类型

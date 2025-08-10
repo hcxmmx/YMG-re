@@ -62,6 +62,23 @@ export const useSettingsStore = create<SettingsState>()(
         fontFamily: 'system', // 默认使用系统字体
         fontSize: typeof window !== 'undefined' && window.innerWidth < 768 ? 80 : 100, // 移动设备默认80%，桌面100%
         chatFontSize: 100, // 默认100%的聊天消息字体大小
+        
+        // ===== 新增API配置默认值 =====
+        apiType: 'gemini' as const, // 默认使用Gemini
+        
+        // OpenAI兼容端点默认配置
+        openaiApiType: 'OPENAI',
+        openaiBaseURL: 'https://api.openai.com/v1',
+        openaiApiKey: '',
+        openaiModel: 'gpt-4o-mini',
+        openaiMaxTokens: 4096,
+        openaiTemperature: 1.0,
+        openaiTopP: 1.0,
+        openaiFrequencyPenalty: 0,
+        openaiPresencePenalty: 0,
+        openaiStream: true,
+        openaiCustomHeaders: {},
+        openaiCustomParams: {},
       },
       uiSettings: {
         showResponseTime: true,

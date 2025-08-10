@@ -13,7 +13,7 @@ import { TypingIndicator } from "@/components/chat/message";
 import { trimMessageHistory } from "@/lib/tokenUtils";
 import { replaceMacros } from "@/lib/macroUtils";
 import { apiKeyStorage } from "@/lib/storage";
-import { callChatApi, handleStreamResponse, handleNonStreamResponse, ChatApiParams } from "@/lib/chatApi";
+// 旧的API导入已移除，现在统一使用SendMessageManager和ApiRouter
 import { useToast } from "@/components/ui/use-toast";
 import { createSendMessageManager, SendMessageManager, RequestLifecycleManager, ChatRequests, AdvancedChatRequests, type SendMessageContext, type ErrorDetails, type DebugInfo, type GlobalCallbacks, type LoadingType, type RequestState, type StateSubscriber } from "@/lib/sendMessageManager";
 

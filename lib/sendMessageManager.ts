@@ -1,18 +1,17 @@
 import { Message } from './types';
-import { ChatApiParams, callChatApi, handleStreamResponse, handleNonStreamResponse } from './chatApi';
+import { ChatApiParams } from './chatApi';
 import { buildGeminiConfig } from './config/gemini-config';
 import { apiKeyStorage } from './storage';
 import { replaceMacros } from './macroUtils';
 import { trimMessageHistory } from './tokenUtils';
 import { generateId } from './utils';
 import type { FileData } from '@/components/chat/chat-input';
+import { ApiRouter, createApiRouter, buildApiConfigFromSettings, UnifiedDebugInfo } from './api-router';
 
-// 调试信息接口
-export interface DebugInfo {
+// 调试信息接口 - 使用统一的调试信息格式
+export interface DebugInfo extends UnifiedDebugInfo {
   systemPrompt: string;        // 最终的系统提示词
-  messages: Message[];         // 发送给API的消息列表
-  apiParams: ChatApiParams;    // 完整的API参数
-  timestamp: string;           // 调试信息生成时间
+  apiParams?: ChatApiParams;   // 完整的API参数（保持向后兼容）
 }
 
 // 错误详情接口
@@ -239,10 +238,43 @@ export class SendMessageManager {
   
   // 🆕 使用RequestLifecycleManager管理状态
   private lifecycleManager: RequestLifecycleManager;
+  
+  // 🆕 API路由器 - 支持多种API类型
+  private apiRouter: ApiRouter;
+  
+  // 🆕 当前请求的AbortController
+  private currentAbortController: AbortController | null = null;
 
   constructor(context: SendMessageContext) {
     this.context = context;
     this.lifecycleManager = new RequestLifecycleManager();
+    
+    // 初始化API路由器
+    this.apiRouter = createApiRouter();
+    this.updateApiConfiguration();
+  }
+  
+  /**
+   * 🆕 更新API配置
+   */
+  private updateApiConfiguration() {
+    try {
+      const apiConfig = buildApiConfigFromSettings(this.context.settings);
+      this.apiRouter.setConfiguration(apiConfig);
+    } catch (error) {
+      console.error('更新API配置失败:', error);
+      // 使用默认配置
+      this.apiRouter.setConfiguration({
+        type: 'gemini',
+        gemini: buildGeminiConfig(this.context.settings.apiKey || '', {
+          model: this.context.settings.model,
+          temperature: this.context.settings.temperature,
+          maxOutputTokens: this.context.settings.maxTokens,
+          topK: this.context.settings.topK,
+          topP: this.context.settings.topP
+        })
+      });
+    }
   }
 
   // 🆕 状态管理方法 - 委托给RequestLifecycleManager
@@ -264,6 +296,11 @@ export class SendMessageManager {
   // 更新上下文
   updateContext(context: Partial<SendMessageContext>) {
     this.context = { ...this.context, ...context };
+    
+    // 🔥 重要：当settings更新时，必须重新配置API
+    if (context.settings) {
+      this.updateApiConfiguration();
+    }
   }
 
   // 🆕 取消当前请求
@@ -451,7 +488,22 @@ export class SendMessageManager {
       // 4. 处理系统提示词
       const systemPrompt = await this.processSystemPrompt();
 
-      // 5. 准备API参数（使用统一配置）
+      // 5. 更新API配置并准备调用
+      this.updateApiConfiguration();
+      
+      // 构建统一的消息格式，包含系统提示词
+      const allMessages: Message[] = [];
+      if (systemPrompt) {
+        allMessages.push({
+          id: generateId(),
+          role: 'system',
+          content: systemPrompt,
+          timestamp: new Date()
+        });
+      }
+      allMessages.push(...trimmedMessages);
+      
+      // 保持向后兼容的API参数（用于调试信息）
       const geminiConfig = buildGeminiConfig(apiKey, {
         model: this.context.settings.model || 'gemini-2.5-flash',
         temperature: this.context.settings.temperature,
@@ -465,32 +517,66 @@ export class SendMessageManager {
         systemPrompt,
         stream: config.stream ?? this.context.settings.enableStreaming,
         requestId: this.activeRequestId,
-        ...geminiConfig // 展开统一配置（包含apiKey）
+        ...geminiConfig // 用于调试信息的向后兼容
       };
 
       // 6. 生成调试信息（如果启用）
       if (config.onDebugInfo && typeof window !== 'undefined') {
         const enablePromptDebug = localStorage.getItem('enablePromptDebug') === 'true';
         if (enablePromptDebug) {
+          // 获取统一的调试信息
+          const unifiedDebugInfo = this.apiRouter.getDebugInfo(allMessages);
           const debugInfo: DebugInfo = {
+            ...unifiedDebugInfo,
             systemPrompt,
-            messages: trimmedMessages,
-            apiParams,
-            timestamp: new Date().toISOString()
+            apiParams // 保持向后兼容
           };
           config.onDebugInfo(debugInfo);
         }
       }
 
-      // 7. 调用API
+      // 7. 调用统一API路由器
       config.onStart?.();
-      const response = await this.callApi(apiParams);
-
-      // 8. 处理响应
-      if (apiParams.stream) {
-        return await this.handleStreamResponse(response, config);
+      
+      // 创建AbortController用于取消请求
+      const abortController = new AbortController();
+      this.currentAbortController = abortController;
+      
+      let fullResponse: string;
+      
+      if (config.stream ?? this.context.settings.enableStreaming) {
+        // 流式响应
+        fullResponse = await this.apiRouter.sendMessage(
+          allMessages,
+          (chunk: string) => {
+            config.onProgress?.(chunk);
+          },
+          abortController.signal
+        );
       } else {
-        return await this.handleNonStreamResponse(response, config);
+        // 非流式响应
+        fullResponse = await this.apiRouter.sendMessage(
+          allMessages,
+          undefined,
+          abortController.signal
+        );
+      }
+
+      // 8. 处理响应和清理
+      if (fullResponse) {
+        // 应用输出正则处理
+        const processedResponse = await this.triggerRegexProcessing(fullResponse, false);
+        
+        // 🆕 触发请求结束生命周期回调（自动计算响应时间）
+        this.triggerRequestEnd();
+        
+        // 调用完成回调
+        config.onComplete?.(processedResponse);
+        
+        console.log(`${logPrefix} 请求完成，响应长度: ${processedResponse.length}字符`);
+        return processedResponse;
+      } else {
+        throw new Error('API返回空响应');
       }
 
     } catch (error: any) {
@@ -557,7 +643,14 @@ export class SendMessageManager {
 
   // 检查API密钥
   private async checkApiKey(): Promise<string | null> {
-    // 优先使用轮询系统中的API密钥
+    const apiType = this.context.settings.apiType || 'gemini';
+
+    // 对于OpenAI兼容端点，直接使用OpenAI API密钥
+    if (apiType === 'openai') {
+      return this.context.settings.openaiApiKey || null;
+    }
+
+    // 对于Gemini，优先使用轮询系统中的API密钥
     try {
       const activeKey = await apiKeyStorage.getActiveApiKey();
       if (activeKey) {
@@ -568,7 +661,7 @@ export class SendMessageManager {
       console.warn('[SendMessageManager] 无法获取轮询系统API密钥，使用设置中的密钥');
     }
 
-    // 回退到设置中的API密钥
+    // 回退到设置中的Gemini API密钥
     if (this.context.settings.apiKey) {
       return this.context.settings.apiKey;
     }
@@ -615,170 +708,9 @@ export class SendMessageManager {
     return replaceMacros(this.context.systemPrompt, playerName, characterName);
   }
 
-  // 调用API
-  private async callApi(params: ChatApiParams): Promise<Response> {
-    return await callChatApi(params);
-  }
+  // 🗑️ 旧的API调用方法已移除，现在统一使用ApiRouter
 
-  // 处理流式响应
-  private async handleStreamResponse(response: Response, config: SendMessageConfig): Promise<string> {
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: response.statusText || "API调用失败" }));
-      const error = new Error(errorData.error || "API调用失败");
-      (error as any).response = response;
-      throw error;
-    }
-
-    let fullResponse = "";
-    const decoder = new TextDecoder();
-    const reader = response.body?.getReader();
-
-    if (!reader) {
-      throw new Error("无法读取响应流");
-    }
-
-    try {
-      let done = false;
-      let hasReceivedContent = false;
-      
-      while (!done) {
-        const { value, done: readerDone } = await reader.read();
-        done = readerDone;
-
-        if (value) {
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-          
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
-              if (data === '[DONE]') {
-                done = true;
-                break;
-              }
-              
-              try {
-                const parsed = JSON.parse(data);
-                
-                // 检查是否是错误响应
-                if (parsed.error) {
-                  // 流式响应中的错误处理
-                  const error = new Error("API流式响应错误");
-                  (error as any).apiError = parsed.error;
-                  (error as any).streamError = true;
-                  throw error;
-                }
-                
-                if (parsed.text) {
-                  hasReceivedContent = true;
-                  // 应用正则表达式处理AI输出片段
-                  let processedChunk = parsed.text;
-                  try {
-                    const playerName = this.context.currentPlayer?.name || "玩家";
-                    const characterName = this.context.currentCharacter?.name || "AI";
-                    processedChunk = await this.context.applyRegexToMessage(
-                      parsed.text, 
-                      playerName, 
-                      characterName, 
-                      0, 
-                      2, // 类型2=AI输出
-                      this.context.currentCharacter?.id
-                    );
-                  } catch (error) {
-                    console.error('[SendMessageManager] 应用正则表达式处理AI输出时出错:', error);
-                  }
-                  
-                  fullResponse += processedChunk;
-                  config.onProgress?.(processedChunk);
-                }
-              } catch (e) {
-                if ((e as any).streamError) {
-                  throw e; // 重新抛出流式错误
-                }
-                console.warn('解析SSE数据失败:', e);
-              }
-            }
-          }
-        }
-      }
-      
-      // 如果没有收到任何内容，认为是错误
-      if (!hasReceivedContent && !fullResponse) {
-        throw new Error("API未返回任何内容，可能是由于安全过滤或API限制");
-      }
-    } catch (error: any) {
-      if (error.streamError) {
-        throw error; // 保持原始流式错误
-      }
-      throw new Error(`流式响应处理失败: ${error.message}`);
-    }
-
-    // 应用正则表达式处理完整响应
-    let processedFullResponse = fullResponse;
-    try {
-      const playerName = this.context.currentPlayer?.name || "玩家";
-      const characterName = this.context.currentCharacter?.name || "AI";
-      processedFullResponse = await this.context.applyRegexToMessage(
-        fullResponse, 
-        playerName, 
-        characterName, 
-        0, 
-        2, // 类型2=AI输出
-        this.context.currentCharacter?.id
-      );
-    } catch (error) {
-      console.error('[SendMessageManager] 应用正则表达式处理完整AI输出时出错:', error);
-    }
-
-    // 🆕 计算并更新响应时间
-    this.calculateAndUpdateResponseTime();
-    
-    config.onComplete?.(processedFullResponse);
-    
-    // 🆕 触发请求完成生命周期回调
-    this.triggerRequestEnd();
-    
-    return processedFullResponse;
-  }
-
-  // 处理非流式响应
-  private async handleNonStreamResponse(response: Response, config: SendMessageConfig): Promise<string> {
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: response.statusText || "API调用失败" }));
-      const error = new Error(errorData.error || "API调用失败");
-      (error as any).response = response;
-      throw error;
-    }
-
-    const fullResponse = await handleNonStreamResponse(response);
-    
-    // 应用正则表达式处理AI输出
-    let processedResponse = fullResponse;
-    try {
-      const playerName = this.context.currentPlayer?.name || "玩家";
-      const characterName = this.context.currentCharacter?.name || "AI";
-      processedResponse = await this.context.applyRegexToMessage(
-        fullResponse, 
-        playerName, 
-        characterName, 
-        0, 
-        2, // 类型2=AI输出
-        this.context.currentCharacter?.id
-      );
-    } catch (error) {
-      console.error('[SendMessageManager] 应用正则表达式处理AI输出时出错:', error);
-    }
-
-    // 🆕 计算并更新响应时间
-    this.calculateAndUpdateResponseTime();
-    
-    config.onComplete?.(processedResponse);
-    
-    // 🆕 触发请求完成生命周期回调
-    this.triggerRequestEnd();
-    
-    return processedResponse;
-  }
+  // 🗑️ 旧的API调用和响应处理方法已移除，现在统一使用ApiRouter
 
   // 提取错误详情
   private async extractErrorDetails(error: any): Promise<ErrorDetails> {

@@ -16,9 +16,27 @@ import { conversationStorage } from "@/lib/storage";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GEMINI_MODEL_OPTIONS } from "@/lib/config/gemini-config";
+import { OPENAI_MODEL_OPTIONS, OPENAI_API_TYPES, PREDEFINED_ENDPOINTS, buildOpenAIConfig } from "@/lib/config/openai-config";
+import { ConnectionTester, ConnectionTestResult } from "@/lib/services/connection-tester";
 
-// 使用统一的模型配置
-const AVAILABLE_MODELS = GEMINI_MODEL_OPTIONS;
+// 动态模型配置 - 根据API类型选择
+const getAvailableModels = (apiType: string, testModels: string[] = []) => {
+  // 如果有测试获取的模型列表，优先使用
+  if (testModels.length > 0) {
+    return testModels.map(model => ({ 
+      id: model, 
+      name: model 
+    }));
+  }
+  
+  if (apiType === 'openai') {
+    return Object.entries(OPENAI_MODEL_OPTIONS).map(([value, label]) => ({ 
+      id: value, 
+      name: label 
+    }));
+  }
+  return GEMINI_MODEL_OPTIONS;
+};
 
 interface ChatSettingsProps {
   onShowDebugGuide?: () => void;
@@ -42,6 +60,19 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
     quoteHighlightColor: uiSettings.quoteHighlightColor,
     enablePromptDebug: uiSettings.enablePromptDebug || false, // 新增提示词调试开关
     sendHotkey: uiSettings.sendHotkey || 'ctrlEnter', // 发送快捷键设置
+    
+    // ===== 新增API设置 =====
+    apiType: settings.apiType || 'gemini',
+    openaiApiType: settings.openaiApiType || 'OPENAI',
+    openaiBaseURL: settings.openaiBaseURL || 'https://api.openai.com/v1',
+    openaiApiKey: settings.openaiApiKey || '',
+    openaiModel: settings.openaiModel || 'gpt-4o-mini',
+    openaiMaxTokens: settings.openaiMaxTokens || 4096,
+    openaiTemperature: settings.openaiTemperature || 1.0,
+    openaiTopP: settings.openaiTopP || 1.0,
+    openaiFrequencyPenalty: settings.openaiFrequencyPenalty || 0,
+    openaiPresencePenalty: settings.openaiPresencePenalty || 0,
+    openaiStream: settings.openaiStream ?? true,
   });
   
   // 当前选中的设置标签页
@@ -63,6 +94,11 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
     topK?: number;
     topP?: number;
   } | null>(null);
+  
+  // ===== 连接测试状态 =====
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [connectionTestResult, setConnectionTestResult] = useState<ConnectionTestResult | null>(null);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
 
   // 当全局设置变化时更新本地设置
   useEffect(() => {
@@ -81,6 +117,19 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
       quoteHighlightColor: uiSettings.quoteHighlightColor,
       enablePromptDebug: uiSettings.enablePromptDebug || false,
       sendHotkey: uiSettings.sendHotkey || 'ctrlEnter',
+      
+      // ===== 同步API设置 =====
+      apiType: settings.apiType || 'gemini',
+      openaiApiType: settings.openaiApiType || 'OPENAI',
+      openaiBaseURL: settings.openaiBaseURL || 'https://api.openai.com/v1',
+      openaiApiKey: settings.openaiApiKey || '',
+      openaiModel: settings.openaiModel || 'gpt-4o-mini',
+      openaiMaxTokens: settings.openaiMaxTokens || 4096,
+      openaiTemperature: settings.openaiTemperature || 1.0,
+      openaiTopP: settings.openaiTopP || 1.0,
+      openaiFrequencyPenalty: settings.openaiFrequencyPenalty || 0,
+      openaiPresencePenalty: settings.openaiPresencePenalty || 0,
+      openaiStream: settings.openaiStream ?? true,
     }));
   }, [settings, uiSettings]);
   
@@ -117,6 +166,66 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
     }
   }, [currentPresetId, getPreset]);
 
+  // ===== 连接测试功能 =====
+  const handleTestConnection = async () => {
+    setIsTestingConnection(true);
+    setConnectionTestResult(null);
+    
+    try {
+      let result: ConnectionTestResult;
+      
+      if (localSettings.apiType === 'gemini') {
+        result = await ConnectionTester.testGeminiConnection(settings.apiKey || '');
+      } else {
+        const openaiConfig = buildOpenAIConfig({
+          apiType: OPENAI_API_TYPES[localSettings.openaiApiType as keyof typeof OPENAI_API_TYPES],
+          baseURL: localSettings.openaiBaseURL,
+          apiKey: localSettings.openaiApiKey,
+          model: localSettings.openaiModel,
+          maxTokens: localSettings.openaiMaxTokens,
+          temperature: localSettings.openaiTemperature,
+          topP: localSettings.openaiTopP,
+          frequencyPenalty: localSettings.openaiFrequencyPenalty,
+          presencePenalty: localSettings.openaiPresencePenalty,
+          stream: localSettings.openaiStream,
+          customHeaders: {},
+          customParams: {}
+        });
+        
+        result = await ConnectionTester.testOpenAIConnection(openaiConfig);
+      }
+      
+      setConnectionTestResult(result);
+      
+      // 如果测试成功且返回了模型列表，更新可用模型
+      if (result.success && result.models) {
+        setAvailableModels(result.models);
+        
+        // 🔥 重要：自动选择第一个可用模型并更新设置
+        if (result.models.length > 0) {
+          const firstModel = result.models[0];
+          if (localSettings.apiType === 'openai') {
+            handleSettingChange('openaiModel', firstModel);
+          } else {
+            handleSettingChange('model', firstModel);
+          }
+
+        }
+      }
+      
+      // 显示测试结果 
+      console.log(result.success ? "✅ 连接测试成功" : "❌ 连接测试失败", result);
+    } catch (error) {
+      console.error('连接测试出错:', error);
+      setConnectionTestResult({
+        success: false,
+        error: "测试过程中发生未知错误"
+      });
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
+
   // 更新设置
   const handleSettingChange = (key: string, value: any) => {
     setLocalSettings(prev => ({
@@ -125,7 +234,10 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
     }));
 
     // 根据设置类型更新到对应的存储
-    if (['model', 'temperature', 'maxTokens', 'topK', 'topP', 'enableStreaming'].includes(key)) {
+    if (['model', 'temperature', 'maxTokens', 'topK', 'topP', 'enableStreaming', 
+         'apiType', 'openaiApiType', 'openaiBaseURL', 'openaiApiKey', 'openaiModel', 
+         'openaiMaxTokens', 'openaiTemperature', 'openaiTopP', 'openaiFrequencyPenalty', 
+         'openaiPresencePenalty', 'openaiStream'].includes(key)) {
       updateSettings({ [key]: value });
       
       // 检查是否修改了预设的核心参数
@@ -323,33 +435,147 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
           
           {/* 模型参数标签页 */}
           <TabsContent value="model" className="space-y-4 mt-0">
+            {/* API类型选择 */}
             <div className="space-y-2">
-            <label className="text-sm font-medium">模型</label>
-            <select 
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={localSettings.model}
-              onChange={(e) => handleSettingChange('model', e.target.value)}
-            >
-              {AVAILABLE_MODELS.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.name}
-                </option>
-              ))}
-            </select>
-          </div>
+              <label className="text-sm font-medium">API类型</label>
+              <select 
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={localSettings.apiType}
+                onChange={(e) => handleSettingChange('apiType', e.target.value)}
+              >
+                <option value="gemini">Gemini (Google AI)</option>
+                <option value="openai">OpenAI兼容端点</option>
+              </select>
+            </div>
+
+            {/* OpenAI端点类型选择 */}
+            {localSettings.apiType === 'openai' && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">端点类型</label>
+                <select 
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={localSettings.openaiApiType}
+                  onChange={(e) => {
+                    const newType = e.target.value as keyof typeof OPENAI_API_TYPES;
+                    handleSettingChange('openaiApiType', newType);
+                    
+                    // 自动更新Base URL（与设置页面保持一致）
+                    const endpoint = PREDEFINED_ENDPOINTS[OPENAI_API_TYPES[newType] as keyof typeof PREDEFINED_ENDPOINTS];
+                    if (endpoint) {
+                      handleSettingChange('openaiBaseURL', endpoint.baseURL);
+                    }
+                  }}
+                >
+                  {Object.entries(OPENAI_API_TYPES).map(([key, value]) => (
+                    <option key={key} value={key}>
+                      {PREDEFINED_ENDPOINTS[value as keyof typeof PREDEFINED_ENDPOINTS]?.name || value}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Base URL (仅OpenAI) */}
+            {localSettings.apiType === 'openai' && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Base URL</label>
+                <Input
+                  type="url"
+                  value={localSettings.openaiBaseURL}
+                  onChange={(e) => handleSettingChange('openaiBaseURL', e.target.value)}
+                  placeholder="https://api.openai.com/v1"
+                  className="text-sm"
+                />
+              </div>
+            )}
+
+            {/* API密钥 (仅OpenAI) */}
+            {localSettings.apiType === 'openai' && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">API密钥</label>
+                <Input
+                  type="password"
+                  value={localSettings.openaiApiKey}
+                  onChange={(e) => handleSettingChange('openaiApiKey', e.target.value)}
+                  placeholder="输入您的API密钥"
+                  className="text-sm"
+                />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">模型</label>
+              <div className="flex gap-2">
+                <select 
+                  className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={localSettings.apiType === 'openai' ? localSettings.openaiModel : localSettings.model}
+                  onChange={(e) => handleSettingChange(localSettings.apiType === 'openai' ? 'openaiModel' : 'model', e.target.value)}
+                >
+                  {getAvailableModels(localSettings.apiType, availableModels).map((option: any) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+                
+                {/* 连接测试按钮 */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTestConnection}
+                  disabled={isTestingConnection || (localSettings.apiType === 'gemini' && !settings.apiKey) || (localSettings.apiType === 'openai' && !localSettings.openaiBaseURL)}
+                  title="测试连接并获取模型列表"
+                  className="shrink-0"
+                >
+                  {isTestingConnection ? "🔄" : "🔄"}
+                </Button>
+              </div>
+              
+              {/* 连接测试结果显示 */}
+              {connectionTestResult && (
+                <div className={`p-2 rounded-md text-xs ${
+                  connectionTestResult.success 
+                    ? 'bg-green-50 text-green-800 border border-green-200' 
+                    : 'bg-red-50 text-red-800 border border-red-200'
+                }`}>
+                  <div className="flex justify-between items-center">
+                    <span>{connectionTestResult.success ? '✅ 连接成功' : '❌ 连接失败'}</span>
+                    {connectionTestResult.responseTime && (
+                      <span>{connectionTestResult.responseTime}ms</span>
+                    )}
+                  </div>
+                  {connectionTestResult.error && (
+                    <div className="mt-1">{connectionTestResult.error}</div>
+                  )}
+                  {connectionTestResult.models && connectionTestResult.models.length > 0 && (
+                    <div className="mt-1 opacity-75">
+                      发现 {connectionTestResult.models.length} 个可用模型
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           
           {/* 温度设置 */}
           <div className="space-y-2">
             <div className="flex justify-between">
               <label className="text-sm font-medium">温度</label>
-              <span className="text-sm text-muted-foreground">{localSettings.temperature.toFixed(1)}</span>
+              <span className="text-sm text-muted-foreground">
+                {localSettings.apiType === 'openai' 
+                  ? localSettings.openaiTemperature.toFixed(1) 
+                  : localSettings.temperature.toFixed(1)}
+              </span>
             </div>
             <Slider 
-              value={[localSettings.temperature]}
+              value={[localSettings.apiType === 'openai' ? localSettings.openaiTemperature : localSettings.temperature]}
               min={0}
               max={2}
               step={0.1}
-              onValueChange={(value) => handleSettingChange('temperature', value[0])}
+              onValueChange={(value) => handleSettingChange(
+                localSettings.apiType === 'openai' ? 'openaiTemperature' : 'temperature', 
+                value[0]
+              )}
             />
           </div>
           
@@ -357,64 +583,119 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
           <div className="space-y-2">
             <div className="flex justify-between">
               <label className="text-sm font-medium">最大输出长度</label>
-              <span className="text-sm text-muted-foreground">{localSettings.maxTokens}</span>
+              <span className="text-sm text-muted-foreground">
+                {localSettings.apiType === 'openai' ? localSettings.openaiMaxTokens : localSettings.maxTokens}
+              </span>
             </div>
             <div className="flex items-center space-x-2">
               <Slider 
-                value={[localSettings.maxTokens]}
+                value={[localSettings.apiType === 'openai' ? localSettings.openaiMaxTokens : localSettings.maxTokens]}
                 min={256}
-                max={1000000}
+                max={localSettings.apiType === 'openai' ? 32768 : 1000000}
                 step={256}
-                onValueChange={(value) => handleSettingChange('maxTokens', value[0])}
+                onValueChange={(value) => handleSettingChange(
+                  localSettings.apiType === 'openai' ? 'openaiMaxTokens' : 'maxTokens', 
+                  value[0]
+                )}
                 className="flex-grow"
               />
               <Input
                 type="number"
                 min={256}
-                max={1000000}
-                value={localSettings.maxTokens}
-                onChange={(e) => handleSettingChange('maxTokens', parseInt(e.target.value) || 65535)}
+                max={localSettings.apiType === 'openai' ? 32768 : 1000000}
+                value={localSettings.apiType === 'openai' ? localSettings.openaiMaxTokens : localSettings.maxTokens}
+                onChange={(e) => handleSettingChange(
+                  localSettings.apiType === 'openai' ? 'openaiMaxTokens' : 'maxTokens',
+                  parseInt(e.target.value) || (localSettings.apiType === 'openai' ? 4096 : 65535)
+                )}
                 className="w-20 h-8"
               />
             </div>
           </div>
           
-          {/* Top-K 设置 */}
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <label className="text-sm font-medium">Top-K</label>
-              <span className="text-sm text-muted-foreground">{localSettings.topK}</span>
+          {/* Top-K 设置 (仅Gemini) */}
+          {localSettings.apiType === 'gemini' && (
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <label className="text-sm font-medium">Top-K</label>
+                <span className="text-sm text-muted-foreground">{localSettings.topK}</span>
+              </div>
+              <Slider 
+                value={[localSettings.topK]}
+                min={1}
+                max={100}
+                step={1}
+                onValueChange={(value) => handleSettingChange('topK', value[0])}
+              />
             </div>
-            <Slider 
-              value={[localSettings.topK]}
-              min={1}
-              max={100}
-              step={1}
-              onValueChange={(value) => handleSettingChange('topK', value[0])}
-            />
-          </div>
+          )}
           
           {/* Top-P 设置 */}
           <div className="space-y-2">
             <div className="flex justify-between">
               <label className="text-sm font-medium">Top-P</label>
-              <span className="text-sm text-muted-foreground">{localSettings.topP.toFixed(2)}</span>
+              <span className="text-sm text-muted-foreground">
+                {localSettings.apiType === 'openai' 
+                  ? localSettings.openaiTopP.toFixed(2) 
+                  : localSettings.topP.toFixed(2)}
+              </span>
             </div>
             <Slider 
-              value={[localSettings.topP]}
+              value={[localSettings.apiType === 'openai' ? localSettings.openaiTopP : localSettings.topP]}
               min={0}
               max={1}
               step={0.01}
-              onValueChange={(value) => handleSettingChange('topP', value[0])}
+              onValueChange={(value) => handleSettingChange(
+                localSettings.apiType === 'openai' ? 'openaiTopP' : 'topP', 
+                value[0]
+              )}
             />
             </div>
+
+            {/* OpenAI 专有参数 */}
+            {localSettings.apiType === 'openai' && (
+              <>
+                {/* Frequency Penalty */}
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <label className="text-sm font-medium">频率惩罚</label>
+                    <span className="text-sm text-muted-foreground">{localSettings.openaiFrequencyPenalty.toFixed(2)}</span>
+                  </div>
+                  <Slider 
+                    value={[localSettings.openaiFrequencyPenalty]}
+                    min={-2}
+                    max={2}
+                    step={0.1}
+                    onValueChange={(value) => handleSettingChange('openaiFrequencyPenalty', value[0])}
+                  />
+                </div>
+
+                {/* Presence Penalty */}
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <label className="text-sm font-medium">存在惩罚</label>
+                    <span className="text-sm text-muted-foreground">{localSettings.openaiPresencePenalty.toFixed(2)}</span>
+                  </div>
+                  <Slider 
+                    value={[localSettings.openaiPresencePenalty]}
+                    min={-2}
+                    max={2}
+                    step={0.1}
+                    onValueChange={(value) => handleSettingChange('openaiPresencePenalty', value[0])}
+                  />
+                </div>
+              </>
+            )}
             
             {/* 流式输出 */}
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium">流式输出</label>
               <Switch 
-                checked={localSettings.enableStreaming}
-                onCheckedChange={(checked) => handleSettingChange('enableStreaming', checked)}
+                checked={localSettings.apiType === 'openai' ? localSettings.openaiStream : localSettings.enableStreaming}
+                onCheckedChange={(checked) => handleSettingChange(
+                  localSettings.apiType === 'openai' ? 'openaiStream' : 'enableStreaming', 
+                  checked
+                )}
               />
             </div>
           </TabsContent>
