@@ -203,11 +203,55 @@ export class ConnectionTester {
 
     console.log(`🔍 获取模型列表: ${url}`);
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { ...headers, ...config.customHeaders },
-      signal: AbortSignal.timeout(15000) // 15秒超时，给公益站更多时间
-    });
+    // 🔥 检测是否为HTTP端点，如果是则使用代理
+    const urlObj = new URL(url);
+    const isHttpEndpoint = urlObj.protocol === 'http:';
+    
+    let response: Response;
+    
+    if (isHttpEndpoint && typeof window !== 'undefined') {
+      // 对于HTTP端点，使用代理避免混合内容错误
+      console.log(`⚠️ 检测到HTTP端点，使用代理请求: ${url}`);
+      
+      const proxyResponse = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          url,
+          method: 'GET',
+          headers: { ...headers, ...config.customHeaders }
+        }),
+        signal: AbortSignal.timeout(30000) // 30秒超时
+      });
+
+      if (!proxyResponse.ok) {
+        throw new Error(`代理请求失败: ${proxyResponse.status} ${proxyResponse.statusText}`);
+      }
+
+      const proxyData = await proxyResponse.json();
+      
+      if (!proxyData.success) {
+        throw new Error(`获取模型列表失败: ${proxyData.error || '代理请求失败'}`);
+      }
+
+      // 模拟Response对象的行为
+      response = {
+        ok: proxyData.success,
+        status: proxyData.status,
+        statusText: proxyData.statusText,
+        json: async () => proxyData.data,
+        text: async () => typeof proxyData.data === 'string' ? proxyData.data : JSON.stringify(proxyData.data)
+      } as Response;
+    } else {
+      // 对于HTTPS端点，直接请求
+      response = await fetch(url, {
+        method: 'GET',
+        headers: { ...headers, ...config.customHeaders },
+        signal: AbortSignal.timeout(15000) // 15秒超时，给公益站更多时间
+      });
+    }
 
     if (!response.ok) {
       const errorText = await response.text();

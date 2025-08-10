@@ -832,6 +832,24 @@ export default function SettingsPage() {
               placeholder="https://api.openai.com/v1"
               className="max-w-md"
             />
+            {/* 🔥 HTTP端点警告 */}
+            {openaiBaseURL && openaiBaseURL.startsWith('http://') && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-md max-w-md">
+                <div className="flex items-start space-x-2">
+                  <div className="text-amber-600">⚠️</div>
+                  <div className="text-sm text-amber-700">
+                    <p className="font-medium">HTTP端点检测</p>
+                    <p>
+                      您使用的是HTTP协议端点。为了安全性，应用将通过代理访问此端点。
+                      建议联系服务提供商以获取HTTPS版本的端点。
+                    </p>
+                    <p className="mt-1 text-xs text-amber-600">
+                      注意：HTTP端点暂不支持流式响应，可能影响体验。
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* API密钥 */}

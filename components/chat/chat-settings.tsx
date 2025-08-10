@@ -519,6 +519,21 @@ export function ChatSettings({ onShowDebugGuide }: ChatSettingsProps) {
                   placeholder="https://api.openai.com/v1"
                   className="text-sm"
                 />
+                {/* 🔥 HTTP端点警告 */}
+                {localSettings.openaiBaseURL && localSettings.openaiBaseURL.startsWith('http://') && (
+                  <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs">
+                    <div className="flex items-start space-x-1">
+                      <span className="text-amber-600">⚠️</span>
+                      <div className="text-amber-700">
+                        <p className="font-medium">HTTP端点警告</p>
+                        <p>使用HTTP端点，应用将通过代理访问以确保安全性。</p>
+                        <p className="mt-1 text-xs text-amber-600">
+                          注意：HTTP端点暂不支持流式响应。
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
