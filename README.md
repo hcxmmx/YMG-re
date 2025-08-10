@@ -2,13 +2,13 @@
 
 <div align="center">
 
-![版本](https://img.shields.io/badge/版本-1.0.0-blue.svg)
+![版本](https://img.shields.io/badge/版本-1.1.0-blue.svg)
 ![许可证](https://img.shields.io/badge/许可证-CC--BY--NC--SA--4.0-green.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-14-black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue)
 ![PWA](https://img.shields.io/badge/PWA-Ready-purple)
 
-一款基于 **Gemini API** 的现代化AI角色扮演平台，提供高度自定义的聊天体验
+一款支持 **Gemini API** 和 **OpenAI兼容端点** 的现代化AI角色扮演平台，提供高度自定义的聊天体验
 
 [🚀 在线体验](https://ymg-re.vercel.app) · [📖 使用指南](#-使用指南) · [🐛 反馈问题](https://github.com/hcxmmx/YMG-re/issues)
 
@@ -43,6 +43,9 @@
 - 📁 **文件夹组织** - 预设文件夹和角色文件夹分离，支持全局/局部作用域
 - 🔑 **API密钥管理** - 多密钥轮询，提高服务稳定性
 - 📊 **使用统计** - 跟踪API使用情况，合理分配资源
+- 🌐 **多API支持** - 支持Gemini和OpenAI兼容端点，灵活切换AI服务
+- 🔗 **连接测试** - 一键测试API连接状态并获取可用模型列表
+- 💾 **模型缓存** - 智能缓存获取到的模型列表，提升使用体验
 
 ### 🎛️ **界面体验**
 - 📱 **响应式设计** - 完美适配手机、平板、桌面等各种设备
@@ -124,10 +127,11 @@ npm start
 
 ### 🎯 初次设置
 
-1. **配置API密钥**
-   - 进入 `扩展` → `API密钥` 页面
-   - 添加你的 Gemini API 密钥
-   - 设置密钥轮询策略（可选）
+1. **配置API服务**
+   - **Gemini API**: 进入 `扩展` → `API密钥` 页面，添加Gemini API密钥
+   - **OpenAI兼容端点**: 进入 `设置` 页面，选择API类型为OpenAI，配置端点URL和密钥
+   - 支持多种端点：OpenAI、OpenRouter、Groq、DeepSeek、自定义端点等
+   - 可使用连接测试功能验证配置并获取可用模型列表
 
 2. **个性化设置**
    - 进入 `设置` 页面调整主题、字体等偏好
@@ -195,7 +199,7 @@ npm start
 - **样式**: Tailwind CSS + shadcn/ui
 - **状态管理**: Zustand
 - **数据存储**: IndexedDB (本地存储)
-- **AI服务**: Google Gemini API
+- **AI服务**: Google Gemini API + OpenAI兼容端点
 
 ### 关键特性
 - **📱 PWA支持** - 可安装的Web应用
@@ -249,10 +253,19 @@ npm start
 
 ## 🔧 配置说明
 
-### API密钥设置
+### API服务配置
+
+#### Gemini API设置
 1. 获取 [Google AI Studio](https://ai.google.dev/) 的API密钥
-2. 在应用中添加密钥
+2. 在`扩展` → `API密钥`页面添加密钥
 3. 可配置多个密钥实现轮询和备份
+
+#### OpenAI兼容端点设置
+1. 在`设置`页面选择API类型为"OpenAI"
+2. 选择端点类型（OpenAI、OpenRouter、Groq、DeepSeek等）或选择"自定义"
+3. 填写对应的API密钥和端点URL
+4. 使用连接测试功能验证配置
+5. 系统会自动获取并缓存可用模型列表
 
 ### 性能优化建议
 - **移动端使用** - 建议安装为PWA应用
@@ -268,7 +281,27 @@ npm start
 
 ## 🆕 更新日志
 
-### 最新更新 (v1.0.0)
+### 最新更新 (v1.1.0)
+
+#### 🌐 多API支持
+- ✅ **OpenAI兼容端点** - 支持OpenAI、OpenRouter、Groq、DeepSeek等多种AI服务
+- ✅ **自定义端点** - 支持连接任意OpenAI兼容的API端点
+- ✅ **连接测试** - 一键测试API连接状态和获取可用模型列表
+- ✅ **智能配置** - 自动获取端点信息，支持预定义端点快速配置
+
+#### 💾 模型缓存系统
+- ✅ **持久化缓存** - 获取到的模型列表永久保存，无需重复获取
+- ✅ **智能管理** - 按端点配置自动管理缓存，配置改变时自动清除
+- ✅ **页面同步** - 设置页面和聊天设置页面的模型列表完全同步
+- ✅ **用户体验** - 页面切换时模型列表不再丢失
+
+#### 🔧 流式传输优化
+- ✅ **配置统一** - 修复流式和非流式设置的配置矛盾问题
+- ✅ **取消功能** - 修复自定义端点的请求取消功能
+- ✅ **错误处理** - 增强对Cloudflare等反爬虫系统的应对
+- ✅ **调试日志** - 添加详细的调试信息便于问题排查
+
+### v1.0.0
 
 #### 🎯 核心功能
 - ✅ **自定义快捷键** - 支持三种发送快捷键模式
