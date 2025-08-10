@@ -699,7 +699,12 @@ export default function SettingsPage() {
           <label className="text-sm font-medium">API类型</label>
           <select
             value={apiType}
-            onChange={(e) => setApiType(e.target.value as 'gemini' | 'openai')}
+            onChange={(e) => {
+              const newApiType = e.target.value as 'gemini' | 'openai';
+              setApiType(newApiType);
+              // 🔥 立即同步到store，确保其他组件能实时获取到变化
+              updateSettings({ apiType: newApiType });
+            }}
             className="w-full max-w-md p-2 border rounded-md bg-background"
           >
             <option value="gemini">Gemini (Google AI)</option>
@@ -789,8 +794,10 @@ export default function SettingsPage() {
                 setOpenaiApiType(newType);
                 // 自动更新Base URL
                 const endpoint = PREDEFINED_ENDPOINTS[OPENAI_API_TYPES[newType] as keyof typeof PREDEFINED_ENDPOINTS];
+                let newBaseURL = openaiBaseURL;
                 if (endpoint) {
                   setOpenaiBaseURL(endpoint.baseURL);
+                  newBaseURL = endpoint.baseURL;
                 }
                 
                 // 🆕 清除旧的模型缓存，重置可用模型列表
@@ -798,6 +805,12 @@ export default function SettingsPage() {
                 clearModelCache('openai', openaiApiType, openaiBaseURL);
                 setAvailableModels([]);
                 console.log('🗑️ 端点类型改变，清除模型缓存');
+                
+                // 🔥 立即同步到store，确保其他组件能实时获取到变化
+                updateSettings({ 
+                  openaiApiType: newType,
+                  openaiBaseURL: newBaseURL
+                });
               }}
               className="w-full max-w-md p-2 border rounded-md bg-background"
             >
