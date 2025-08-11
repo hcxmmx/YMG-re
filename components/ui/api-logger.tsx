@@ -41,12 +41,17 @@ export function ApiLogger() {
   // 监听全局API日志事件
   useEffect(() => {
     const handleApiLog = (event: CustomEvent<ApiLogEntry>) => {
+      console.log('📥 [ApiLogger UI] 收到API日志事件:', event.detail);
       const logEntry = event.detail;
       setLogs(prev => [logEntry, ...prev].slice(0, 100)); // 只保留最新100条
     };
 
+    console.log('🎧 [ApiLogger UI] 开始监听 api-log 事件');
     window.addEventListener('api-log' as any, handleApiLog);
-    return () => window.removeEventListener('api-log' as any, handleApiLog);
+    return () => {
+      console.log('🔇 [ApiLogger UI] 停止监听 api-log 事件');
+      window.removeEventListener('api-log' as any, handleApiLog);
+    };
   }, []);
 
   // 切换日志展开状态

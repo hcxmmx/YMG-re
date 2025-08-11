@@ -248,6 +248,7 @@ export class GeminiService {
     };
 
     // 开始日志记录
+    console.log('🔍 [API Logger] GeminiService.generateResponse 被调用了！');
     const logId = apiLogger.startRequest(
       'gemini',
       'POST',
@@ -274,6 +275,7 @@ export class GeminiService {
         }
       }
     );
+    console.log('🔍 [API Logger] 日志ID:', logId);
 
     try {
       // 创建生成内容请求
@@ -383,6 +385,7 @@ export class GeminiService {
     });
 
     // 开始日志记录
+    console.log('🔍 [API Logger] GeminiService.generateResponseStream 被调用了！');
     const logId = apiLogger.startRequest(
       'gemini',
       'POST',
@@ -413,6 +416,7 @@ export class GeminiService {
         }
       }
     );
+    console.log('🔍 [API Logger] 流式日志ID:', logId);
 
     try {
 

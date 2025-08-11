@@ -64,13 +64,33 @@ export class ApiLogger {
     (globalThis as any).__apiRequestTimes = (globalThis as any).__apiRequestTimes || {};
     (globalThis as any).__apiRequestTimes[logId] = startTime;
 
-    console.log(`[API Logger] 开始请求 ${logId}:`, {
+    console.log(`🚀 [API Logger] 开始请求 ${logId}:`, {
       type,
       method,
       endpoint,
       timestamp: new Date(),
       request: requestData
     });
+
+    // 立即分发一个测试事件来确认事件系统工作
+    if (typeof window !== 'undefined') {
+      console.log('🔔 [API Logger] 尝试分发测试事件...');
+      const testEvent = new CustomEvent('api-log', { 
+        detail: {
+          id: logId + '_test',
+          timestamp: new Date(),
+          type,
+          method,
+          endpoint: 'TEST: ' + endpoint,
+          request: { test: true },
+          success: true
+        }
+      });
+      window.dispatchEvent(testEvent);
+      console.log('✅ [API Logger] 测试事件已分发');
+    } else {
+      console.log('❌ [API Logger] window 不可用，无法分发事件');
+    }
 
     return logId;
   }
