@@ -8,6 +8,7 @@ import {
   getDefaultModel,
   buildGeminiConfig 
 } from "./config/gemini-config";
+import { apiLogger } from "./logger";
 
 // 保持向后兼容的接口
 export type GeminiParams = Omit<UnifiedApiParams, 'messages' | 'systemPrompt' | 'apiKey' | 'stream' | 'requestId'>;
@@ -215,37 +216,102 @@ export class GeminiService {
       return "";
     }
 
-    try {
-      // 使用活动API密钥
-      await this.getActiveApiKey();
-      
-      // 构建统一配置
-      const config = buildGeminiConfig(this.apiKey, {
-        model: getDefaultModel(params.model),
-        temperature: params.temperature,
-        topK: params.topK,
-        topP: params.topP,
-        maxOutputTokens: params.maxOutputTokens,
-        abortSignal: params.abortSignal
-      });
+    // 使用活动API密钥
+    await this.getActiveApiKey();
+    
+    // 构建统一配置
+    const config = buildGeminiConfig(this.apiKey, {
+      model: getDefaultModel(params.model),
+      temperature: params.temperature,
+      topK: params.topK,
+      topP: params.topP,
+      maxOutputTokens: params.maxOutputTokens,
+      abortSignal: params.abortSignal
+    });
 
-      // 创建生成内容请求
-      const result = await this.genAI.models.generateContent({
-        model: config.model!,
-        contents: formattedContents,
-        config: {
-          temperature: config.temperature,
-          topK: config.topK,
-          topP: config.topP,
-          maxOutputTokens: config.maxOutputTokens,
+    // 构建请求参数
+    const requestParams = {
+      model: config.model!,
+      contents: formattedContents,
+      config: {
+        temperature: config.temperature,
+        topK: config.topK,
+        topP: config.topP,
+        maxOutputTokens: config.maxOutputTokens,
+        systemInstruction: finalSystemPrompt,
+        safetySettings: (params.safetySettings || config.safetySettings)?.map(setting => ({
+          category: setting.category as HarmCategory,
+          threshold: setting.threshold as HarmBlockThreshold,
+        })),
+        abortSignal: config.abortSignal,
+      }
+    };
+
+    // 开始日志记录
+    const logId = apiLogger.startRequest(
+      'gemini',
+      'POST',
+      `https://generativelanguage.googleapis.com/v1beta/models/${config.model}/generateContent`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': this.apiKey ? '[REDACTED]' : 'N/A'
+        },
+        body: {
+          contents: formattedContents,
+          generationConfig: {
+            temperature: config.temperature,
+            topK: config.topK,
+            topP: config.topP,
+            maxOutputTokens: config.maxOutputTokens,
+          },
           systemInstruction: finalSystemPrompt,
-          safetySettings: (params.safetySettings || config.safetySettings)?.map(setting => ({
-            category: setting.category as HarmCategory,
-            threshold: setting.threshold as HarmBlockThreshold,
-          })),
-          abortSignal: config.abortSignal,
+          safetySettings: requestParams.config.safetySettings
+        },
+        config: {
+          model: config.model,
+          apiKeyStatus: this.apiKey ? 'Available' : 'Missing'
         }
-      });
+      }
+    );
+
+    try {
+      // 创建生成内容请求
+      const result = await this.genAI.models.generateContent(requestParams);
+      
+      // 记录成功响应
+      apiLogger.logSuccess(
+        logId,
+        'gemini',
+        'POST',
+        `https://generativelanguage.googleapis.com/v1beta/models/${config.model}/generateContent`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': '[REDACTED]'
+          },
+          body: {
+            contents: formattedContents,
+            generationConfig: {
+              temperature: config.temperature,
+              topK: config.topK,
+              topP: config.topP,
+              maxOutputTokens: config.maxOutputTokens,
+            },
+            systemInstruction: finalSystemPrompt,
+            safetySettings: requestParams.config.safetySettings
+          }
+        },
+        {
+          status: 200,
+          data: {
+            candidates: result.candidates,
+            usageMetadata: result.usageMetadata,
+            modelVersion: result.modelVersion
+          },
+          text: result.text || ""
+        }
+      );
       
       // 增加API密钥使用次数
       await this.incrementApiKeyUsage();
@@ -253,6 +319,37 @@ export class GeminiService {
       return result.text || "";
     } catch (error) {
       console.error("生成回复时出错:", error);
+      
+      // 记录错误响应
+      apiLogger.logError(
+        logId,
+        'gemini',
+        'POST',
+        `https://generativelanguage.googleapis.com/v1beta/models/${config.model}/generateContent`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': '[REDACTED]'
+          },
+          body: {
+            contents: formattedContents,
+            generationConfig: {
+              temperature: config.temperature,
+              topK: config.topK,
+              topP: config.topP,
+              maxOutputTokens: config.maxOutputTokens,
+            },
+            systemInstruction: finalSystemPrompt,
+            safetySettings: requestParams.config.safetySettings
+          }
+        },
+        error as Error,
+        {
+          status: (error as any)?.status || undefined,
+          data: (error as any)?.response?.data || undefined
+        }
+      );
+      
       throw error;
     }
   }
@@ -272,19 +369,52 @@ export class GeminiService {
       return;
     }
 
+    // 使用活动API密钥
+    await this.getActiveApiKey();
+    
+    // 构建统一配置
+    const config = buildGeminiConfig(this.apiKey, {
+      model: getDefaultModel(params.model),
+      temperature: params.temperature,
+      topK: params.topK,
+      topP: params.topP,
+      maxOutputTokens: params.maxOutputTokens,
+      abortSignal: params.abortSignal
+    });
+
+    // 开始日志记录
+    const logId = apiLogger.startRequest(
+      'gemini',
+      'POST',
+      `https://generativelanguage.googleapis.com/v1beta/models/${config.model}/generateContent:streamGenerateContent`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': this.apiKey ? '[REDACTED]' : 'N/A'
+        },
+        body: {
+          contents: formattedContents,
+          generationConfig: {
+            temperature: config.temperature,
+            topK: config.topK,
+            topP: config.topP,
+            maxOutputTokens: config.maxOutputTokens,
+          },
+          systemInstruction: finalSystemPrompt,
+          safetySettings: (params.safetySettings || config.safetySettings)?.map(setting => ({
+            category: setting.category as HarmCategory,
+            threshold: setting.threshold as HarmBlockThreshold,
+          }))
+        },
+        config: {
+          model: config.model,
+          apiKeyStatus: this.apiKey ? 'Available' : 'Missing',
+          streamMode: true
+        }
+      }
+    );
+
     try {
-      // 使用活动API密钥
-      await this.getActiveApiKey();
-      
-      // 构建统一配置
-      const config = buildGeminiConfig(this.apiKey, {
-        model: getDefaultModel(params.model),
-        temperature: params.temperature,
-        topK: params.topK,
-        topP: params.topP,
-        maxOutputTokens: params.maxOutputTokens,
-        abortSignal: params.abortSignal
-      });
 
       // 创建流式生成内容请求
       const result = await this.genAI.models.generateContentStream({

@@ -18,6 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { GEMINI_MODEL_OPTIONS } from "@/lib/config/gemini-config";
 import { OPENAI_MODEL_OPTIONS, OPENAI_API_TYPES, PREDEFINED_ENDPOINTS, buildOpenAIConfig } from "@/lib/config/openai-config";
 import { ConnectionTester, ConnectionTestResult } from "@/lib/services/connection-tester";
+import { ApiLogger } from "@/components/ui/api-logger";
 
 // 使用统一的模型配置
 const AVAILABLE_MODELS = GEMINI_MODEL_OPTIONS;
@@ -1336,7 +1337,19 @@ export default function SettingsPage() {
     </div>
   );
 
+  // 渲染调试设置内容
+  const renderDebugSettings = () => (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <h2 className="text-xl font-semibold">API调试</h2>
+        <p className="text-sm text-muted-foreground">
+          查看详细的API请求和响应日志，帮助诊断问题
+        </p>
+      </div>
 
+      <ApiLogger />
+    </div>
+  );
 
   return (
     <div className="container mx-auto p-4 max-w-3xl">
@@ -1368,21 +1381,28 @@ export default function SettingsPage() {
             <AccordionTrigger className="text-lg font-medium">上下文控制</AccordionTrigger>
             <AccordionContent>{renderContextSettings()}</AccordionContent>
           </AccordionItem>
+          
+          <AccordionItem value="debug">
+            <AccordionTrigger className="text-lg font-medium">调试</AccordionTrigger>
+            <AccordionContent>{renderDebugSettings()}</AccordionContent>
+          </AccordionItem>
         </Accordion>
       ) : (
         // 桌面设备上使用标签式布局
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid grid-cols-4 w-full">
+          <TabsList className="grid grid-cols-5 w-full">
             <TabsTrigger value="appearance">外观</TabsTrigger>
             <TabsTrigger value="api">API设置</TabsTrigger>
             <TabsTrigger value="model">模型设置</TabsTrigger>
             <TabsTrigger value="context">上下文</TabsTrigger>
+            <TabsTrigger value="debug">调试</TabsTrigger>
           </TabsList>
           
           <TabsContent value="appearance">{renderAppearanceSettings()}</TabsContent>
           <TabsContent value="api">{renderApiSettings()}</TabsContent>
           <TabsContent value="model">{renderModelSettings()}</TabsContent>
           <TabsContent value="context">{renderContextSettings()}</TabsContent>
+          <TabsContent value="debug">{renderDebugSettings()}</TabsContent>
         </Tabs>
       )}
 
