@@ -2314,6 +2314,106 @@ export const apiKeyStorage = {
     
     return undefined;
   },
+
+  // 🆕 清除单个API密钥的使用次数
+  async clearApiKeyUsage(id: string): Promise<ApiKey | undefined> {
+    const db = await initDB();
+    const apiKey = await db.get('apiKeys', id);
+    
+    if (apiKey) {
+      apiKey.usageCount = 0;
+      await db.put('apiKeys', apiKey);
+      console.log(`API密钥 ${apiKey.name} 的使用次数已清除`);
+      return apiKey;
+    }
+    
+    return undefined;
+  },
+
+  // 🆕 清除所有API密钥的使用次数
+  async clearAllApiKeysUsage(): Promise<ApiKey[]> {
+    const db = await initDB();
+    const apiKeys = await db.getAll('apiKeys');
+    const updatedKeys: ApiKey[] = [];
+    
+    for (const apiKey of apiKeys) {
+      apiKey.usageCount = 0;
+      await db.put('apiKeys', apiKey);
+      updatedKeys.push(apiKey);
+    }
+    
+    console.log(`已清除所有 ${apiKeys.length} 个API密钥的使用次数`);
+    return updatedKeys;
+  },
+
+  // 🆕 批量清除指定API密钥的使用次数
+  async clearSelectedApiKeysUsage(ids: string[]): Promise<ApiKey[]> {
+    const db = await initDB();
+    const updatedKeys: ApiKey[] = [];
+    
+    for (const id of ids) {
+      const apiKey = await db.get('apiKeys', id);
+      if (apiKey) {
+        apiKey.usageCount = 0;
+        await db.put('apiKeys', apiKey);
+        updatedKeys.push(apiKey);
+      }
+    }
+    
+    console.log(`已清除 ${updatedKeys.length} 个API密钥的使用次数`);
+    return updatedKeys;
+  },
+
+  // 🆕 检查并执行每日自动重置
+  async checkAndPerformDailyReset(): Promise<boolean> {
+    const settings = await this.getApiKeySettings();
+    
+    // 如果没有启用自动重置，直接返回
+    if (!settings.autoResetUsageDaily) {
+      return false;
+    }
+    
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD格式
+    
+    // 如果今天已经重置过了，不再重置
+    if (settings.lastResetDate === today) {
+      return false;
+    }
+    
+    console.log('🔄 执行每日API密钥使用次数自动重置...');
+    
+    // 清除所有API密钥的使用次数
+    await this.clearAllApiKeysUsage();
+    
+    // 更新最后重置日期
+    await this.updateApiKeySettings({
+      lastResetDate: today
+    });
+    
+    console.log('✅ 每日API密钥使用次数自动重置完成');
+    return true;
+  },
+
+  // 🆕 获取距离下次自动重置的时间信息
+  getNextResetInfo(settings: ApiKeySettings): { nextResetDate: string; hoursUntilReset: number } | null {
+    if (!settings.autoResetUsageDaily) {
+      return null;
+    }
+    
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0); // 设置为明天的00:00:00
+    
+    const nextResetDate = tomorrow.toISOString().split('T')[0];
+    const hoursUntilReset = Math.ceil((tomorrow.getTime() - now.getTime()) / (1000 * 60 * 60));
+    
+    return {
+      nextResetDate,
+      hoursUntilReset
+    };
+  },
   
   // 获取API密钥设置
   async getApiKeySettings(): Promise<ApiKeySettings> {
@@ -2329,14 +2429,16 @@ export const apiKeyStorage = {
         activeKeyId: null,
         switchTiming: 'threshold',
         switchThreshold: 50,
-        rotationEnabled: false // 默认关闭轮询，需要手动启用
-      };
+        rotationEnabled: false, // 默认关闭轮询，需要手动启用
+        autoResetUsageDaily: false, // 默认关闭每日自动重置
+        lastResetDate: undefined
+      } as ApiKeySettings;
       await db.put('apiKeySettings', settings);
       return settings;
     }
     
-    // 兼容旧版本：如果存在autoSwitch字段或缺少rotationEnabled字段，转换为新格式
-    if ('autoSwitch' in settings || !('rotationEnabled' in settings)) {
+    // 兼容旧版本：如果存在autoSwitch字段或缺少新字段，转换为新格式
+    if ('autoSwitch' in settings || !('rotationEnabled' in settings) || !('autoResetUsageDaily' in settings)) {
       const oldSettings = settings as any;
       settings = {
         id: 'settings',
@@ -2344,8 +2446,10 @@ export const apiKeyStorage = {
         activeKeyId: settings.activeKeyId,
         switchTiming: oldSettings.autoSwitch ? 'threshold' : (settings.switchTiming || 'threshold'),
         switchThreshold: settings.switchThreshold || 50,
-        rotationEnabled: oldSettings.autoSwitch || false
-      };
+        rotationEnabled: oldSettings.autoSwitch || settings.rotationEnabled || false,
+        autoResetUsageDaily: oldSettings.autoResetUsageDaily || false,
+        lastResetDate: oldSettings.lastResetDate
+      } as ApiKeySettings;
       await db.put('apiKeySettings', settings);
     }
     

@@ -2676,6 +2676,12 @@ interface ApiKeyState {
   setActiveApiKey: (id: string) => Promise<void>;
   incrementApiKeyUsage: (id: string) => Promise<void>;
   updateApiKeySettings: (settings: Partial<ApiKeySettings>) => Promise<void>;
+  
+  // 🆕 使用次数清除方法
+  clearApiKeyUsage: (id: string) => Promise<void>;
+  clearAllApiKeysUsage: () => Promise<void>;
+  clearSelectedApiKeysUsage: (ids: string[]) => Promise<void>;
+  checkAndPerformDailyReset: () => Promise<boolean>;
 }
 
 export const useApiKeyStore = create<ApiKeyState>()(
@@ -2683,11 +2689,14 @@ export const useApiKeyStore = create<ApiKeyState>()(
     (set, get) => ({
       apiKeys: [],
       settings: {
+        id: 'settings',
         rotationStrategy: 'sequential',
         activeKeyId: null,
         switchTiming: 'threshold',
         switchThreshold: 100,
-        rotationEnabled: false
+        rotationEnabled: false,
+        autoResetUsageDaily: false,
+        lastResetDate: undefined
       },
       isLoading: false,
       error: null,
@@ -2863,6 +2872,105 @@ export const useApiKeyStore = create<ApiKeyState>()(
             error: "更新API密钥设置失败", 
             isLoading: false 
           });
+        }
+      },
+
+      // 🆕 清除单个API密钥的使用次数
+      clearApiKeyUsage: async (id: string) => {
+        try {
+          const updatedKey = await apiKeyStorage.clearApiKeyUsage(id);
+          
+          if (updatedKey) {
+            // 更新状态
+            set(state => ({
+              apiKeys: state.apiKeys.map(key => 
+                key.id === id ? updatedKey : key
+              )
+            }));
+          }
+          
+        } catch (error) {
+          console.error("清除API密钥使用次数失败:", error);
+          set({ error: "清除API密钥使用次数失败" });
+        }
+      },
+
+      // 🆕 清除所有API密钥的使用次数
+      clearAllApiKeysUsage: async () => {
+        try {
+          set({ isLoading: true });
+          
+          const updatedKeys = await apiKeyStorage.clearAllApiKeysUsage();
+          
+          // 创建映射以便快速查找
+          const updatedKeysMap = new Map(updatedKeys.map(key => [key.id, key]));
+          
+          // 更新状态
+          set(state => ({
+            apiKeys: state.apiKeys.map(key => 
+              updatedKeysMap.get(key.id) || key
+            ),
+            isLoading: false,
+            error: null
+          }));
+          
+        } catch (error) {
+          console.error("清除所有API密钥使用次数失败:", error);
+          set({ 
+            error: "清除所有API密钥使用次数失败", 
+            isLoading: false 
+          });
+        }
+      },
+
+      // 🆕 清除选中API密钥的使用次数
+      clearSelectedApiKeysUsage: async (ids: string[]) => {
+        try {
+          set({ isLoading: true });
+          
+          const updatedKeys = await apiKeyStorage.clearSelectedApiKeysUsage(ids);
+          
+          // 创建映射以便快速查找
+          const updatedKeysMap = new Map(updatedKeys.map(key => [key.id, key]));
+          
+          // 更新状态
+          set(state => ({
+            apiKeys: state.apiKeys.map(key => 
+              updatedKeysMap.get(key.id) || key
+            ),
+            isLoading: false,
+            error: null
+          }));
+          
+        } catch (error) {
+          console.error("清除选中API密钥使用次数失败:", error);
+          set({ 
+            error: "清除选中API密钥使用次数失败", 
+            isLoading: false 
+          });
+        }
+      },
+
+      // 🆕 检查并执行每日自动重置
+      checkAndPerformDailyReset: async () => {
+        try {
+          const wasReset = await apiKeyStorage.checkAndPerformDailyReset();
+          
+          if (wasReset) {
+            // 如果执行了重置，重新加载数据
+            const [apiKeys, settings] = await Promise.all([
+              apiKeyStorage.listApiKeys(),
+              apiKeyStorage.getApiKeySettings()
+            ]);
+            
+            set({ apiKeys, settings });
+          }
+          
+          return wasReset;
+          
+        } catch (error) {
+          console.error("检查每日自动重置失败:", error);
+          return false;
         }
       }
     }),

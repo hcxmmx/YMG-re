@@ -325,9 +325,13 @@ export interface ApiKey {
 }
 
 export interface ApiKeySettings {
+  id: string;                                            // 设置ID（固定为'settings'）
   rotationStrategy: 'sequential' | 'random' | 'least-used'; // 轮询策略
   activeKeyId: string | null;                             // 当前活动密钥ID（手动设置）
   switchTiming: 'every-call' | 'threshold';               // 切换时机：每次调用 | 达到阈值
   switchThreshold: number;                               // 切换阈值（使用次数）
   rotationEnabled: boolean;                              // 是否启用轮询系统
+  // 🆕 使用次数重置配置
+  autoResetUsageDaily?: boolean;                         // 是否每天自动重置使用次数（可选，向后兼容）
+  lastResetDate?: string;                               // 最后一次重置日期 (YYYY-MM-DD格式)
 } 

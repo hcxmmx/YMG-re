@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
-import { AlertCircle, Check, Key, Plus, RefreshCw, Trash, ShieldAlert, Upload, Download, Trash2, Power, PowerOff } from "lucide-react";
+import { AlertCircle, Check, Key, Plus, RefreshCw, Trash, ShieldAlert, Upload, Download, Trash2, Power, PowerOff, RotateCcw, Clock } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -40,7 +40,11 @@ export default function ApiKeysPage() {
     saveApiKey,
     deleteApiKey,
     setActiveApiKey,
-    updateApiKeySettings
+    updateApiKeySettings,
+    clearApiKeyUsage,
+    clearAllApiKeysUsage,
+    clearSelectedApiKeysUsage,
+    checkAndPerformDailyReset
   } = useApiKeyStore();
   
   // 组件状态
@@ -67,13 +71,20 @@ export default function ApiKeysPage() {
     rotationStrategy: "sequential" as "sequential" | "random" | "least-used",
     switchTiming: "threshold" as "every-call" | "threshold",
     switchThreshold: 50,
-    rotationEnabled: false
+    rotationEnabled: false,
+    autoResetUsageDaily: false
   });
   
-  // 加载API密钥
+  // 加载API密钥并检查每日自动重置
   useEffect(() => {
-    loadApiKeys();
-  }, [loadApiKeys]);
+    const initializeData = async () => {
+      await loadApiKeys();
+      // 🆕 检查并执行每日自动重置
+      await checkAndPerformDailyReset();
+    };
+    
+    initializeData();
+  }, [loadApiKeys, checkAndPerformDailyReset]);
   
   // 同步远程设置到本地
   useEffect(() => {
@@ -82,7 +93,8 @@ export default function ApiKeysPage() {
         rotationStrategy: settings.rotationStrategy,
         switchTiming: settings.switchTiming,
         switchThreshold: settings.switchThreshold,
-        rotationEnabled: settings.rotationEnabled
+        rotationEnabled: settings.rotationEnabled,
+        autoResetUsageDaily: settings.autoResetUsageDaily || false
       });
     }
   }, [settings]);
@@ -92,6 +104,32 @@ export default function ApiKeysPage() {
     await updateApiKeySettings(localSettings);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
+  };
+
+  // 🆕 处理清除单个API密钥使用次数
+  const handleClearSingleUsage = async (keyId: string) => {
+    if (window.confirm('确定要清除该API密钥的使用次数吗？')) {
+      await clearApiKeyUsage(keyId);
+    }
+  };
+
+  // 🆕 处理清除所有API密钥使用次数
+  const handleClearAllUsage = async () => {
+    if (window.confirm('确定要清除所有API密钥的使用次数吗？这将重置所有密钥的使用统计。')) {
+      await clearAllApiKeysUsage();
+    }
+  };
+
+  // 🆕 处理清除选中API密钥使用次数
+  const handleClearSelectedUsage = async () => {
+    if (selectedKeys.size === 0) {
+      alert('请先选择要清除使用次数的API密钥');
+      return;
+    }
+    
+    if (window.confirm(`确定要清除选中的 ${selectedKeys.size} 个API密钥的使用次数吗？`)) {
+      await clearSelectedApiKeysUsage(Array.from(selectedKeys));
+    }
   };
   
   // 处理添加API密钥
@@ -358,6 +396,13 @@ export default function ApiKeysPage() {
                           <PowerOff className="mr-1 h-3 w-3" /> 禁用
                         </Button>
                         <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleClearSelectedUsage}
+                        >
+                          <RotateCcw className="mr-1 h-3 w-3" /> 清零
+                        </Button>
+                        <Button
                           variant="destructive"
                           size="sm"
                           onClick={() => setIsBatchDeleteDialogOpen(true)}
@@ -475,6 +520,22 @@ export default function ApiKeysPage() {
                                 </Tooltip>
                               )}
                               
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-orange-500"
+                                    onClick={() => handleClearSingleUsage(key.id)}
+                                  >
+                                    <RotateCcw className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  清除使用次数
+                                </TooltipContent>
+                              </Tooltip>
+
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Button
@@ -640,6 +701,58 @@ export default function ApiKeysPage() {
                     </p>
                   </div>
                 </RadioGroup>
+              </div>
+
+              {/* 🆕 使用次数管理 */}
+              <div className="border-t pt-6">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-base font-medium">使用次数管理</Label>
+                  </div>
+                  
+                  {/* 自动重置开关 */}
+                  <div className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex-1">
+                      <Label className="font-medium flex items-center">
+                        <Clock className="h-4 w-4 mr-2 text-blue-500" />
+                        每日自动重置
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        每天午夜自动清除所有API密钥的使用次数统计
+                      </p>
+                      {settings?.autoResetUsageDaily && settings.lastResetDate && (
+                        <p className="text-xs text-green-600 mt-1">
+                          上次重置: {settings.lastResetDate}
+                        </p>
+                      )}
+                    </div>
+                    <Switch
+                      checked={localSettings.autoResetUsageDaily}
+                      onCheckedChange={(checked) => 
+                        setLocalSettings(prev => ({ ...prev, autoResetUsageDaily: checked }))
+                      }
+                    />
+                  </div>
+
+                  {/* 手动重置按钮 */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">手动重置选项</Label>
+                    <div className="grid grid-cols-1 gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleClearAllUsage}
+                        className="justify-start"
+                      >
+                        <RotateCcw className="h-4 w-4 mr-2" />
+                        清除所有使用次数
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      立即清除所有API密钥的使用次数统计，重新开始计数
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* 当前配置预览 */}

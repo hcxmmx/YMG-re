@@ -324,6 +324,22 @@ export default function ChatPage() {
     loadScripts();
   }, [loadScripts]);
 
+  // 🆕 应用启动时检查每日API密钥使用次数自动重置
+  useEffect(() => {
+    const checkDailyReset = async () => {
+      try {
+        const wasReset = await apiKeyStorage.checkAndPerformDailyReset();
+        if (wasReset) {
+          console.log('✅ 每日API密钥使用次数自动重置已执行');
+        }
+      } catch (error) {
+        console.error('检查每日自动重置时出错:', error);
+      }
+    };
+
+    checkDailyReset();
+  }, []); // 只在应用启动时执行一次
+
   // 处理URL参数，加载角色和对话，但只在首次加载时处理
   // 移到SearchParamsHandler组件中
   
