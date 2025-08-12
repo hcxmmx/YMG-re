@@ -101,6 +101,7 @@ export default function ChatPage() {
   // 滚动控制相关状态
   const [isUserNearBottom, setIsUserNearBottom] = useState(true);
   const [isUserManuallyScrolling, setIsUserManuallyScrolling] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true); // 🆕 追踪是否为初始加载
   const lastScrollTimeRef = useRef<number>(0);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
@@ -181,6 +182,21 @@ export default function ChatPage() {
       });
     }
   }, [isUserNearBottom, isUserManuallyScrolling]);
+
+  // 🆕 强制滚动到底部（用于初始加载）
+  const forceScrollToBottomImmediate = useCallback(() => {
+    if (messagesContainerRef.current) {
+      const container = messagesContainerRef.current;
+      // 立即滚动到底部，不使用smooth动画
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: "instant"
+      });
+      // 确保状态正确
+      setIsUserNearBottom(true);
+      setIsUserManuallyScrolling(false);
+    }
+  }, []);
   
   // 强制滚动到底部（用于用户主动发送消息时）
   const forceScrollToBottom = useCallback(() => {
@@ -211,6 +227,11 @@ export default function ChatPage() {
       // 标记用户正在手动滚动
       setIsUserManuallyScrolling(true);
       
+      // 🆕 用户手动滚动时，标记初始加载已完成
+      if (isInitialLoad) {
+        setIsInitialLoad(false);
+      }
+      
       // 清除之前的定时器
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
@@ -240,7 +261,7 @@ export default function ChatPage() {
         clearTimeout(scrollTimeoutRef.current);
       }
     };
-  }, [checkIfUserNearBottom]);
+  }, [checkIfUserNearBottom, isInitialLoad]); // 🆕 添加isInitialLoad依赖
   
   // 初始化发送消息管理器
   const initializeSendMessageManager = useCallback(() => {
@@ -345,15 +366,23 @@ export default function ChatPage() {
     }
   }, [currentConversationId, loadBranches]);
 
-  // 当消息更新时智能滚动到底部（只在用户接近底部时滚动）
+  // 当消息更新时智能滚动到底部（初始加载时强制滚动，后续智能滚动）
   useEffect(() => {
     // 使用 setTimeout 让滚动在 DOM 更新后执行
     const timer = setTimeout(() => {
-      smartScrollToBottom();
-    }, 10);
+      if (isInitialLoad && currentMessages.length > 0) {
+        // 🆕 初始加载完成且有消息时，强制滚动到底部
+        console.log('初始加载完成，强制滚动到底部');
+        forceScrollToBottomImmediate();
+        setIsInitialLoad(false); // 标记初始加载完成
+      } else {
+        // 后续消息更新时使用智能滚动
+        smartScrollToBottom();
+      }
+    }, 50); // 增加延迟确保DOM完全渲染
     
     return () => clearTimeout(timer);
-  }, [currentMessages, smartScrollToBottom]);
+  }, [currentMessages, smartScrollToBottom, forceScrollToBottomImmediate, isInitialLoad]);
 
   // 监听导航栏状态变化，重新检测用户位置
   useEffect(() => {
@@ -371,6 +400,19 @@ export default function ChatPage() {
       console.error("加载玩家数据失败:", error)
     );
   }, [loadPlayers]);
+
+  // 🆕 页面完全挂载后的保险滚动（处理从其他页面返回的情况）
+  useEffect(() => {
+    // 页面挂载后延迟执行，确保所有组件都已渲染
+    const timer = setTimeout(() => {
+      if (currentMessages.length > 0) {
+        console.log('页面挂载完成，执行保险滚动');
+        forceScrollToBottomImmediate();
+      }
+    }, 200); // 较长延迟，确保完全渲染
+    
+    return () => clearTimeout(timer);
+  }, []); // 只在首次挂载时执行
   
   // 使用SearchParams的处理组件
   function SearchParamsHandler() {
@@ -679,6 +721,11 @@ export default function ChatPage() {
       };
 
       await addMessage(userMessage);
+
+      // 🆕 用户发送消息后立即滚动到底部
+      setTimeout(() => {
+        forceScrollToBottom();
+      }, 10);
 
       // 🆕 使用高级API - 自动状态管理
       const response = await AdvancedChatRequests.sendMessage(sendManager, content, {
