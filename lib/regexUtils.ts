@@ -285,49 +285,111 @@ export function exportRegexScript(script: RegexScript): string {
  * 清理文本中的技术标签，用于用户界面显示
  * 移除AI专用的技术标签，让用户界面保持干净
  * @param text 要清理的文本
+ * @param customTags 自定义要清理的标签列表（可选）
+ * @param mode 清理模式：'conservative'=仅常见标签, 'aggressive'=所有单词标签, 'whitelist'=仅自定义标签
  * @returns 清理后的文本
  */
-export function cleanTechnicalTags(text: string): string {
+export function cleanTechnicalTags(text: string, customTags?: string[], mode: 'conservative' | 'aggressive' | 'whitelist' = 'aggressive'): string {
   if (!text) return text;
   
   // 常见的AI技术标签列表
-  const technicalTags = [
-    'user_input',
-    'ai_output', 
-    'system',
-    'thinking',
-    'reasoning',
-    'context',
-    'instruction',
-    'prompt',
-    'response',
-    'assistant',
-    'human',
-    'bot'
+  const commonTechnicalTags = [
+    'user_input', 'ai_output', 'system', 'thinking', 'reasoning', 'context',
+    'instruction', 'prompt', 'response', 'assistant', 'human', 'bot',
+    'userread', 'airead', 'scenario', 'setting', 'character', 'narrator',
+    'ooc', 'meta', 'action', 'dialogue', 'description', 'internal'
   ];
   
   let cleanedText = text;
   
-  // 移除这些技术标签，但保留内容
-  technicalTags.forEach(tag => {
-    // 移除开标签和闭标签，保留中间内容
-    const regex = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'gi');
-    cleanedText = cleanedText.replace(regex, '$1');
+  if (mode === 'whitelist' && customTags) {
+    // 仅清理自定义标签
+    customTags.forEach(tag => {
+      cleanedText = removeTagAndContent(cleanedText, tag);
+    });
+  } else if (mode === 'conservative') {
+    // 仅清理常见技术标签
+    commonTechnicalTags.forEach(tag => {
+      cleanedText = removeTagAndContent(cleanedText, tag);
+    });
     
-    // 移除单独的开标签
-    const openTagRegex = new RegExp(`<${tag}[^>]*>`, 'gi');
-    cleanedText = cleanedText.replace(openTagRegex, '');
+    // 加上自定义标签（如果提供）
+    if (customTags) {
+      customTags.forEach(tag => {
+        cleanedText = removeTagAndContent(cleanedText, tag);
+      });
+    }
+  } else if (mode === 'aggressive') {
+    // 智能清理：先清理常见标签
+    commonTechnicalTags.forEach(tag => {
+      cleanedText = removeTagAndContent(cleanedText, tag);
+    });
     
-    // 移除单独的闭标签
-    const closeTagRegex = new RegExp(`<\\/${tag}>`, 'gi');
-    cleanedText = cleanedText.replace(closeTagRegex, '');
-  });
+    // 加上自定义标签
+    if (customTags) {
+      customTags.forEach(tag => {
+        cleanedText = removeTagAndContent(cleanedText, tag);
+      });
+    }
+    
+    // 通用模式：清理所有看起来像技术标签的单词标签
+    // 匹配 <单词> 或 <单词_单词> 或 <单词数字> 等模式，但保留常见HTML标签
+    const htmlTags = ['b', 'i', 'u', 'em', 'strong', 'span', 'div', 'p', 'br', 'hr', 'img', 'a', 'link'];
+    
+    // 找到所有标签并过滤
+    cleanedText = cleanedText.replace(/<(\/?[a-zA-Z][a-zA-Z0-9_-]*)[^>]*>/g, (match, tagName) => {
+      const cleanTagName = tagName.replace('/', '').toLowerCase();
+      
+      // 保留常见HTML标签
+      if (htmlTags.includes(cleanTagName)) {
+        return match;
+      }
+      
+      // 移除其他看起来像技术标签的
+      return '';
+    });
+    
+    // 清理成对的标签（完整的开闭标签对）
+    cleanedText = cleanedText.replace(/<([a-zA-Z][a-zA-Z0-9_-]*)[^>]*>([\s\S]*?)<\/\1>/g, (match, tagName, content) => {
+      const cleanTagName = tagName.toLowerCase();
+      
+      // 保留常见HTML标签的内容
+      if (htmlTags.includes(cleanTagName)) {
+        return match;
+      }
+      
+      // 其他标签只保留内容
+      return content;
+    });
+  }
   
-  // 清理多余的空白行
+  // 清理多余的空白行和首尾空白
   cleanedText = cleanedText.replace(/\n\s*\n\s*\n/g, '\n\n');
   cleanedText = cleanedText.trim();
   
   return cleanedText;
+}
+
+/**
+ * 移除特定标签但保留内容
+ * @param text 文本
+ * @param tag 标签名
+ * @returns 处理后的文本
+ */
+function removeTagAndContent(text: string, tag: string): string {
+  // 移除成对标签，保留内容
+  const regex = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'gi');
+  text = text.replace(regex, '$1');
+  
+  // 移除单独的开标签
+  const openTagRegex = new RegExp(`<${tag}[^>]*>`, 'gi');
+  text = text.replace(openTagRegex, '');
+  
+  // 移除单独的闭标签
+  const closeTagRegex = new RegExp(`<\\/${tag}>`, 'gi');
+  text = text.replace(closeTagRegex, '');
+  
+  return text;
 }
 
 /**
