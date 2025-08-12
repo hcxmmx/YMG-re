@@ -282,6 +282,55 @@ export function exportRegexScript(script: RegexScript): string {
 }
 
 /**
+ * 清理文本中的技术标签，用于用户界面显示
+ * 移除AI专用的技术标签，让用户界面保持干净
+ * @param text 要清理的文本
+ * @returns 清理后的文本
+ */
+export function cleanTechnicalTags(text: string): string {
+  if (!text) return text;
+  
+  // 常见的AI技术标签列表
+  const technicalTags = [
+    'user_input',
+    'ai_output', 
+    'system',
+    'thinking',
+    'reasoning',
+    'context',
+    'instruction',
+    'prompt',
+    'response',
+    'assistant',
+    'human',
+    'bot'
+  ];
+  
+  let cleanedText = text;
+  
+  // 移除这些技术标签，但保留内容
+  technicalTags.forEach(tag => {
+    // 移除开标签和闭标签，保留中间内容
+    const regex = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'gi');
+    cleanedText = cleanedText.replace(regex, '$1');
+    
+    // 移除单独的开标签
+    const openTagRegex = new RegExp(`<${tag}[^>]*>`, 'gi');
+    cleanedText = cleanedText.replace(openTagRegex, '');
+    
+    // 移除单独的闭标签
+    const closeTagRegex = new RegExp(`<\\/${tag}>`, 'gi');
+    cleanedText = cleanedText.replace(closeTagRegex, '');
+  });
+  
+  // 清理多余的空白行
+  cleanedText = cleanedText.replace(/\n\s*\n\s*\n/g, '\n\n');
+  cleanedText = cleanedText.trim();
+  
+  return cleanedText;
+}
+
+/**
  * 测试正则表达式脚本
  * @param script 要测试的脚本
  * @param inputText 输入文本

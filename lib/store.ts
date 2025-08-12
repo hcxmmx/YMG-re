@@ -2634,7 +2634,7 @@ export const useRegexStore = create<RegexState>()(
         const { scripts } = get();
         
         // 导入处理函数和存储
-        const { processWithRegex } = require('./regexUtils');
+        const { processWithRegex, cleanTechnicalTags } = require('./regexUtils');
         const { regexStorage, regexFolderStorage } = require('./storage');
         
         try {
@@ -2661,11 +2661,22 @@ export const useRegexStore = create<RegexState>()(
           // 合并全局脚本和角色特定脚本
           const allScripts = [...scripts, ...characterScripts];
           
-          // 处理文本，只处理markdownOnly的脚本
-          return processWithRegex(text, allScripts, playerName, characterName, depth, type, characterId, disabledFolderIds, true, false);
+          // 先处理文本，只处理markdownOnly的脚本
+          let processedText = processWithRegex(text, allScripts, playerName, characterName, depth, type, characterId, disabledFolderIds, true, false);
+          
+          // 然后清理技术标签，确保用户界面干净
+          processedText = cleanTechnicalTags(processedText);
+          
+          return processedText;
         } catch (error) {
           console.error('应用正则表达式处理（显示时）失败:', error);
-          return text; // 发生错误时返回原始文本
+          // 如果出错，至少尝试清理技术标签
+          try {
+            const { cleanTechnicalTags } = require('./regexUtils');
+            return cleanTechnicalTags(text);
+          } catch {
+            return text; // 如果清理也失败，返回原始文本
+          }
         }
       },
       
