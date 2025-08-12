@@ -13,7 +13,7 @@ export interface VersionInfo {
 export const CHANGELOG: VersionInfo[] = [
   {
     version: "1.2.0",
-    releaseDate: "2025-12-19",
+    releaseDate: "2025-08-13",
     title: "正则表达式系统全面对标SillyTavern",
     features: [
       "正则表达式功能完全对标SillyTavern，支持精细宏替换控制",
@@ -35,7 +35,7 @@ export const CHANGELOG: VersionInfo[] = [
   },
   {
     version: "1.1.0",
-    releaseDate: "2024-01-15", 
+    releaseDate: "2025-08-13", 
     title: "重大功能升级",
     features: [
       "预设系统全面重构，支持SillyTavern深度参数",
