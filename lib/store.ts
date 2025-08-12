@@ -2222,6 +2222,23 @@ async function getDynamicContent(placeholderType: string): Promise<string | null
       // 获取角色描述
       return chatStore.currentCharacter?.description || null;
       
+    case 'charPersonality':
+      // 获取角色性格
+      return chatStore.currentCharacter?.personality || null;
+      
+    case 'scenario':
+      // 获取场景描述
+      return chatStore.currentCharacter?.scenario || null;
+      
+    case 'dialogueExamples':
+      // 获取对话示例
+      const mesExample = chatStore.currentCharacter?.mes_example;
+      if (mesExample) {
+        // 格式化对话示例（如果需要）
+        return `对话示例：\n${mesExample}`;
+      }
+      return null;
+      
     case 'personaDescription':
       // 获取玩家角色信息
       const currentPlayer = playerStore.getCurrentPlayer();

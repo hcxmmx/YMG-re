@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { getPlaceholderInfo } from "@/lib/sillytavern-placeholders";
 
 interface PresetDetailPageProps {
   params: {
@@ -37,26 +38,31 @@ export default function PresetDetailPage({ params }: PresetDetailPageProps) {
       if (foundPreset) {
         setPreset(foundPreset);
         
-        // 构建系统提示词预览
+        // 🆕 构建系统提示词预览 (增强版)
         const systemPromptParts: string[] = [];
         
         for (const promptItem of foundPreset.prompts) {
           if (!promptItem.enabled) continue;
           
-          // 忽略未实现的占位条目
-          if (promptItem.isPlaceholder && !promptItem.implemented) continue;
-          
           // 非占位条目，直接添加内容
           if (!promptItem.isPlaceholder) {
             systemPromptParts.push(promptItem.content);
           } else {
-            // 占位条目，添加提示
-            systemPromptParts.push(`[这里将在运行时替换为${
-              promptItem.placeholderType === 'chatHistory' ? '对话历史' : 
-              promptItem.placeholderType === 'charDescription' ? '角色描述' :
-              promptItem.placeholderType === 'personaDescription' ? '玩家描述' : 
-              '动态内容'
-            }]`);
+            // 🎯 占位条目 - 使用标准映射获取详细信息
+            const placeholderInfo = getPlaceholderInfo(promptItem.identifier);
+            
+            if (placeholderInfo) {
+              if (placeholderInfo.implemented) {
+                // ✅ 已实现的占位符
+                systemPromptParts.push(`[这里将在运行时替换为 ${placeholderInfo.description}]`);
+              } else {
+                // ⏳ 未实现的占位符 - 显示需要的模块
+                systemPromptParts.push(`[待实现: ${placeholderInfo.description} - 需要${placeholderInfo.moduleSource || '相关模块'}]`);
+              }
+            } else {
+              // ❓ 未知占位符类型
+              systemPromptParts.push(`[未知占位符: ${promptItem.identifier}]`);
+            }
           }
         }
         
@@ -210,10 +216,37 @@ export default function PresetDetailPage({ params }: PresetDetailPageProps) {
                                     {prompt.name}
                                   </div>
                                   {prompt.isPlaceholder && (
-                                    <Badge variant="outline" className="mt-1 text-xs bg-primary/10">
-                                      {prompt.placeholderType}
-                                      {!prompt.implemented && " ⚠️"}
-                                    </Badge>
+                                    <div className="mt-1">
+                                      {(() => {
+                                        const placeholderInfo = getPlaceholderInfo(prompt.identifier);
+                                        if (placeholderInfo) {
+                                          if (placeholderInfo.implemented) {
+                                            return (
+                                              <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                                                ✅ {placeholderInfo.name}
+                                              </Badge>
+                                            );
+                                          } else {
+                                            return (
+                                              <div className="space-y-1">
+                                                <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-200">
+                                                  ⏳ {placeholderInfo.name}
+                                                </Badge>
+                                                <p className="text-xs text-muted-foreground">
+                                                  需要: {placeholderInfo.moduleSource || '相关模块'}
+                                                </p>
+                                              </div>
+                                            );
+                                          }
+                                        } else {
+                                          return (
+                                            <Badge variant="outline" className="text-xs bg-gray-50 text-gray-700 border-gray-200">
+                                              ❓ 未知占位符: {prompt.identifier}
+                                            </Badge>
+                                          );
+                                        }
+                                      })()}
+                                    </div>
                                   )}
                                 </div>
                               </div>

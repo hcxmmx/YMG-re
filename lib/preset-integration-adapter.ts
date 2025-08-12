@@ -11,6 +11,7 @@
 import { PromptPreset, PromptPresetItem } from './types';
 import { STPreset, STPromptItem, STPresetParser, debugSTPreset } from './core-v2/preset-system-v2';
 import { generateId } from './utils';
+import { getPlaceholderInfo, isStandardPlaceholder } from './sillytavern-placeholders';
 
 // ===========================================
 // 格式转换器
@@ -22,27 +23,35 @@ export class PresetFormatConverter {
    * 🔄 V3格式转换为项目格式
    */
   static convertFromV3ToProject(stPreset: STPreset): PromptPreset {
-    const prompts: PromptPresetItem[] = stPreset.prompts.map(stItem => ({
-      // 基础字段
-      identifier: stItem.identifier,
-      name: stItem.name,
-      content: stItem.content,
-      enabled: stItem.enabled,
+    const prompts: PromptPresetItem[] = stPreset.prompts.map(stItem => {
+      // 🎯 使用标准占位符映射确定实现状态
+      const placeholderInfo = getPlaceholderInfo(stItem.identifier);
+      const isMarkerItem = stItem.marker || false;
       
-      // 占位符字段
-      isPlaceholder: stItem.marker || false,
-      placeholderType: stItem.marker ? stItem.identifier : undefined,
-      implemented: !stItem.marker, // 非标记条目默认为已实现
-      
-      // 🆕 V3扩展字段 (完整映射)
-      injection_depth: stItem.injection_depth,
-      injection_order: stItem.injection_order,
-      injection_position: stItem.injection_position,
-      role: stItem.role,
-      forbid_overrides: stItem.forbid_overrides,
-      marker: stItem.marker,
-      system_prompt: stItem.system_prompt
-    }));
+      return {
+        // 基础字段
+        identifier: stItem.identifier,
+        name: stItem.name,
+        content: stItem.content,
+        enabled: stItem.enabled,
+        
+        // 🆕 智能占位符字段处理
+        isPlaceholder: isMarkerItem,
+        placeholderType: isMarkerItem ? stItem.identifier : undefined,
+        implemented: isMarkerItem 
+          ? (placeholderInfo?.implemented ?? false)  // 使用映射表的实现状态
+          : true, // 非占位符条目视为已实现
+        
+        // 🆕 V3扩展字段 (完整映射)
+        injection_depth: stItem.injection_depth,
+        injection_order: stItem.injection_order,
+        injection_position: stItem.injection_position,
+        role: stItem.role,
+        forbid_overrides: stItem.forbid_overrides,
+        marker: stItem.marker,
+        system_prompt: stItem.system_prompt
+      };
+    });
 
     return {
       id: generateId(),
@@ -161,13 +170,20 @@ export class PresetIntegrationAdapter {
 
 
   /**
-   * 🔍 预设兼容性检查
+   * 🔍 预设兼容性检查 (增强版)
    */
   checkCompatibility(json: any): {
     isV3Compatible: boolean;
     hasV3Fields: boolean;
     missingFields: string[];
     recommendations: string[];
+    placeholderAnalysis: {
+      total: number;
+      implemented: number;
+      unimplemented: number;
+      standardPlaceholders: string[];
+      unknownPlaceholders: string[];
+    };
   } {
     const missingFields: string[] = [];
     const recommendations: string[] = [];
@@ -187,16 +203,67 @@ export class PresetIntegrationAdapter {
       );
     }
 
+    // 🆕 占位符分析
+    const placeholderAnalysis = this.analyzePlaceholders(json);
+
     // 生成建议
     if (!hasV3Fields) {
       recommendations.push('此预设可能缺少深度注入功能，建议使用最新的SillyTavern预设');
+    }
+    
+    if (placeholderAnalysis.unimplemented > 0) {
+      recommendations.push(`发现${placeholderAnalysis.unimplemented}个未实现的占位符，部分功能可能不完整`);
+    }
+    
+    if (placeholderAnalysis.unknownPlaceholders.length > 0) {
+      recommendations.push(`发现${placeholderAnalysis.unknownPlaceholders.length}个未知占位符类型`);
     }
 
     return {
       isV3Compatible: missingFields.length === 0,
       hasV3Fields,
       missingFields,
-      recommendations
+      recommendations,
+      placeholderAnalysis
+    };
+  }
+
+  /**
+   * 🔍 分析预设中的占位符使用情况
+   */
+  private analyzePlaceholders(json: any) {
+    const standardPlaceholders: string[] = [];
+    const unknownPlaceholders: string[] = [];
+    let implementedCount = 0;
+    let unimplementedCount = 0;
+
+    if (json.prompts && Array.isArray(json.prompts)) {
+      json.prompts.forEach((prompt: any) => {
+        if (prompt.marker === true) {
+          const identifier = prompt.identifier;
+          const placeholderInfo = getPlaceholderInfo(identifier);
+          
+          if (placeholderInfo) {
+            standardPlaceholders.push(identifier);
+            if (placeholderInfo.implemented) {
+              implementedCount++;
+            } else {
+              unimplementedCount++;
+            }
+          } else {
+            unknownPlaceholders.push(identifier);
+            unimplementedCount++; // 未知的视为未实现
+          }
+        }
+      });
+    }
+
+    return {
+      total: standardPlaceholders.length + unknownPlaceholders.length,
+      implemented: implementedCount,
+      unimplemented: unimplementedCount,
+      standardPlaceholders,
+      unknownPlaceholders
     };
   }
 }

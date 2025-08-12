@@ -184,7 +184,17 @@ export interface Character {
   updatedAt?: number;
   worldBookIds?: string[]; // 关联的世界书ID列表
   regexScriptIds?: string[]; // 关联的正则表达式脚本ID列表
-  // 注意: 系统提示词(systemPrompt)将在未来的预设模块中处理，而不是直接存储在角色信息中
+  
+  // 🆕 SillyTavern兼容字段（用于占位符支持）
+  personality?: string;   // 角色性格描述
+  scenario?: string;      // 场景描述
+  mes_example?: string;   // 对话示例（SillyTavern格式）
+  system_prompt?: string; // 角色专用系统提示词
+  post_history_instructions?: string; // 历史后指令
+  creator_notes?: string; // 创建者备注
+  character_version?: string; // 角色版本
+  
+  // 注意: 通用系统提示词将在预设模块中处理
 }
 
 export interface CharacterImportResult {
