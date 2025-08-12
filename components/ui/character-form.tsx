@@ -12,6 +12,8 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useWorldBookStore } from "@/lib/store";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Settings, ChevronDown, ChevronRight } from "lucide-react";
 
 interface CharacterFormProps {
   initialCharacter?: Character;
@@ -42,6 +44,9 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
   const [availableWorldBooks, setAvailableWorldBooks] = useState<WorldBook[]>([]);
   const [selectedWorldBookIds, setSelectedWorldBookIds] = useState<string[]>([]);
   const [isLoadingWorldBooks, setIsLoadingWorldBooks] = useState(false);
+
+  // 🆕 高级设置折叠状态
+  const [showAdvancedFields, setShowAdvancedFields] = useState(false);
   
   // 加载世界书数据
   useEffect(() => {
@@ -352,6 +357,92 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
               <p className="text-sm text-blue-500">
                 已选择 {selectedWorldBookIds.length} 个世界书
               </p>
+            )}
+          </div>
+
+          {/* 🆕 SillyTavern兼容字段 - 默认折叠 */}
+          <div className="border-t pt-6">
+            <div 
+              className="flex items-center gap-2 cursor-pointer mb-4" 
+              onClick={() => setShowAdvancedFields(!showAdvancedFields)}
+            >
+              {showAdvancedFields ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              <Settings className="h-4 w-4" />
+              <Label className="cursor-pointer font-medium">SillyTavern兼容字段</Label>
+              <Badge variant="outline" className="text-xs">
+                {showAdvancedFields ? '收起' : '展开'}
+              </Badge>
+              <Badge variant="secondary" className="text-xs">
+                较少使用
+              </Badge>
+            </div>
+            
+            {showAdvancedFields && (
+              <div className="space-y-4 bg-muted/20 p-4 rounded-md">
+                <p className="text-sm text-muted-foreground mb-4">
+                  这些字段主要用于SillyTavern预设的动态占位符功能。普通用户通常不需要填写。
+                </p>
+                
+                {/* 角色性格 */}
+                <div className="space-y-2">
+                  <Label htmlFor="personality">
+                    角色性格 (Personality)
+                    <span className="ml-2 text-xs text-muted-foreground">对应占位符: charPersonality</span>
+                  </Label>
+                  <textarea
+                    id="personality"
+                    name="personality"
+                    value={character.personality || ""}
+                    onChange={handleChange}
+                    className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                    placeholder="描述角色的性格特点、行为方式等（可选）"
+                    rows={3}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    用于SillyTavern预设中的 charPersonality 占位符
+                  </p>
+                </div>
+
+                {/* 场景描述 */}
+                <div className="space-y-2">
+                  <Label htmlFor="scenario">
+                    场景描述 (Scenario)
+                    <span className="ml-2 text-xs text-muted-foreground">对应占位符: scenario</span>
+                  </Label>
+                  <textarea
+                    id="scenario"
+                    name="scenario"
+                    value={character.scenario || ""}
+                    onChange={handleChange}
+                    className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                    placeholder="描述角色所处的场景、背景环境等（可选）"
+                    rows={3}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    用于SillyTavern预设中的 scenario 占位符
+                  </p>
+                </div>
+
+                {/* 对话示例 */}
+                <div className="space-y-2">
+                  <Label htmlFor="mes_example">
+                    对话示例 (Message Examples)
+                    <span className="ml-2 text-xs text-muted-foreground">对应占位符: dialogueExamples</span>
+                  </Label>
+                  <textarea
+                    id="mes_example"
+                    name="mes_example"
+                    value={character.mes_example || ""}
+                    onChange={handleChange}
+                    className="min-h-[150px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background font-mono"
+                    placeholder="角色的对话示例，格式如：&#10;{{user}}: 你好&#10;{{char}}: 你好！很高兴见到你！&#10;{{user}}: 今天天气怎么样？&#10;{{char}}: 今天天气很不错呢！"
+                    rows={5}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    用于SillyTavern预设中的 dialogueExamples 占位符。使用 {"{{"} 标记进行格式化
+                  </p>
+                </div>
+              </div>
             )}
           </div>
         </div>
