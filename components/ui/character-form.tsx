@@ -29,6 +29,14 @@ export function CharacterForm({ initialCharacter, onSave, onCancel }: CharacterF
       firstMessage: "",
       alternateGreetings: [],
       tags: [],
+      // SillyTavern兼容字段默认值
+      personality: "",
+      scenario: "",
+      mes_example: "",
+      system_prompt: "",
+      post_history_instructions: "",
+      creator_notes: "",
+      character_version: "",
     }
   );
   

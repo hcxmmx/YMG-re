@@ -797,7 +797,15 @@ export const characterStorage = {
         alternateGreetings: [],
         tags: [],
         worldBookIds: [], // 添加世界书ID字段
-        regexScriptIds: [] // 添加正则表达式脚本ID字段
+        regexScriptIds: [], // 添加正则表达式脚本ID字段
+        // 🆕 SillyTavern兼容字段
+        personality: "", // 角色性格
+        scenario: "", // 场景描述
+        mes_example: "", // 对话示例
+        system_prompt: "", // 系统提示词
+        post_history_instructions: "", // 历史后指令
+        creator_notes: "", // 创建者备注
+        character_version: "" // 角色版本
       };
       
       // 处理角色名称
@@ -871,6 +879,56 @@ export const characterStorage = {
         characterData.tags = data.character_book.tags;
       }
       
+      // 🆕 处理SillyTavern兼容字段 - 遵循SillyTavern的readFromV2逻辑
+      // 角色性格 (personality)
+      if (data.data?.personality) {
+        characterData.personality = data.data.personality;
+      } else if (data.personality) {
+        characterData.personality = data.personality;
+      }
+      
+      // 场景描述 (scenario) 
+      if (data.data?.scenario) {
+        characterData.scenario = data.data.scenario;
+      } else if (data.scenario) {
+        characterData.scenario = data.scenario;
+      }
+      
+      // 对话示例 (mes_example)
+      if (data.data?.mes_example) {
+        characterData.mes_example = data.data.mes_example;
+      } else if (data.mes_example) {
+        characterData.mes_example = data.mes_example;
+      }
+      
+      // 系统提示词 (system_prompt)
+      if (data.data?.system_prompt) {
+        characterData.system_prompt = data.data.system_prompt;
+      } else if (data.system_prompt) {
+        characterData.system_prompt = data.system_prompt;
+      }
+      
+      // 历史后指令 (post_history_instructions)
+      if (data.data?.post_history_instructions) {
+        characterData.post_history_instructions = data.data.post_history_instructions;
+      } else if (data.post_history_instructions) {
+        characterData.post_history_instructions = data.post_history_instructions;
+      }
+      
+      // 创建者备注 (creator_notes)
+      if (data.data?.creator_notes) {
+        characterData.creator_notes = data.data.creator_notes;
+      } else if (data.creator_notes) {
+        characterData.creator_notes = data.creator_notes;
+      }
+      
+      // 角色版本 (character_version)
+      if (data.data?.character_version) {
+        characterData.character_version = data.data.character_version;
+      } else if (data.character_version) {
+        characterData.character_version = data.character_version;
+      }
+
       // 处理头像
       if (data.avatar && data.avatar !== "none") {
         try {
@@ -1054,7 +1112,15 @@ export const characterStorage = {
         alternateGreetings: [],
         tags: [],
         worldBookIds: [], // 添加世界书ID字段
-        regexScriptIds: [] // 添加正则表达式脚本ID字段
+        regexScriptIds: [], // 添加正则表达式脚本ID字段
+        // 🆕 SillyTavern兼容字段
+        personality: "", // 角色性格
+        scenario: "", // 场景描述
+        mes_example: "", // 对话示例
+        system_prompt: "", // 系统提示词
+        post_history_instructions: "", // 历史后指令
+        creator_notes: "", // 创建者备注
+        character_version: "" // 角色版本
       };
       
       // 处理角色名称
@@ -1070,28 +1136,64 @@ export const characterStorage = {
         throw new Error('角色卡缺少名称');
       }
       
-      // 处理描述相关字段
-      let descriptionParts = [];
-      
+      // 处理角色描述 (仅处理实际的description字段)
       if (data.description) {
-        descriptionParts.push(data.description);
+        characterData.description = data.description;
       } else if (data.data?.description) {
-        descriptionParts.push(data.data.description);
+        characterData.description = data.data.description;
+      } else if (data.char_persona) {
+        characterData.description = data.char_persona;
       }
       
-      if (data.personality) {
-        descriptionParts.push(`性格: ${data.personality}`);
-      } else if (data.data?.personality) {
-        descriptionParts.push(`性格: ${data.data.personality}`);
+      // 🆕 处理SillyTavern兼容字段 - 遵循SillyTavern的readFromV2逻辑
+      // 角色性格 (personality)
+      if (data.data?.personality) {
+        characterData.personality = data.data.personality;
+      } else if (data.personality) {
+        characterData.personality = data.personality;
       }
       
-      if (data.scenario) {
-        descriptionParts.push(`场景: ${data.scenario}`);
-      } else if (data.data?.scenario) {
-        descriptionParts.push(`场景: ${data.data.scenario}`);
+      // 场景描述 (scenario) 
+      if (data.data?.scenario) {
+        characterData.scenario = data.data.scenario;
+      } else if (data.scenario) {
+        characterData.scenario = data.scenario;
       }
       
-      characterData.description = descriptionParts.join('\n\n');
+      // 对话示例 (mes_example)
+      if (data.data?.mes_example) {
+        characterData.mes_example = data.data.mes_example;
+      } else if (data.mes_example) {
+        characterData.mes_example = data.mes_example;
+      }
+      
+      // 系统提示词 (system_prompt)
+      if (data.data?.system_prompt) {
+        characterData.system_prompt = data.data.system_prompt;
+      } else if (data.system_prompt) {
+        characterData.system_prompt = data.system_prompt;
+      }
+      
+      // 历史后指令 (post_history_instructions)
+      if (data.data?.post_history_instructions) {
+        characterData.post_history_instructions = data.data.post_history_instructions;
+      } else if (data.post_history_instructions) {
+        characterData.post_history_instructions = data.post_history_instructions;
+      }
+      
+      // 创建者备注 (creator_notes)
+      if (data.data?.creator_notes) {
+        characterData.creator_notes = data.data.creator_notes;
+      } else if (data.creator_notes) {
+        characterData.creator_notes = data.creator_notes;
+      }
+      
+      // 角色版本 (character_version)
+      if (data.data?.character_version) {
+        characterData.character_version = data.data.character_version;
+      } else if (data.character_version) {
+        characterData.character_version = data.character_version;
+      }
       
       // 处理开场白
       if (data.first_mes) {
