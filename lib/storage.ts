@@ -2,6 +2,7 @@ import { openDB, DBSchema, deleteDB } from 'idb';
 import { Message, UserSettings, Character, Branch, PromptPreset, PromptPresetItem, PlaceholderInfo, WorldBook, WorldBookEntry, WorldBookSettings, CharacterImportResult, ApiKey, ApiKeySettings, RegexFolder } from './types';
 import { generateId, extractCharaDataFromPng } from './utils';
 import { RegexScript } from './regexUtils';
+import { defaultPresetAdapter } from './preset-integration-adapter';
 
 // 定义数据库架构
 interface AppDB extends DBSchema {
@@ -1859,75 +1860,22 @@ export const promptPresetStorage = {
     await db.delete('promptPresets', id);
   },
   
-  // 导入预设函数
+  // 导入预设函数 - 🚀 纯V3引擎（SillyTavern兼容）
   async importPromptPresetFromJSON(json: any, fileName?: string): Promise<PromptPreset> {
-    // 预设标识符
-    const PLACEHOLDERS: Record<string, PlaceholderInfo> = {
-      'charDescription': {
-        type: 'charDescription',
-        implemented: true,
-        description: '角色描述'
-      },
-      'chatHistory': {
-        type: 'chatHistory',
-        implemented: true,
-        description: '对话历史'
-      },
-      'worldInfoBefore': {
-        type: 'worldInfo',
-        implemented: true,
-        description: '世界书信息'
-      },
-      'worldInfoAfter': {
-        type: 'worldInfo',
-        implemented: true,
-        description: '世界书信息'
-      },
-      'personaDescription': {
-        type: 'persona',
-        implemented: true,
-        description: '玩家角色信息'
-      },
-      'scenario': {
-        type: 'scenario',
-        implemented: false,
-        description: '场景描述'
-      },
-      'dialogueExamples': {
-        type: 'examples',
-        implemented: false,
-        description: '对话示例'
-      },
-      'jailbreak': {
-        type: 'jailbreak',
-        implemented: true,
-        description: '特殊指令'
-      },
-    };
+    console.log('🚀 [Storage] 使用V3引擎导入SillyTavern预设...');
     
-    // 提取提示词和排序
-    const prompts = extractPromptItemsFromJSON(json, PLACEHOLDERS);
+    // 直接使用V3适配器 - 获得完整SillyTavern兼容性
+    const preset = await defaultPresetAdapter.importSTPresetFromJSON(json, fileName);
     
-    // 提取模型参数
-    const modelParams = extractModelParametersFromJSON(json);
-    
-    // 生成预设名称：优先级为 JSON内名称 > 文件名 > "导入的预设"
-    let presetName = json.name;
-    if (!presetName && fileName) {
-      // 从文件名中提取名称（移除扩展名）
-      presetName = fileName.replace(/\.json$/i, '');
-    }
-    
-    // 创建预设对象
-    const preset: PromptPreset = {
-      id: generateId(),
-      name: presetName || "导入的预设",
-      description: json.description || "从JSON文件导入的预设",
-      ...modelParams,
-      prompts,
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    };
+    console.log('✅ [Storage] V3导入成功:', {
+      name: preset.name,
+      promptCount: preset.prompts.length,
+      enabledCount: preset.prompts.filter(p => p.enabled).length,
+      hasV3Features: preset.prompts.some(p => 
+        p.injection_depth !== undefined || 
+        p.role !== undefined
+      )
+    });
     
     // 保存到数据库
     return await this.savePromptPreset(preset);
@@ -2446,21 +2394,27 @@ export const apiKeyStorage = {
   }
 };
 
-// 从JSON提取提示词条目
+// 🚀 V3增强版：从SillyTavern JSON提取提示词条目
 function extractPromptItemsFromJSON(json: any, placeholders: Record<string, PlaceholderInfo>): PromptPresetItem[] {
   const prompts: PromptPresetItem[] = [];
   
-  // 如果有prompt_order数组，按照其顺序处理
+  console.log('📋 [extractPromptItems] 开始解析SillyTavern预设...');
+  
+  // SillyTavern预设必须有prompt_order数组
   if (json.prompt_order && Array.isArray(json.prompt_order)) {
-    // 找到characterId为100001的部分（或其他合适的ID）
+    // 🎯 优先使用character_id: 100001（预设作者的自定义内容）
     const characterOrder = json.prompt_order.find(
       (po: any) => po.character_id === 100001
-    ) || json.prompt_order[0]; // 如果没有找到指定ID，使用第一个
+    ) || json.prompt_order.find(
+      (po: any) => po.character_id === 100000  
+    ) || json.prompt_order[0]; // 最后备选
     
     if (characterOrder?.order && Array.isArray(characterOrder.order)) {
-      // 遍历order数组
-      characterOrder.order.forEach((orderItem: any) => {
-        // 在prompts数组中查找对应的提示词
+      console.log(`✅ [extractPromptItems] 使用character_id: ${characterOrder.character_id}，条目数: ${characterOrder.order.length}`);
+      
+      // 遍历order数组（这决定了顺序和启用状态）
+      characterOrder.order.forEach((orderItem: any, index: number) => {
+        // 在prompts数组中查找对应的提示词内容
         if (json.prompts && Array.isArray(json.prompts)) {
           const matchingPrompt = json.prompts.find(
             (p: any) => p.identifier === orderItem.identifier
@@ -2468,61 +2422,70 @@ function extractPromptItemsFromJSON(json: any, placeholders: Record<string, Plac
           
           if (matchingPrompt) {
             const promptItem: PromptPresetItem = {
+              // 基础字段
               identifier: orderItem.identifier,
               name: matchingPrompt.name || "未命名提示词",
               content: matchingPrompt.content || "",
-              enabled: orderItem.enabled || false
+              enabled: orderItem.enabled !== false, // 🔧 修正：SillyTavern默认为true，只有显式false才禁用
+              
+              // 占位符字段
+              isPlaceholder: matchingPrompt.marker === true,
+              placeholderType: matchingPrompt.marker ? orderItem.identifier : undefined,
+              implemented: matchingPrompt.marker ? (placeholders[orderItem.identifier]?.implemented ?? false) : true,
+              
+              // 🆕 完整的SillyTavern字段支持
+              injection_depth: matchingPrompt.injection_depth ?? 0,
+              injection_order: matchingPrompt.injection_order ?? (100 + index * 10), // 保持相对顺序
+              injection_position: matchingPrompt.injection_position ?? 0,
+              role: matchingPrompt.role || 'system',
+              forbid_overrides: matchingPrompt.forbid_overrides ?? false,
+              marker: matchingPrompt.marker ?? false,
+              system_prompt: matchingPrompt.system_prompt ?? true
             };
             
-            // 检查是否为占位条目
-            if (matchingPrompt.marker === true) {
-              promptItem.isPlaceholder = true;
-              promptItem.placeholderType = orderItem.identifier;
-              
-              // 检查是否已实现
-              const placeholderInfo = placeholders[orderItem.identifier];
-              if (placeholderInfo) {
-                promptItem.implemented = placeholderInfo.implemented;
-              } else {
-                promptItem.implemented = false;
-              }
-            }
-            
             prompts.push(promptItem);
+            
+            if (orderItem.enabled !== false) {
+              console.log(`  ✅ ${orderItem.identifier} (启用)`);
+            } else {
+              console.log(`  ❌ ${orderItem.identifier} (禁用)`);
+            }
+          } else {
+            console.warn(`⚠️ [extractPromptItems] 在prompts数组中找不到: ${orderItem.identifier}`);
           }
         }
       });
     }
-  } else if (json.prompts && Array.isArray(json.prompts)) {
-    // 没有排序信息，直接使用prompts数组
-    json.prompts.forEach((p: any) => {
-      if (p.identifier) {
-        const promptItem: PromptPresetItem = {
-          identifier: p.identifier,
-          name: p.name || "未命名提示词",
-          content: p.content || "",
-          enabled: p.enabled !== undefined ? p.enabled : true
-        };
-        
-        // 检查是否为占位条目
-        if (p.marker === true) {
-          promptItem.isPlaceholder = true;
-          promptItem.placeholderType = p.identifier;
+  } else {
+    console.warn('⚠️ [extractPromptItems] 缺少prompt_order数组，这可能不是标准的SillyTavern预设');
+    
+    // 备选：直接使用prompts数组（但没有排序信息）
+    if (json.prompts && Array.isArray(json.prompts)) {
+      json.prompts.forEach((p: any, index: number) => {
+        if (p.identifier) {
+          const promptItem: PromptPresetItem = {
+            identifier: p.identifier,
+            name: p.name || "未命名提示词",
+            content: p.content || "",
+            enabled: p.enabled !== false,
+            
+            // SillyTavern字段
+            injection_depth: p.injection_depth ?? 0,
+            injection_order: p.injection_order ?? (100 + index * 10),
+            injection_position: p.injection_position ?? 0,
+            role: p.role || 'system',
+            forbid_overrides: p.forbid_overrides ?? false,
+            marker: p.marker ?? false,
+            system_prompt: p.system_prompt ?? true
+          };
           
-          // 检查是否已实现
-          const placeholderInfo = placeholders[p.identifier];
-          if (placeholderInfo) {
-            promptItem.implemented = placeholderInfo.implemented;
-          } else {
-            promptItem.implemented = false;
-          }
+          prompts.push(promptItem);
         }
-        
-        prompts.push(promptItem);
-      }
-    });
+      });
+    }
   }
   
+  console.log(`🎯 [extractPromptItems] 解析完成，总条目: ${prompts.length}，启用: ${prompts.filter(p => p.enabled).length}`);
   return prompts;
 }
 

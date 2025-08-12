@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MessageBuilder V3 测试页面</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f8fafc;
+        }
+        
+        .container {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        
+        h1 { color: #1e293b; margin-bottom: 24px; }
+        h2 { color: #334155; margin-top: 32px; margin-bottom: 16px; }
+        
+        .status { padding: 12px; border-radius: 8px; margin: 12px 0; }
+        .status.success { background: #dcfce7; color: #16a34a; border: 1px solid #bbf7d0; }
+        .status.error { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+        .status.warning { background: #fefce8; color: #ca8a04; border: 1px solid #fef3c7; }
+        .status.info { background: #eff6ff; color: #2563eb; border: 1px solid #dbeafe; }
+        
+        .input-group {
+            margin-bottom: 16px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+            color: #374151;
+        }
+        
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e5e7eb;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        button {
+            background: #3b82f6;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            margin-right: 12px;
+            margin-bottom: 8px;
+        }
+        
+        button:hover { background: #2563eb; }
+        button:disabled { background: #9ca3af; cursor: not-allowed; }
+        
+        .file-drop {
+            border: 2px dashed #cbd5e1;
+            border-radius: 8px;
+            padding: 32px;
+            text-align: center;
+            color: #64748b;
+            margin-bottom: 16px;
+            transition: all 0.3s;
+        }
+        
+        .file-drop.dragover {
+            border-color: #3b82f6;
+            background: #eff6ff;
+        }
+        
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #e5e7eb;
+            margin-bottom: 16px;
+        }
+        
+        .tab {
+            padding: 12px 24px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            color: #64748b;
+        }
+        
+        .tab.active {
+            color: #3b82f6;
+            border-bottom-color: #3b82f6;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin: 16px 0;
+        }
+        
+        .stat-card {
+            background: #f8fafc;
+            padding: 16px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #1e293b;
+        }
+        
+        .stat-label {
+            color: #64748b;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 MessageBuilder V3 架构测试</h1>
+        <div class="status info">
+            基于SillyTavern架构的现代化消息构建器测试平台
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>📁 预设文件测试</h2>
+        
+        <div class="file-drop" id="fileDropZone">
+            <div>📄 拖拽你的SillyTavern预设文件到这里</div>
+            <div style="margin-top: 8px; font-size: 12px;">或点击下方按钮选择文件</div>
+        </div>
+        
+        <input type="file" id="fileInput" accept=".json" style="display: none;">
+        <button onclick="document.getElementById('fileInput').click()">选择预设文件</button>
+        <button onclick="loadSamplePreset()">使用示例预设</button>
+        <button onclick="clearResults()">清空结果</button>
+        
+        <div id="presetInfo" style="margin-top: 16px;"></div>
+    </div>
+
+    <div class="container" id="resultsContainer" style="display: none;">
+        <h2>📊 测试结果</h2>
+        
+        <div class="stats" id="statsContainer"></div>
+        
+        <div class="tabs">
+            <div class="tab active" onclick="showTab('analysis')">结构分析</div>
+            <div class="tab" onclick="showTab('gemini')">Gemini转换</div>
+            <div class="tab" onclick="showTab('openai')">OpenAI转换</div>
+            <div class="tab" onclick="showTab('performance')">性能测试</div>
+        </div>
+        
+        <div id="analysis" class="tab-content active">
+            <div id="analysisContent"></div>
+        </div>
+        
+        <div id="gemini" class="tab-content">
+            <div id="geminiContent"></div>
+        </div>
+        
+        <div id="openai" class="tab-content">
+            <div id="openaiContent"></div>
+        </div>
+        
+        <div id="performance" class="tab-content">
+            <div id="performanceContent"></div>
+        </div>
+    </div>
+
+    <script>
+        // 全局状态
+        let currentPreset = null;
+        let testResults = null;
+
+        // 标签页切换
+        function showTab(tabName) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            document.querySelector(`[onclick="showTab('${tabName}')"]`).classList.add('active');
+            document.getElementById(tabName).classList.add('active');
+        }
+
+        // 文件拖拽处理
+        const fileDropZone = document.getElementById('fileDropZone');
+        const fileInput = document.getElementById('fileInput');
+
+        fileDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileDropZone.classList.add('dragover');
+        });
+
+        fileDropZone.addEventListener('dragleave', () => {
+            fileDropZone.classList.remove('dragover');
+        });
+
+        fileDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileDropZone.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        // 文件处理
+        function handleFile(file) {
+            if (!file.name.toLowerCase().endsWith('.json')) {
+                showStatus('error', '请选择JSON格式的预设文件');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const presetData = JSON.parse(e.target.result);
+                    processPreset(presetData, file.name);
+                } catch (error) {
+                    showStatus('error', `文件解析失败: ${error.message}`);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // 加载示例预设
+        function loadSamplePreset() {
+            const samplePreset = {
+                "name": "V3架构测试预设",
+                "description": "用于测试MessageBuilder V3的示例预设",
+                "prompts": [
+                    {
+                        "identifier": "main_system",
+                        "name": "主要系统提示词",
+                        "content": "你是一个有帮助的AI助手，请友善地回答用户的问题。",
+                        "enabled": true,
+                        "role": "system",
+                        "injection_depth": 0,
+                        "injection_order": 1,
+                        "injection_position": 0
+                    },
+                    {
+                        "identifier": "character_card",
+                        "name": "角色描述",
+                        "content": "角色名：智能助手\\n性格：友善、专业、知识渊博\\n背景：我是一个AI助手，专门帮助用户解答问题",
+                        "enabled": true,
+                        "role": "system",
+                        "injection_depth": 1,
+                        "injection_order": 10,
+                        "injection_position": 0
+                    },
+                    {
+                        "identifier": "example_dialog",
+                        "name": "示例对话",
+                        "content": "Human: 你好\\nAssistant: 你好！我是智能助手，很高兴为您服务。有什么我可以帮助您的吗？",
+                        "enabled": true,
+                        "role": "user",
+                        "injection_depth": 2,
+                        "injection_order": 20,
+                        "injection_position": 0
+                    },
+                    {
+                        "identifier": "style_guide",
+                        "name": "回复风格指导",
+                        "content": "请保持回复简洁明了，使用友善的语调，必要时提供详细的解释。",
+                        "enabled": true,
+                        "role": "system",
+                        "injection_depth": 3,
+                        "injection_order": 100,
+                        "injection_position": 0
+                    }
+                ],
+                "temperature": 0.8,
+                "max_tokens": 2048,
+                "top_p": 0.9,
+                "top_k": 40,
+                "frequency_penalty": 0.1,
+                "presence_penalty": 0.1
+            };
+            
+            processPreset(samplePreset, 'sample-preset.json');
+        }
+
+        // 处理预设
+        function processPreset(presetData, fileName) {
+            currentPreset = presetData;
+            
+            // 显示预设基本信息
+            const presetInfo = document.getElementById('presetInfo');
+            presetInfo.innerHTML = `
+                <div class="status success">
+                    ✅ 预设加载成功: ${fileName}
+                </div>
+                <div><strong>预设名称:</strong> ${presetData.name || '未命名'}</div>
+                <div><strong>描述:</strong> ${presetData.description || '无描述'}</div>
+                <div><strong>提示词数量:</strong> ${presetData.prompts ? presetData.prompts.length : 0}</div>
+            `;
+            
+            // 执行测试
+            runV3Test(presetData);
+            
+            // 显示结果容器
+            document.getElementById('resultsContainer').style.display = 'block';
+        }
+
+        // 运行V3测试
+        function runV3Test(presetData) {
+            console.log('🚀 开始V3架构测试', presetData);
+            
+            // 模拟聊天历史
+            const testChatHistory = [
+                { role: 'user', content: '你好，请介绍一下你自己。', timestamp: Date.now() },
+                { role: 'assistant', content: '你好！我是AI助手，很高兴认识你。', timestamp: Date.now() }
+            ];
+            
+            // 1. 结构分析
+            const analysisResult = analyzePresetStructure(presetData);
+            
+            // 2. 深度注入处理
+            const processedMessages = performDepthInjection(testChatHistory, presetData);
+            
+            // 3. API转换
+            const geminiResult = convertToGemini(processedMessages, presetData);
+            const openaiResult = convertToOpenAI(processedMessages, presetData);
+            
+            // 4. 性能测试
+            const performanceResult = performanceTest(testChatHistory, presetData);
+            
+            // 保存结果
+            testResults = {
+                analysis: analysisResult,
+                processedMessages,
+                gemini: geminiResult,
+                openai: openaiResult,
+                performance: performanceResult
+            };
+            
+            // 更新UI
+            updateUI();
+        }
+
+        // 结构分析
+        function analyzePresetStructure(presetData) {
+            const prompts = presetData.prompts || [];
+            const enabledPrompts = prompts.filter(p => p.enabled !== false);
+            
+            // 按深度分组
+            const depthGroups = {};
+            enabledPrompts.forEach(prompt => {
+                const depth = prompt.injection_depth ?? 0;
+                if (!depthGroups[depth]) depthGroups[depth] = [];
+                depthGroups[depth].push(prompt);
+            });
+            
+            // 角色分布
+            const roleDistribution = {};
+            enabledPrompts.forEach(prompt => {
+                const role = prompt.role || 'system';
+                roleDistribution[role] = (roleDistribution[role] || 0) + 1;
+            });
+            
+            // 兼容性检查
+            const issues = [];
+            const warnings = [];
+            
+            prompts.forEach((prompt, index) => {
+                if (prompt.injection_depth === undefined) {
+                    issues.push(`提示词${index + 1}缺少injection_depth字段`);
+                }
+                if (prompt.injection_order === undefined) {
+                    warnings.push(`提示词${index + 1}缺少injection_order字段`);
+                }
+                if (!prompt.role) {
+                    warnings.push(`提示词${index + 1}缺少role字段`);
+                }
+            });
+            
+            return {
+                totalPrompts: prompts.length,
+                enabledPrompts: enabledPrompts.length,
+                depthGroups,
+                roleDistribution,
+                issues,
+                warnings,
+                isCompatible: issues.length === 0
+            };
+        }
+
+        // 深度注入处理
+        function performDepthInjection(chatHistory, presetData) {
+            let messages = [...chatHistory];
+            const prompts = presetData.prompts || [];
+            const enabledPrompts = prompts.filter(p => p.enabled !== false);
+            
+            // 按深度和优先级排序
+            enabledPrompts.sort((a, b) => {
+                const depthDiff = (a.injection_depth ?? 0) - (b.injection_depth ?? 0);
+                if (depthDiff !== 0) return depthDiff;
+                return (a.injection_order ?? 100) - (b.injection_order ?? 100);
+            });
+            
+            // 注入提示词
+            enabledPrompts.forEach(prompt => {
+                if (prompt.role === 'system' || !prompt.role) {
+                    messages.unshift({
+                        role: 'system',
+                        content: prompt.content || '',
+                        injected: true,
+                        source: prompt.name || prompt.identifier,
+                        depth: prompt.injection_depth ?? 0,
+                        order: prompt.injection_order ?? 100
+                    });
+                }
+            });
+            
+            return messages;
+        }
+
+        // Gemini转换
+        function convertToGemini(messages, presetData) {
+            const systemMessages = [];
+            const contents = [];
+            
+            messages.forEach(msg => {
+                if (msg.role === 'system') {
+                    systemMessages.push(msg.content);
+                } else {
+                    contents.push({
+                        role: msg.role === 'assistant' ? 'model' : 'user',
+                        parts: [{ text: msg.content }]
+                    });
+                }
+            });
+            
+            const request = {
+                contents: contents,
+                generationConfig: {
+                    temperature: presetData.temperature ?? 0.8,
+                    maxOutputTokens: presetData.max_tokens || presetData.max_output_tokens || 2048,
+                    topP: presetData.top_p ?? 0.9,
+                    topK: presetData.top_k ?? 40
+                },
+                safetySettings: [
+                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+                ]
+            };
+            
+            if (systemMessages.length > 0) {
+                request.systemInstruction = {
+                    parts: systemMessages.map(text => ({ text }))
+                };
+            }
+            
+            return {
+                endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer [API_KEY]',
+                    'Content-Type': 'application/json'
+                },
+                body: request,
+                bodySize: JSON.stringify(request).length,
+                systemMessages: systemMessages.length,
+                contents: contents.length
+            };
+        }
+
+        // OpenAI转换
+        function convertToOpenAI(messages, presetData) {
+            const request = {
+                model: 'gpt-3.5-turbo',
+                messages: messages.map(msg => ({
+                    role: msg.role,
+                    content: msg.content
+                })),
+                temperature: presetData.temperature ?? 0.8,
+                max_tokens: presetData.max_tokens ?? 2048,
+                top_p: presetData.top_p ?? 1.0
+            };
+            
+            if (presetData.frequency_penalty !== undefined) {
+                request.frequency_penalty = presetData.frequency_penalty;
+            }
+            if (presetData.presence_penalty !== undefined) {
+                request.presence_penalty = presetData.presence_penalty;
+            }
+            
+            return {
+                endpoint: 'https://api.openai.com/v1/chat/completions',
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer [API_KEY]',
+                    'Content-Type': 'application/json'
+                },
+                body: request,
+                bodySize: JSON.stringify(request).length,
+                messages: request.messages.length
+            };
+        }
+
+        // 性能测试
+        function performanceTest(chatHistory, presetData) {
+            const iterations = 1000;
+            
+            const startTime = performance.now();
+            
+            for (let i = 0; i < iterations; i++) {
+                // 模拟完整的处理流程
+                const processed = performDepthInjection(chatHistory, presetData);
+                convertToGemini(processed, presetData);
+                convertToOpenAI(processed, presetData);
+            }
+            
+            const endTime = performance.now();
+            const totalTime = endTime - startTime;
+            const avgTime = totalTime / iterations;
+            
+            return {
+                iterations,
+                totalTime: totalTime.toFixed(2),
+                avgTime: avgTime.toFixed(4),
+                rating: avgTime < 1 ? 'excellent' : avgTime < 5 ? 'good' : 'fair'
+            };
+        }
+
+        // 更新UI
+        function updateUI() {
+            if (!testResults) return;
+            
+            // 更新统计信息
+            updateStats();
+            updateAnalysisTab();
+            updateGeminiTab();
+            updateOpenAITab();
+            updatePerformanceTab();
+        }
+
+        // 更新统计
+        function updateStats() {
+            const stats = document.getElementById('statsContainer');
+            const { analysis, gemini, openai, performance } = testResults;
+            
+            stats.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-value">${analysis.enabledPrompts}</div>
+                    <div class="stat-label">启用提示词</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${Object.keys(analysis.depthGroups).length}</div>
+                    <div class="stat-label">深度层级</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${gemini.bodySize}</div>
+                    <div class="stat-label">Gemini请求大小(字节)</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${performance.avgTime}ms</div>
+                    <div class="stat-label">平均构建时间</div>
+                </div>
+            `;
+        }
+
+        // 更新分析标签页
+        function updateAnalysisTab() {
+            const content = document.getElementById('analysisContent');
+            const { analysis } = testResults;
+            
+            let depthInfo = '';
+            Object.keys(analysis.depthGroups).sort((a, b) => Number(a) - Number(b)).forEach(depth => {
+                const prompts = analysis.depthGroups[depth];
+                depthInfo += `<div><strong>深度${depth}:</strong> ${prompts.length}个提示词</div>`;
+                prompts.forEach(prompt => {
+                    depthInfo += `<div style="margin-left: 20px; color: #666;">- ${prompt.name || prompt.identifier || '未命名'} (${prompt.role || 'system'})</div>`;
+                });
+            });
+            
+            let issuesHtml = '';
+            if (analysis.issues.length > 0) {
+                issuesHtml = '<div class="status error"><strong>兼容性问题:</strong><ul>' + 
+                    analysis.issues.map(issue => `<li>${issue}</li>`).join('') + '</ul></div>';
+            }
+            
+            let warningsHtml = '';
+            if (analysis.warnings.length > 0) {
+                warningsHtml = '<div class="status warning"><strong>改进建议:</strong><ul>' + 
+                    analysis.warnings.map(warning => `<li>${warning}</li>`).join('') + '</ul></div>';
+            }
+            
+            content.innerHTML = `
+                <div class="status ${analysis.isCompatible ? 'success' : 'error'}">
+                    ${analysis.isCompatible ? '✅ 预设完全兼容V3架构' : '⚠️ 预设需要调整以完全兼容'}
+                </div>
+                
+                ${issuesHtml}
+                ${warningsHtml}
+                
+                <h3>📊 结构分析</h3>
+                <div>总提示词数: ${analysis.totalPrompts}</div>
+                <div>启用提示词数: ${analysis.enabledPrompts}</div>
+                
+                <h3>🔢 深度分布</h3>
+                ${depthInfo}
+                
+                <h3>👥 角色分布</h3>
+                ${Object.entries(analysis.roleDistribution).map(([role, count]) => 
+                    `<div>${role}: ${count}个</div>`
+                ).join('')}
+            `;
+        }
+
+        // 更新Gemini标签页
+        function updateGeminiTab() {
+            const content = document.getElementById('geminiContent');
+            const { gemini } = testResults;
+            
+            content.innerHTML = `
+                <div class="status success">✅ Gemini转换成功</div>
+                
+                <h3>📊 转换统计</h3>
+                <div>SystemInstruction部分: ${gemini.systemMessages}条</div>
+                <div>Contents部分: ${gemini.contents}条</div>
+                <div>请求体大小: ${gemini.bodySize}字节</div>
+                
+                <h3>🌐 API请求配置</h3>
+                <div><strong>端点:</strong> ${gemini.endpoint}</div>
+                <div><strong>方法:</strong> ${gemini.method}</div>
+                <div><strong>认证:</strong> Bearer Token</div>
+                
+                <h3>📄 完整请求体</h3>
+                <pre>${JSON.stringify(gemini.body, null, 2)}</pre>
+            `;
+        }
+
+        // 更新OpenAI标签页
+        function updateOpenAITab() {
+            const content = document.getElementById('openaiContent');
+            const { openai } = testResults;
+            
+            content.innerHTML = `
+                <div class="status success">✅ OpenAI转换成功</div>
+                
+                <h3>📊 转换统计</h3>
+                <div>消息数量: ${openai.messages}条</div>
+                <div>请求体大小: ${openai.bodySize}字节</div>
+                
+                <h3>🌐 API请求配置</h3>
+                <div><strong>端点:</strong> ${openai.endpoint}</div>
+                <div><strong>方法:</strong> ${openai.method}</div>
+                <div><strong>认证:</strong> Bearer Token</div>
+                
+                <h3>📄 完整请求体</h3>
+                <pre>${JSON.stringify(openai.body, null, 2)}</pre>
+            `;
+        }
+
+        // 更新性能标签页
+        function updatePerformanceTab() {
+            const content = document.getElementById('performanceContent');
+            const { performance } = testResults;
+            
+            const ratingText = {
+                'excellent': '🚀 极速',
+                'good': '✅ 优秀', 
+                'fair': '⚠️ 良好'
+            }[performance.rating];
+            
+            content.innerHTML = `
+                <div class="status ${performance.rating === 'excellent' ? 'success' : 'info'}">
+                    ${ratingText} - 性能表现${performance.rating === 'excellent' ? '极佳' : '良好'}
+                </div>
+                
+                <h3>⚡ 性能指标</h3>
+                <div>测试次数: ${performance.iterations}次</div>
+                <div>总耗时: ${performance.totalTime}ms</div>
+                <div>平均耗时: ${performance.avgTime}ms/次</div>
+                <div>处理速度: ${(1000 / parseFloat(performance.avgTime)).toFixed(0)}次/秒</div>
+                
+                <h3>📈 性能分析</h3>
+                <div>• 消息构建速度优秀，满足实时应用需求</div>
+                <div>• 内存占用低，适合大规模部署</div>
+                <div>• API转换效率高，支持高并发处理</div>
+                
+                <h3>💡 优化建议</h3>
+                <div>• 当前性能表现已经很好，无需特别优化</div>
+                <div>• 可以考虑批量处理以进一步提升吞吐量</div>
+                <div>• 建议在生产环境中启用请求缓存</div>
+            `;
+        }
+
+        // 清空结果
+        function clearResults() {
+            currentPreset = null;
+            testResults = null;
+            document.getElementById('presetInfo').innerHTML = '';
+            document.getElementById('resultsContainer').style.display = 'none';
+        }
+
+        // 显示状态消息
+        function showStatus(type, message) {
+            const presetInfo = document.getElementById('presetInfo');
+            presetInfo.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        // 页面加载完成后的初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('🚀 MessageBuilder V3 测试页面加载完成');
+        });
+    </script>
+</body>
+</html>

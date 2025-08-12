@@ -137,6 +137,15 @@ export interface PromptPresetItem {
   isPlaceholder?: boolean;  // 是否为动态占位条目
   placeholderType?: string;  // 占位类型
   implemented?: boolean;     // 占位类型是否已实现
+  
+  // 🆕 SillyTavern兼容字段
+  injection_depth?: number;     // 注入深度 (默认: 0)
+  injection_order?: number;     // 注入顺序 (默认: 100) 
+  injection_position?: number;  // 注入位置 (0=before_char, 1=after_char, etc.)
+  role?: 'system' | 'user' | 'assistant';  // 消息角色 (默认: 'system')
+  forbid_overrides?: boolean;   // 是否禁止覆盖 (默认: false)
+  marker?: boolean;            // 是否为标记条目 (默认: false)
+  system_prompt?: boolean;     // 是否为系统提示词 (默认: true)
 }
 
 // 提示词预设
