@@ -12,6 +12,28 @@ export interface VersionInfo {
 // 更新日志 - 按版本倒序排列（最新版本在前）
 export const CHANGELOG: VersionInfo[] = [
   {
+    version: "1.2.0",
+    releaseDate: "2025-12-19",
+    title: "正则表达式系统全面对标SillyTavern",
+    features: [
+      "正则表达式功能完全对标SillyTavern，支持精细宏替换控制",
+      "新增技术标签自动清理功能，用户界面保持干净美观",
+      "智能标签检测系统，自动识别和清理自定义技术标签",
+      "三种标签清理模式：保守、智能、白名单，满足不同需求"
+    ],
+    fixes: [
+      "修复用户消息重复正则处理导致标签重复包裹的问题",
+      "修复宏替换时特殊字符转义不够精细的问题",
+      "解决用户界面显示<user_input>等技术标签的体验问题"
+    ],
+    improvements: [
+      "正则表达式验证机制增强，自动跳过无效正则避免错误",
+      "区分构建时处理和显示时处理，参考SillyTavern架构",
+      "支持自定义标签清理，如<userread>等非标准技术标签",
+      "保护HTML格式标签，确保<b>、<i>等样式正常工作"
+    ]
+  },
+  {
     version: "1.1.0",
     releaseDate: "2024-01-15", 
     title: "重大功能升级",
@@ -38,7 +60,7 @@ export const CHANGELOG: VersionInfo[] = [
 // 获取当前应用版本（从package.json读取）
 export function getCurrentVersion(): string {
   // 在实际应用中，这个值会在构建时注入
-  return process.env.NEXT_PUBLIC_VERSION || "1.1.0";
+  return process.env.NEXT_PUBLIC_VERSION || "1.2.0";
 }
 
 // 获取本地存储的版本
