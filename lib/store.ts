@@ -2415,8 +2415,11 @@ interface RegexState {
   toggleScriptEnabled: (id: string) => Promise<void>;
   reorderScripts: (newScripts: RegexScript[]) => Promise<void>;
   
-  // 应用正则表达式
+  // 应用正则表达式（构建时处理）
   applyRegexToMessage: (text: string, playerName: string, characterName: string, depth?: number, type?: number, characterId?: string) => Promise<string>;
+  
+  // 应用正则表达式（显示时处理）
+  applyRegexToMessageForDisplay: (text: string, playerName: string, characterName: string, depth?: number, type?: number, characterId?: string) => Promise<string>;
   
   // 更新正则应用状态 - 用于强制刷新正则应用状态
   updateRegexApplicationState: () => void;
@@ -2585,7 +2588,7 @@ export const useRegexStore = create<RegexState>()(
         }
       },
       
-      // 应用正则表达式处理
+      // 应用正则表达式处理（用于构建时处理）
       applyRegexToMessage: async (text: string, playerName: string, characterName: string, depth = 0, type = 2, characterId?: string) => {
         const { scripts } = get();
         
@@ -2602,7 +2605,7 @@ export const useRegexStore = create<RegexState>()(
               .map((folder: RegexFolder) => folder.id)
           );
           
-          console.log('应用正则表达式处理，禁用的文件夹IDs:', Array.from(disabledFolderIds));
+          console.log('应用正则表达式处理（构建时），禁用的文件夹IDs:', Array.from(disabledFolderIds));
           
           // 获取角色关联的正则表达式
           let characterScripts: RegexScript[] = [];
@@ -2617,10 +2620,51 @@ export const useRegexStore = create<RegexState>()(
           // 合并全局脚本和角色特定脚本
           const allScripts = [...scripts, ...characterScripts];
           
-          // 处理文本，传入禁用的文件夹ID集合
-          return processWithRegex(text, allScripts, playerName, characterName, depth, type, characterId, disabledFolderIds);
+          // 处理文本，区分提示词构建和普通构建
+          const isPrompt = type === 4; // 类型4是提示词
+          return processWithRegex(text, allScripts, playerName, characterName, depth, type, characterId, disabledFolderIds, false, isPrompt);
         } catch (error) {
           console.error('应用正则表达式处理失败:', error);
+          return text; // 发生错误时返回原始文本
+        }
+      },
+      
+      // 应用正则表达式处理（用于显示时处理，避免重复应用构建时的脚本）
+      applyRegexToMessageForDisplay: async (text: string, playerName: string, characterName: string, depth = 0, type = 2, characterId?: string) => {
+        const { scripts } = get();
+        
+        // 导入处理函数和存储
+        const { processWithRegex } = require('./regexUtils');
+        const { regexStorage, regexFolderStorage } = require('./storage');
+        
+        try {
+          // 每次都重新获取最新的文件夹状态
+          const folders = await regexFolderStorage.listFolders();
+          const disabledFolderIds = new Set(
+            folders
+              .filter((folder: RegexFolder) => folder.disabled)
+              .map((folder: RegexFolder) => folder.id)
+          );
+          
+          console.log('应用正则表达式处理（显示时），禁用的文件夹IDs:', Array.from(disabledFolderIds));
+          
+          // 获取角色关联的正则表达式
+          let characterScripts: RegexScript[] = [];
+          if (characterId) {
+            try {
+              characterScripts = await regexStorage.getRegexScriptsForCharacter(characterId);
+            } catch (error) {
+              console.error('获取角色关联的正则表达式失败:', error);
+            }
+          }
+          
+          // 合并全局脚本和角色特定脚本
+          const allScripts = [...scripts, ...characterScripts];
+          
+          // 处理文本，只处理markdownOnly的脚本
+          return processWithRegex(text, allScripts, playerName, characterName, depth, type, characterId, disabledFolderIds, true, false);
+        } catch (error) {
+          console.error('应用正则表达式处理（显示时）失败:', error);
           return text; // 发生错误时返回原始文本
         }
       },

@@ -177,18 +177,17 @@ export const OptimizedMessage = React.memo(function OptimizedMessage({
         // 宏替换
         let processed = replaceMacros(message.content, playerName, characterName);
 
-        // 正则表达式处理
+        // 正则表达式处理（仅显示相关的脚本，避免重复处理）
         if (regexState.scripts.length > 0) {
-          const { applyRegexToMessage } = useRegexStore.getState();
+          const { applyRegexToMessageForDisplay } = useRegexStore.getState();
           const messageIndex = currentMessages.findIndex(msg => msg.id === message.id);
-          const totalMessages = currentMessages.length;
           
-          processed = await applyRegexToMessage(
+          processed = await applyRegexToMessageForDisplay(
             processed,
             playerName,
             characterName,
             messageIndex,
-            totalMessages,
+            2, // AI消息固定为类型2
             character?.id
           );
         }

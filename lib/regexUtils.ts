@@ -96,6 +96,8 @@ export interface RegexScript {
  * @param type 处理类型: 1=用户输入, 2=AI响应, 3=命令, 4=提示词
  * @param characterId 当前角色ID (用于角色特定正则)
  * @param disabledFolderIds 禁用的文件夹ID列表 (用于文件夹隔离)
+ * @param isMarkdown 是否为显示时处理（类似SillyTavern的isMarkdown标志）
+ * @param isPrompt 是否为提示词构建时处理（类似SillyTavern的isPrompt标志）
  * @returns 处理后的文本
  */
 export function processWithRegex(
@@ -106,7 +108,9 @@ export function processWithRegex(
   depth: number = 0,
   type: number = 2, // 默认为AI响应
   characterId?: string, // 当前角色ID
-  disabledFolderIds?: Set<string> // 禁用的文件夹ID集合
+  disabledFolderIds?: Set<string>, // 禁用的文件夹ID集合
+  isMarkdown: boolean = false, // 显示时处理
+  isPrompt: boolean = false // 提示词构建时处理
 ): string {
   if (!text || !scripts || scripts.length === 0) return text;
 
@@ -129,7 +133,19 @@ export function processWithRegex(
     if (script.minDepth !== undefined && script.minDepth !== null && depth < script.minDepth) return false;
     if (script.maxDepth !== undefined && script.maxDepth !== null && depth > script.maxDepth) return false;
     
-    return true;
+    // 参考SillyTavern的逻辑，根据处理模式过滤脚本
+    if (
+      // 脚本设置为仅影响显示 && 当前是显示处理
+      (script.markdownOnly && isMarkdown) ||
+      // 脚本设置为仅影响提示词 && 当前是提示词构建
+      (script.promptOnly && isPrompt) ||
+      // 普通脚本 && 当前不是显示也不是提示词构建（即正常的构建时处理）
+      (!script.markdownOnly && !script.promptOnly && !isMarkdown && !isPrompt)
+    ) {
+      return true;
+    }
+    
+    return false;
   });
   
   // 将脚本分为全局脚本和角色特定脚本
@@ -279,5 +295,5 @@ export function testRegexScript(
   playerName: string, 
   characterName: string
 ): string {
-  return processWithRegex(inputText, [script], playerName, characterName, 0, 2);
+  return processWithRegex(inputText, [script], playerName, characterName, 0, 2, undefined, undefined, false, false);
 } 

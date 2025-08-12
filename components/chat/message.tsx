@@ -556,12 +556,12 @@ export function Message({ message, character, onEdit, onRegenerate, isGenerating
           characterName
         );
         
-        // 应用正则表达式处理
+        // 应用正则表达式处理（仅显示相关的脚本，避免重复处理）
         try {
-          const { applyRegexToMessage } = useRegexStore.getState();
+          const { applyRegexToMessageForDisplay } = useRegexStore.getState();
           // 根据消息角色选择处理类型：1=用户输入, 2=AI响应
           const type = isUser ? 1 : 2;
-          content = await applyRegexToMessage(content, playerName, characterName, 0, type, message.characterId);
+          content = await applyRegexToMessageForDisplay(content, playerName, characterName, 0, type, message.characterId);
         } catch (error) {
           console.error("应用正则表达式处理失败:", error);
         }
