@@ -58,6 +58,12 @@ export interface STPreset {
   
   // === Gemini参数 ===
   top_k?: number;
+  top_a?: number;
+  min_p?: number;
+  
+  // === SillyTavern特有参数 ===
+  repetition_penalty?: number;
+  openai_max_context?: number;
   
   // === 通用参数 ===
   stop?: string[];
@@ -284,15 +290,28 @@ export class STPresetParser {
   private static parseParameters(jsonData: any): Partial<STPreset> {
     const params: Partial<STPreset> = {};
     
-    // OpenAI参数
+    // OpenAI参数 - 支持标准和SillyTavern字段名
     if (jsonData.temperature !== undefined) params.temperature = Number(jsonData.temperature);
-    if (jsonData.max_tokens !== undefined) params.max_tokens = Number(jsonData.max_tokens);
+    
+    // max_tokens: 优先使用SillyTavern字段名
+    if (jsonData.openai_max_tokens !== undefined) {
+      params.max_tokens = Number(jsonData.openai_max_tokens);
+    } else if (jsonData.max_tokens !== undefined) {
+      params.max_tokens = Number(jsonData.max_tokens);
+    }
+    
     if (jsonData.top_p !== undefined) params.top_p = Number(jsonData.top_p);
     if (jsonData.frequency_penalty !== undefined) params.frequency_penalty = Number(jsonData.frequency_penalty);
     if (jsonData.presence_penalty !== undefined) params.presence_penalty = Number(jsonData.presence_penalty);
     
     // Gemini参数
     if (jsonData.top_k !== undefined) params.top_k = Number(jsonData.top_k);
+    if (jsonData.top_a !== undefined) params.top_a = Number(jsonData.top_a);
+    if (jsonData.min_p !== undefined) params.min_p = Number(jsonData.min_p);
+    
+    // SillyTavern特有参数
+    if (jsonData.repetition_penalty !== undefined) params.repetition_penalty = Number(jsonData.repetition_penalty);
+    if (jsonData.openai_max_context !== undefined) params.openai_max_context = Number(jsonData.openai_max_context);
     
     // 通用参数
     if (jsonData.stop) params.stop = Array.isArray(jsonData.stop) ? jsonData.stop : [jsonData.stop];

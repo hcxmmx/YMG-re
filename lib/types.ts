@@ -153,11 +153,28 @@ export interface PromptPreset {
   id: string;           // 唯一ID
   name: string;         // 预设名称
   description: string;  // 预设描述
-  // Gemini模型参数
+  
+  // 🔧 完整的API参数支持（兼容SillyTavern）
+  // OpenAI参数
   temperature?: number;
   maxTokens?: number;
-  topK?: number;
   topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  
+  // Gemini参数
+  topK?: number;
+  topA?: number;
+  minP?: number;
+  
+  // SillyTavern特有参数
+  repetitionPenalty?: number;
+  maxContext?: number;
+  
+  // 模型设置
+  model?: string;
+  chatCompletionSource?: string;
+  
   // 提示词数组
   prompts: PromptPresetItem[];
   createdAt?: number;   // 创建时间

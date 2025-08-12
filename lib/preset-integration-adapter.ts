@@ -58,11 +58,21 @@ export class PresetFormatConverter {
       name: stPreset.name || "导入的预设",
       description: `从SillyTavern预设导入 (V3引擎处理)`,
       
-      // 模型参数
-      temperature: stPreset.api_settings?.temperature,
-      maxTokens: stPreset.api_settings?.max_tokens || stPreset.api_settings?.maxOutputTokens,
-      topK: stPreset.api_settings?.top_k,
-      topP: stPreset.api_settings?.top_p,
+      // 模型参数 - 从STPreset顶级属性读取
+      temperature: stPreset.temperature,
+      maxTokens: stPreset.max_tokens,
+      topK: stPreset.top_k,
+      topP: stPreset.top_p,
+      topA: stPreset.top_a,
+      minP: stPreset.min_p,
+      frequencyPenalty: stPreset.frequency_penalty,
+      presencePenalty: stPreset.presence_penalty,
+      repetitionPenalty: stPreset.repetition_penalty,
+      maxContext: stPreset.openai_max_context,
+      
+      // 模型设置
+      model: stPreset.model,
+      chatCompletionSource: stPreset.chat_completion_source,
       
       // 提示词数组
       prompts,
@@ -93,14 +103,28 @@ export class PresetFormatConverter {
     }));
 
     return {
+      id: generateId(), // ✅ 添加缺失的必需字段
       name: projectPreset.name,
       prompts: stPrompts,
-      api_settings: {
-        temperature: projectPreset.temperature,
-        max_tokens: projectPreset.maxTokens,
-        top_k: projectPreset.topK,
-        top_p: projectPreset.topP
-      }
+      
+      // 直接在顶级对象设置API参数（V3格式）
+      temperature: projectPreset.temperature,
+      max_tokens: projectPreset.maxTokens,
+      top_p: projectPreset.topP,
+      top_k: projectPreset.topK,
+      top_a: projectPreset.topA,
+      min_p: projectPreset.minP,
+      frequency_penalty: projectPreset.frequencyPenalty,
+      presence_penalty: projectPreset.presencePenalty,
+      repetition_penalty: projectPreset.repetitionPenalty,
+      openai_max_context: projectPreset.maxContext,
+      
+      // 模型设置
+      model: projectPreset.model,
+      chat_completion_source: projectPreset.chatCompletionSource,
+      
+      created_at: Date.now(),
+      updated_at: Date.now()
     };
   }
 }
@@ -163,7 +187,8 @@ export class PresetIntegrationAdapter {
 
     } catch (error) {
       console.error('❌ [PresetAdapter] V3导入失败:', error);
-      throw new Error(`SillyTavern预设导入失败: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`SillyTavern预设导入失败: ${errorMessage}`);
     }
   }
 
