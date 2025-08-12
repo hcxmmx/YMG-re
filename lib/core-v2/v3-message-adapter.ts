@@ -5,8 +5,8 @@
  */
 
 import { Message, PromptPreset } from '../types';
-import { STPreset, STPromptItem, MessageCore } from './preset-system-v2';
-import { MessageBuilderV3, ChatHistoryItem, BaseMessage } from './message-builder-v3';
+import { STPreset, STPromptItem } from './preset-system-v2';
+import { MessageBuilderV3, ChatHistoryItem, BaseMessage, MessageCore } from './message-builder-v3';
 import { PresetFormatConverter } from '../preset-integration-adapter';
 import { generateId } from '../utils';
 
@@ -186,8 +186,8 @@ export class V3MessageAdapter {
    */
   private getMemoryUsage(): number {
     try {
-      if (typeof performance !== 'undefined' && performance.memory) {
-        return performance.memory.usedJSHeapSize / 1024 / 1024;
+      if (typeof performance !== 'undefined' && (performance as any).memory) {
+        return (performance as any).memory.usedJSHeapSize / 1024 / 1024;
       }
       return 0;
     } catch {
@@ -267,8 +267,8 @@ export class PerformanceComparator {
 // 辅助函数
 function getMemoryUsage(): number {
   try {
-    if (typeof performance !== 'undefined' && performance.memory) {
-      return performance.memory.usedJSHeapSize / 1024 / 1024;
+    if (typeof performance !== 'undefined' && (performance as any).memory) {
+      return (performance as any).memory.usedJSHeapSize / 1024 / 1024;
     }
     return 0;
   } catch {
