@@ -11,12 +11,14 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { usePromptPresetStore } from "@/lib/store";
-import { ArrowLeft, Edit, Trash2, Plus, GripVertical, Info, List, LayoutGrid, MoreHorizontal } from "lucide-react";
+import { ArrowLeft, Edit, Trash2, Plus, GripVertical, Info, List, LayoutGrid, MoreHorizontal, Settings } from "lucide-react";
 import { PromptPresetItem } from "@/lib/types";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useResponsiveView } from "@/lib/useResponsiveView";
@@ -372,6 +374,7 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
   const [editPromptIndex, setEditPromptIndex] = useState<number | null>(null);
   const [editPrompt, setEditPrompt] = useState<PromptPresetItem | null>(null);
   const [showDialog, setShowDialog] = useState(false);
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   
   // 修改拖拽传感器设置
   const sensors = useSensors(
@@ -432,12 +435,21 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
   
   // 添加提示词
   const addPrompt = () => {
-    const newPrompt = {
+    const newPrompt: PromptPresetItem = {
       identifier: `prompt_${Date.now()}`,
       name: `提示词 ${prompts.length + 1}`,
       content: "",
       enabled: true,
-      isPlaceholder: false
+      isPlaceholder: false,
+      
+      // 🆕 SillyTavern V3 深度注入参数（默认值）
+      injection_depth: 0,          // 注入深度：0=最前面
+      injection_order: 100,        // 注入优先级：数值越小优先级越高
+      injection_position: 0,       // 注入位置：0=relative, 1=before, 2=after
+      role: 'system',              // 消息角色：system/user/assistant
+      forbid_overrides: false,     // 禁止覆盖：false=允许覆盖
+      marker: false,               // 占位标记：false=静态内容
+      system_prompt: true          // 系统提示词：true=作为系统消息
     };
     
     setPrompts([...prompts, newPrompt]);
@@ -767,7 +779,7 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
       
       {/* 提示词编辑对话框 */}
       <Dialog open={showDialog} onOpenChange={(open) => !open && setShowDialog(false)}>
-        <DialogContent className="sm:max-w-[500px] max-h-[80vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editPromptIndex !== null && editPromptIndex < prompts.length && prompts[editPromptIndex].isPlaceholder
@@ -783,46 +795,272 @@ export default function EditPresetPage({ params }: EditPresetPageProps) {
           
           {editPrompt && (
             <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="prompt-name">名称</Label>
-                <Input
-                  id="prompt-name"
-                  value={editPrompt.name}
-                  onChange={(e) => setEditPrompt({...editPrompt, name: e.target.value})}
-                />
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="prompt-enabled"
-                  checked={editPrompt.enabled}
-                  onCheckedChange={(checked) => setEditPrompt({...editPrompt, enabled: checked})}
-                />
-                <Label htmlFor="prompt-enabled">启用</Label>
-              </div>
-              
-              {editPrompt.isPlaceholder ? (
-                <div className="space-y-2 bg-muted/30 p-4 rounded-md">
-                  <div className="flex items-center">
-                    <Info className="h-4 w-4 mr-2 text-muted-foreground" />
-                    <Label>占位类型: {editPrompt.placeholderType}</Label>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    这是一个动态占位条目，将在运行时替换为实际内容。
-                    {!editPrompt.implemented && " ⚠️ 此占位类型尚未实现，应用预设时将被忽略。"}
-                  </p>
-                </div>
-              ) : (
+              {/* 基础设置 */}
+              <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="prompt-content">内容</Label>
-                  <Textarea
-                    id="prompt-content"
-                    value={editPrompt.content}
-                    onChange={(e) => setEditPrompt({...editPrompt, content: e.target.value})}
-                    className="min-h-[200px] font-mono"
+                  <Label htmlFor="prompt-name">名称</Label>
+                  <Input
+                    id="prompt-name"
+                    value={editPrompt.name}
+                    onChange={(e) => setEditPrompt({...editPrompt, name: e.target.value})}
                   />
                 </div>
-              )}
+                
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="prompt-enabled"
+                    checked={editPrompt.enabled}
+                    onCheckedChange={(checked) => setEditPrompt({...editPrompt, enabled: checked})}
+                  />
+                  <Label htmlFor="prompt-enabled">启用</Label>
+                </div>
+                
+                {editPrompt.isPlaceholder ? (
+                  <div className="space-y-2 bg-muted/30 p-4 rounded-md">
+                    <div className="flex items-center">
+                      <Info className="h-4 w-4 mr-2 text-muted-foreground" />
+                      <Label>占位类型: {editPrompt.placeholderType}</Label>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      这是一个动态占位条目，将在运行时替换为实际内容。
+                      {!editPrompt.implemented && " ⚠️ 此占位类型尚未实现，应用预设时将被忽略。"}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label htmlFor="prompt-content">内容</Label>
+                    <Textarea
+                      id="prompt-content"
+                      value={editPrompt.content}
+                      onChange={(e) => setEditPrompt({...editPrompt, content: e.target.value})}
+                      className="min-h-[200px] font-mono"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* 高级设置 - SillyTavern V3 深度注入参数 */}
+              <div className="border-t pt-4">
+                <div 
+                  className="flex items-center gap-2 cursor-pointer" 
+                  onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                >
+                  <Settings className="h-4 w-4" />
+                  <Label className="cursor-pointer">高级设置 (SillyTavern深度注入)</Label>
+                  <Badge variant="outline" className="text-xs">
+                    {showAdvancedSettings ? '收起' : '展开'}
+                  </Badge>
+                </div>
+                
+                {showAdvancedSettings && (
+                  <div className="mt-4 space-y-4 bg-muted/20 p-4 rounded-md">
+                    <p className="text-sm text-muted-foreground mb-4">
+                      这些参数控制提示词在消息中的注入方式，主要供预设作者使用。普通用户通常不需要修改这些设置。
+                    </p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* 注入深度 */}
+                      <div className="space-y-2">
+                        <Label htmlFor="injection-depth">
+                          注入深度
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Info className="h-3 w-3 ml-1 inline" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>控制提示词在消息历史中的注入位置。<br/>0=最前面，数值越大越靠后</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </Label>
+                        <Input
+                          id="injection-depth"
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={editPrompt.injection_depth ?? 0}
+                          onChange={(e) => setEditPrompt({
+                            ...editPrompt, 
+                            injection_depth: parseInt(e.target.value) || 0
+                          })}
+                        />
+                      </div>
+
+                      {/* 注入优先级 */}
+                      <div className="space-y-2">
+                        <Label htmlFor="injection-order">
+                          注入优先级
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Info className="h-3 w-3 ml-1 inline" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>同一深度内的排序优先级。<br/>数值越小优先级越高</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </Label>
+                        <Input
+                          id="injection-order"
+                          type="number"
+                          min="0"
+                          max="1000"
+                          value={editPrompt.injection_order ?? 100}
+                          onChange={(e) => setEditPrompt({
+                            ...editPrompt, 
+                            injection_order: parseInt(e.target.value) || 100
+                          })}
+                        />
+                      </div>
+
+                      {/* 消息角色 */}
+                      <div className="space-y-2">
+                        <Label>
+                          消息角色
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Info className="h-3 w-3 ml-1 inline" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>指定这条提示词作为什么角色的消息</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </Label>
+                        <Select
+                          value={editPrompt.role || 'system'}
+                          onValueChange={(value) => setEditPrompt({
+                            ...editPrompt, 
+                            role: value as 'system' | 'user' | 'assistant'
+                          })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="system">System (系统)</SelectItem>
+                            <SelectItem value="user">User (用户)</SelectItem>
+                            <SelectItem value="assistant">Assistant (助手)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* 注入位置 */}
+                      <div className="space-y-2">
+                        <Label>
+                          注入位置
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Info className="h-3 w-3 ml-1 inline" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>相对于其他消息的注入位置</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </Label>
+                        <Select
+                          value={(editPrompt.injection_position ?? 0).toString()}
+                          onValueChange={(value) => setEditPrompt({
+                            ...editPrompt, 
+                            injection_position: parseInt(value)
+                          })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="0">Relative (相对)</SelectItem>
+                            <SelectItem value="1">Before (之前)</SelectItem>
+                            <SelectItem value="2">After (之后)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* 高级选项 */}
+                    <div className="space-y-3 border-t pt-4">
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id="forbid-overrides"
+                          checked={editPrompt.forbid_overrides ?? false}
+                          onCheckedChange={(checked) => setEditPrompt({
+                            ...editPrompt, 
+                            forbid_overrides: checked
+                          })}
+                        />
+                        <Label htmlFor="forbid-overrides">
+                          禁止覆盖
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Info className="h-3 w-3 ml-1 inline" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>防止其他提示词覆盖这个条目</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </Label>
+                      </div>
+
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id="system-prompt"
+                          checked={editPrompt.system_prompt ?? true}
+                          onCheckedChange={(checked) => setEditPrompt({
+                            ...editPrompt, 
+                            system_prompt: checked
+                          })}
+                        />
+                        <Label htmlFor="system-prompt">
+                          作为系统提示词
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Info className="h-3 w-3 ml-1 inline" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>将此条目作为系统级提示词处理</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </Label>
+                      </div>
+
+                      {editPrompt.isPlaceholder && (
+                        <div className="flex items-center space-x-2">
+                          <Switch
+                            id="marker"
+                            checked={editPrompt.marker ?? false}
+                            onCheckedChange={(checked) => setEditPrompt({
+                              ...editPrompt, 
+                              marker: checked
+                            })}
+                          />
+                          <Label htmlFor="marker">
+                            占位标记
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Info className="h-3 w-3 ml-1 inline" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>标记为动态占位符（自动从占位符状态推断）</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </Label>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
           

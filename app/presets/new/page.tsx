@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePromptPresetStore } from "@/lib/store";
 import { generateId } from "@/lib/utils";
 import { ArrowLeft } from "lucide-react";
-import { PromptPreset } from "@/lib/types";
+import { PromptPresetItem, PromptPreset } from "@/lib/types";
 
 export default function NewPresetPage() {
   const router = useRouter();
@@ -29,17 +29,22 @@ export default function NewPresetPage() {
   const [topP, setTopP] = useState(0.95);
   
   // 提示词条目
-  const [prompts, setPrompts] = useState<Array<{
-    identifier: string;
-    name: string;
-    content: string;
-    enabled: boolean;
-  }>>([
+  const [prompts, setPrompts] = useState<PromptPresetItem[]>([
     {
       identifier: generateId(),
       name: "基础提示词",
       content: "你是一个友好的AI助手。请尽力回答用户的问题，提供有用的信息。",
       enabled: true,
+      isPlaceholder: false,
+      
+      // 🆕 SillyTavern V3 深度注入参数（默认值）
+      injection_depth: 0,          // 注入深度：0=最前面
+      injection_order: 100,        // 注入优先级：数值越小优先级越高
+      injection_position: 0,       // 注入位置：0=relative, 1=before, 2=after
+      role: 'system',              // 消息角色：system/user/assistant
+      forbid_overrides: false,     // 禁止覆盖：false=允许覆盖
+      marker: false,               // 占位标记：false=静态内容
+      system_prompt: true          // 系统提示词：true=作为系统消息
     }
   ]);
   
@@ -56,10 +61,9 @@ export default function NewPresetPage() {
       maxTokens,
       topK,
       topP,
-      prompts: prompts.map(p => ({
-        ...p,
-        isPlaceholder: false
-      }))
+      prompts, // 直接使用，因为已经是正确的PromptPresetItem类型
+      createdAt: Date.now(),
+      updatedAt: Date.now()
     };
     
     // 保存预设
@@ -71,15 +75,24 @@ export default function NewPresetPage() {
   
   // 添加提示词
   const addPrompt = () => {
-    setPrompts([
-      ...prompts, 
-      {
-        identifier: generateId(),
-        name: `提示词 ${prompts.length + 1}`,
-        content: "",
-        enabled: true
-      }
-    ]);
+    const newPrompt: PromptPresetItem = {
+      identifier: generateId(),
+      name: `提示词 ${prompts.length + 1}`,
+      content: "",
+      enabled: true,
+      isPlaceholder: false,
+      
+      // 🆕 SillyTavern V3 深度注入参数（默认值）
+      injection_depth: 0,          // 注入深度：0=最前面
+      injection_order: 100,        // 注入优先级：数值越小优先级越高
+      injection_position: 0,       // 注入位置：0=relative, 1=before, 2=after
+      role: 'system',              // 消息角色：system/user/assistant
+      forbid_overrides: false,     // 禁止覆盖：false=允许覆盖
+      marker: false,               // 占位标记：false=静态内容
+      system_prompt: true          // 系统提示词：true=作为系统消息
+    };
+    
+    setPrompts([...prompts, newPrompt]);
   };
   
   // 更新提示词
