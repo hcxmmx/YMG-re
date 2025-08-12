@@ -290,28 +290,45 @@ export class SendMessageManager {
   }
 
   /**
-   * 🆕 构建临时预设对象
-   * 从当前设置创建一个基本的PromptPreset对象供V3引擎使用
+   * 🔧 构建临时预设对象
+   * 
+   * ⚠️ 重要说明：这个"临时预设"并不处理占位符内容！
+   * 
+   * 📋 职责分工：
+   * 1. Store层applyPreset() → 处理SillyTavern预设占位符 → 生成最终systemPrompt
+   * 2. SendMessageManager → 接收已处理的systemPrompt → 传给V3引擎
+   * 3. 这个临时预设 → 仅提供API参数和基础结构 → 供V3引擎使用
+   * 
+   * 🎯 实际流程：
+   * - 真正的占位符处理在Store.applyPreset()中完成
+   * - context.systemPrompt已经包含了所有动态内容（角色描述、世界书等）
+   * - V3引擎将systemPromptOverride作为最高优先级注入
+   * 
+   * 📊 这个对象的作用：
+   * - ✅ 提供API参数（temperature, maxTokens等）
+   * - ✅ 给V3引擎提供基础预设结构
+   * - ❌ 不负责占位符内容处理（那是Store层的职责）
    */
   private buildTemporaryPreset(): any {
-    // 创建基本的预设对象，包含当前的API参数
+    // 创建基本的预设对象，主要用于API参数和V3引擎结构
     return {
       id: 'temporary-preset',
-      name: 'Temporary Preset',
-      description: 'Auto-generated preset from current settings',
+      name: 'Temporary Preset', // 注意：仅用于V3引擎，不影响实际功能
+      description: 'API参数容器 - 占位符内容已在Store层处理',
       
-      // API参数（从context.settings获取）
+      // 🎯 主要职责：提供API参数（从context.settings获取）
       temperature: this.context.settings.temperature,
       maxTokens: this.context.settings.maxTokens,
       topK: this.context.settings.topK,
       topP: this.context.settings.topP,
       
-      // 基本的系统提示词条目
+      // 🔧 基础结构：为V3引擎提供预设格式
+      // 注意：真正的系统提示词内容会通过systemPromptOverride传入
       prompts: [
         {
           identifier: 'main',
           name: 'Main System Prompt',
-          content: this.context.systemPrompt || '',
+          content: this.context.systemPrompt || '', // 这里是已处理的最终内容
           enabled: true,
           injection_depth: 0,
           injection_order: 100,
@@ -563,17 +580,33 @@ export class SendMessageManager {
       this.updateApiConfiguration();
       
       // 🚀 使用V3消息构建引擎
+      // 
+      // 📋 V3消息构建流程说明：
+      // 1. Store层已完成：预设占位符 → 动态内容 → 最终systemPrompt
+      // 2. 这里接收：已处理的systemPrompt + 消息历史
+      // 3. V3引擎处理：深度注入、角色合并、API格式转换
+      // 4. 输出：优化后的完整消息数组
       let allMessages: Message[] = [];
       
       try {
-        // 创建临时预设对象（从当前设置构建）
+        // 创建临时预设对象（仅用于API参数，不处理占位符）
         const temporaryPreset = this.buildTemporaryPreset();
         
+        if (this.v3MessageAdapter.getPerformanceMetrics() && typeof window !== 'undefined' && localStorage.getItem('enablePromptDebug') === 'true') {
+          console.log('📊 [V3Integration] 开始V3消息构建', {
+            原始消息数: trimmedMessages.length,
+            系统提示词长度: systemPrompt?.length || 0,
+            预设名称: temporaryPreset.name,
+            说明: '占位符内容已在Store层处理完成'
+          });
+        }
+        
         // 使用V3适配器构建消息
+        // systemPrompt = 已包含所有占位符动态内容的最终系统提示词
         const v3Result = await this.v3MessageAdapter.buildMessagesWithV3(
           trimmedMessages,
           temporaryPreset,
-          systemPrompt
+          systemPrompt // 这是关键：已处理的完整内容
         );
         
         allMessages = v3Result.messages;
@@ -585,7 +618,8 @@ export class SendMessageManager {
             构建时间: `${metrics.v3_build_time}ms`,
             处理消息数: metrics.message_count,
             占位符数: metrics.placeholder_count,
-            内存使用: `${(metrics.memory_usage_after - metrics.memory_usage_before).toFixed(2)}MB`
+            内存使用: `${(metrics.memory_usage_after - metrics.memory_usage_before).toFixed(2)}MB`,
+            说明: 'V3引擎成功处理深度注入和消息优化'
           });
         }
         
@@ -593,11 +627,12 @@ export class SendMessageManager {
         console.warn('⚠️ [V3MessageBuilder] V3构建失败，回退到传统方法:', error);
         
         // 🛡️ 回退到原始逻辑（兼容模式）
+        // 注意：systemPrompt在这里同样是已处理的完整内容
         if (systemPrompt) {
           allMessages.push({
             id: generateId(),
             role: 'system',
-            content: systemPrompt,
+            content: systemPrompt, // 已包含占位符内容
             timestamp: new Date()
           });
         }

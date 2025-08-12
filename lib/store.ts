@@ -1439,6 +1439,19 @@ export const usePromptPresetStore = create<PromptPresetState>()(
         try {
           set({ isLoading: true, error: null });
           
+          // 🎯 关键：这里是SillyTavern占位符处理的核心位置！
+          // 📋 职责说明：
+          // 1. 解析SillyTavern预设中的占位符条目（charDescription、worldInfo等）
+          // 2. 调用getDynamicContent()获取实际动态内容
+          // 3. 组装成最终的系统提示词
+          // 4. 后续SendMessageManager会接收这个已处理的systemPrompt
+          
+          console.log(`🔄 [Store.applyPreset] 开始处理预设: ${preset.name}`, {
+            总条目数: preset.prompts.length,
+            启用条目数: preset.prompts.filter(p => p.enabled).length,
+            占位符条目数: preset.prompts.filter(p => p.isPlaceholder).length
+          });
+          
           // 构建系统提示词
           const systemPromptParts: string[] = [];
           
@@ -1447,17 +1460,22 @@ export const usePromptPresetStore = create<PromptPresetState>()(
             if (!promptItem.enabled) continue;
             
             if (promptItem.isPlaceholder) {
-              // 如果是占位条目且已实现，生成动态内容
+              // 🔑 核心逻辑：占位符动态内容生成
               if (promptItem.implemented) {
+                console.log(`🔄 [Store.applyPreset] 处理占位符: ${promptItem.placeholderType}`);
                 const dynamicContent = await getDynamicContent(promptItem.placeholderType || "");
                 if (dynamicContent) {
                   systemPromptParts.push(dynamicContent);
+                  console.log(`✅ [Store.applyPreset] 占位符内容已生成，长度: ${dynamicContent.length}`);
                 }
+              } else {
+                console.log(`⏳ [Store.applyPreset] 跳过未实现占位符: ${promptItem.placeholderType}`);
               }
               // 未实现的占位条目暂时忽略
             } else {
               // 普通静态内容
               systemPromptParts.push(promptItem.content);
+              console.log(`📝 [Store.applyPreset] 添加静态内容: ${promptItem.name}`);
             }
           }
           
