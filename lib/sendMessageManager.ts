@@ -7,6 +7,8 @@ import { trimMessageHistory } from './tokenUtils';
 import { generateId } from './utils';
 import type { FileData } from '@/components/chat/chat-input';
 import { ApiRouter, createApiRouter, buildApiConfigFromSettings, UnifiedDebugInfo } from './api-router';
+// 🆕 V3消息构建器集成
+import { V3MessageAdapter, createV3MessageAdapter } from './core-v2/v3-message-adapter';
 
 // 调试信息接口 - 使用统一的调试信息格式
 export interface DebugInfo extends UnifiedDebugInfo {
@@ -244,6 +246,9 @@ export class SendMessageManager {
   
   // 🆕 当前请求的AbortController
   private currentAbortController: AbortController | null = null;
+  
+  // 🆕 V3消息构建适配器
+  private v3MessageAdapter: V3MessageAdapter;
 
   constructor(context: SendMessageContext) {
     this.context = context;
@@ -252,6 +257,13 @@ export class SendMessageManager {
     // 初始化API路由器
     this.apiRouter = createApiRouter();
     this.updateApiConfiguration();
+    
+    // 🆕 初始化V3消息适配器
+    this.v3MessageAdapter = createV3MessageAdapter({
+      debug: typeof window !== 'undefined' && localStorage.getItem('enablePromptDebug') === 'true',
+      enablePerformanceTracking: true,
+      compatibilityMode: true // 启用兼容模式以确保稳定性
+    });
   }
   
   /**
@@ -275,6 +287,44 @@ export class SendMessageManager {
         })
       });
     }
+  }
+
+  /**
+   * 🆕 构建临时预设对象
+   * 从当前设置创建一个基本的PromptPreset对象供V3引擎使用
+   */
+  private buildTemporaryPreset(): any {
+    // 创建基本的预设对象，包含当前的API参数
+    return {
+      id: 'temporary-preset',
+      name: 'Temporary Preset',
+      description: 'Auto-generated preset from current settings',
+      
+      // API参数（从context.settings获取）
+      temperature: this.context.settings.temperature,
+      maxTokens: this.context.settings.maxTokens,
+      topK: this.context.settings.topK,
+      topP: this.context.settings.topP,
+      
+      // 基本的系统提示词条目
+      prompts: [
+        {
+          identifier: 'main',
+          name: 'Main System Prompt',
+          content: this.context.systemPrompt || '',
+          enabled: true,
+          injection_depth: 0,
+          injection_order: 100,
+          role: 'system' as const,
+          forbid_overrides: false,
+          marker: false,
+          system_prompt: true
+        }
+      ],
+      
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
   }
 
   // 🆕 状态管理方法 - 委托给RequestLifecycleManager
@@ -512,17 +562,47 @@ export class SendMessageManager {
       
       this.updateApiConfiguration();
       
-      // 构建统一的消息格式，包含系统提示词
-      const allMessages: Message[] = [];
-      if (systemPrompt) {
-        allMessages.push({
-          id: generateId(),
-          role: 'system',
-          content: systemPrompt,
-          timestamp: new Date()
-        });
+      // 🚀 使用V3消息构建引擎
+      let allMessages: Message[] = [];
+      
+      try {
+        // 创建临时预设对象（从当前设置构建）
+        const temporaryPreset = this.buildTemporaryPreset();
+        
+        // 使用V3适配器构建消息
+        const v3Result = await this.v3MessageAdapter.buildMessagesWithV3(
+          trimmedMessages,
+          temporaryPreset,
+          systemPrompt
+        );
+        
+        allMessages = v3Result.messages;
+        
+        // 记录性能指标（如果启用）
+        if (v3Result.performance && this.v3MessageAdapter.getPerformanceMetrics()) {
+          const metrics = this.v3MessageAdapter.getPerformanceMetrics()!;
+          console.log(`🚀 [V3MessageBuilder] 性能提升:`, {
+            构建时间: `${metrics.v3_build_time}ms`,
+            处理消息数: metrics.message_count,
+            占位符数: metrics.placeholder_count,
+            内存使用: `${(metrics.memory_usage_after - metrics.memory_usage_before).toFixed(2)}MB`
+          });
+        }
+        
+      } catch (error) {
+        console.warn('⚠️ [V3MessageBuilder] V3构建失败，回退到传统方法:', error);
+        
+        // 🛡️ 回退到原始逻辑（兼容模式）
+        if (systemPrompt) {
+          allMessages.push({
+            id: generateId(),
+            role: 'system',
+            content: systemPrompt,
+            timestamp: new Date()
+          });
+        }
+        allMessages.push(...trimmedMessages);
       }
-      allMessages.push(...trimmedMessages);
       
       // 保持向后兼容的API参数（用于调试信息）
       const geminiConfig = buildGeminiConfig(apiKey, {
