@@ -5,6 +5,66 @@
 
 import { replaceMacros } from './macroUtils';
 
+/**
+ * 精细的正则宏转义处理，参考SillyTavern实现
+ * 用于安全地处理宏替换后的内容，避免破坏正则表达式语法
+ * @param text 要转义的文本
+ * @returns 转义后的文本
+ */
+function sanitizeRegexMacro(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+  
+  return text.replace(/[\n\r\t\v\f\0.^$*+?{}[\]\\/|()]/g, (s) => {
+    switch (s) {
+      case '\n': return '\\n';  // 真实换行 -> 正则换行匹配
+      case '\r': return '\\r';  // 回车符 -> 正则回车匹配
+      case '\t': return '\\t';  // 制表符 -> 正则制表符匹配
+      case '\v': return '\\v';  // 垂直制表符
+      case '\f': return '\\f';  // 换页符
+      case '\0': return '\\0';  // 空字符
+      default: return '\\' + s; // 其他特殊字符前加反斜杠
+    }
+  });
+}
+
+/**
+ * 验证正则表达式是否有效
+ * @param pattern 正则表达式模式
+ * @param flags 正则表达式标志
+ * @returns 验证结果
+ */
+function validateRegex(pattern: string, flags: string = ''): { valid: boolean; error?: string } {
+  try {
+    new RegExp(pattern, flags);
+    return { valid: true };
+  } catch (error) {
+    return { 
+      valid: false, 
+      error: error instanceof Error ? error.message : '无效的正则表达式'
+    };
+  }
+}
+
+/**
+ * 过滤字符串，移除trim字符串，参考SillyTavern的filterString实现
+ * @param rawString 原始字符串
+ * @param trimStrings 要移除的字符串列表
+ * @param playerName 玩家名称
+ * @param characterName 角色名称
+ * @returns 过滤后的字符串
+ */
+function filterString(rawString: string, trimStrings: string[], playerName: string, characterName: string): string {
+  let finalString = rawString;
+  
+  trimStrings.forEach((trimString) => {
+    // 对trim字符串也进行宏替换
+    const processedTrimString = replaceMacros(trimString, playerName, characterName);
+    finalString = finalString.replaceAll(processedTrimString, '');
+  });
+
+  return finalString;
+}
+
 // 正则表达式脚本类型
 export interface RegexScript {
   id: string;           // 唯一ID
@@ -112,10 +172,10 @@ function applyScripts(text: string, scripts: RegexScript[], playerName: string, 
       // 处理正则表达式中的宏替换
       if (script.substituteRegex === 1) { // 原始替换
         findRegexStr = replaceMacros(findRegexStr, playerName, characterName);
-      } else if (script.substituteRegex === 2) { // 转义替换
+      } else if (script.substituteRegex === 2) { // 转义替换（安全模式）
         const macroReplaced = replaceMacros(findRegexStr, playerName, characterName);
-        // 转义特殊字符
-        findRegexStr = macroReplaced.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // 使用精细转义处理，确保包含特殊字符的宏不会破坏正则语法
+        findRegexStr = sanitizeRegexMacro(macroReplaced);
       }
       
       // 提取正则表达式标志
@@ -129,40 +189,42 @@ function applyScripts(text: string, scripts: RegexScript[], playerName: string, 
         flags = regexMatch[2];
       }
       
+      // 验证正则表达式
+      const validation = validateRegex(patternString, flags);
+      if (!validation.valid) {
+        console.warn(`正则表达式脚本 "${script.scriptName}" 包含无效正则: ${validation.error}`);
+        continue; // 跳过无效的正则表达式
+      }
+      
       // 创建正则表达式对象
       const regex = new RegExp(patternString, flags);
       
       // 应用替换
-      let replacementStr = script.replaceString;
-      
-      // 处理修剪字符串
-      if (script.trimStrings && script.trimStrings.length > 0) {
-        script.trimStrings.forEach(trim => {
-          const trimRegex = new RegExp(trim, 'g');
-          replacementStr = replacementStr.replace(trimRegex, '');
-        });
-      }
-      
-      // 替换匹配项
       processedText = processedText.replace(regex, (match, ...args) => {
-        // 处理捕获组
-        let result = replacementStr;
+        let result = script.replaceString;
         
         // 替换 {{match}} 为完整匹配
-        result = result.replace(/{{match}}/g, match);
+        result = result.replace(/{{match}}/gi, '$0');
         
         // 替换捕获组变量 $1, $2 等
-        for (let i = 0; i < args.length - 2; i++) {
-          if (args[i] !== undefined) {
-            const capturegroupVar = new RegExp('\\$' + (i + 1), 'g');
-            result = result.replace(capturegroupVar, args[i]);
+        result = result.replace(/\$(\d+)/g, (_, num) => {
+          const captureIndex = Number(num);
+          const captureMatch = args[captureIndex - 1]; // args数组是0开始的
+          
+          if (captureMatch === undefined) {
+            return ''; // 没有匹配的捕获组返回空字符串
           }
-        }
+          
+          // 对捕获组应用trim字符串过滤（这是SillyTavern的逻辑）
+          return filterString(captureMatch, script.trimStrings || [], playerName, characterName);
+        });
         
-        return result;
+        // 最后对整个替换字符串进行宏替换（SillyTavern的substituteParams）
+        return replaceMacros(result, playerName, characterName);
       });
     } catch (error) {
       console.error(`正则表达式脚本 "${script.scriptName}" 执行出错:`, error);
+      // 继续处理下一个脚本，不中断整个处理流程
     }
   }
   
