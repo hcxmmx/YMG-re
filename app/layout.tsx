@@ -9,13 +9,12 @@ import { usePathname } from "next/navigation";
 import { useSettingsStore } from "@/lib/store";
 import { Toaster } from "@/components/ui/toast";
 import Script from "next/script";
-import { UpdateNotification } from "@/components/ui/update-notification";
+import { VersionUpdateNotification } from "@/components/ui/version-update-notification";
 import { NavbarContext } from "@/lib/contexts";
 
 const inter = Inter({ subsets: ["latin"] });
 
-// 应用版本号，每次更新后修改
-const APP_VERSION = '1.0.0';
+// 版本管理现在通过 lib/version.ts 统一处理
 
 export default function RootLayout({
   children,
@@ -177,10 +176,7 @@ export default function RootLayout({
             </div>
           </NavbarContext.Provider>
           <Toaster />
-          <UpdateNotification 
-            version={APP_VERSION}
-            releaseNotes="应用已更新到新版本，包含性能改进和错误修复。" 
-          />
+          <VersionUpdateNotification />
           <Script src="/pwa-update.js" strategy="afterInteractive" />
         </ThemeProvider>
       </body>
