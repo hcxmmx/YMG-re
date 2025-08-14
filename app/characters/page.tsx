@@ -5,6 +5,8 @@ import { Character, CharacterImportResult } from "@/lib/types";
 import { characterStorage } from "@/lib/storage";
 import { CharacterCard } from "@/components/ui/character-card";
 import { CharacterListItem } from "@/components/ui/character-list-item";
+import { CharacterCardWithBatch } from "@/components/ui/character-card-with-batch";
+import { CharacterListItemWithBatch } from "@/components/ui/character-list-item-with-batch";
 import { CharacterForm } from "@/components/ui/character-form";
 import { Button } from "@/components/ui/button";
 import { ViewToggle } from "@/components/ui/view-toggle";
@@ -18,6 +20,8 @@ import {
 } from "@/components/ui/dialog";
 import { useChatStore } from "@/lib/store";
 import { BatchImport, ImportResult } from "@/components/ui/batch-import";
+import { BatchManagementContainer, BatchAction } from "@/components/ui/batch-management-container";
+import { Trash2, Users } from "lucide-react";
 
 type ViewMode = 'grid' | 'list';
 
@@ -30,7 +34,7 @@ export default function CharactersPage() {
   const [dialogTitle, setDialogTitle] = useState("");
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
   const [viewMode, setViewMode] = useResponsiveView('characters-view-mode');
-  // 移除未使用的导入文件引用
+  const [batchMode, setBatchMode] = useState(false);
   
   useEffect(() => {
     document.title = "角色管理 - AI角色扮演平台";
@@ -75,6 +79,42 @@ export default function CharactersPage() {
   const handleViewModeChange = (mode: ViewMode) => {
     setViewMode(mode);
   };
+
+  // 批量删除角色
+  const handleBatchDelete = async (selectedIds: string[]) => {
+    try {
+      const { getCharacterConversations, deleteConversation } = useChatStore.getState();
+      
+      // 批量删除角色及其相关对话
+      for (const characterId of selectedIds) {
+        // 获取该角色的所有对话并删除
+        const characterChats = getCharacterConversations(characterId);
+        const deletePromises = characterChats.map(chat => deleteConversation(chat.id));
+        await Promise.all(deletePromises);
+        
+        // 删除角色
+        await characterStorage.deleteCharacter(characterId);
+      }
+      
+      // 重新加载角色列表
+      await loadCharacters();
+    } catch (error) {
+      console.error('批量删除角色失败:', error);
+    }
+  };
+
+  // 定义批量操作
+  const batchActions: BatchAction[] = [
+    {
+      id: 'delete',
+      label: '删除',
+      icon: Trash2,
+      variant: 'destructive',
+      confirmTitle: '批量删除角色',
+      confirmMessage: '确定要删除选中的 {count} 个{itemName}吗？此操作无法撤销，相关的聊天记录也会被删除。',
+      handler: handleBatchDelete
+    }
+  ];
 
   // 处理角色卡批量导入
   const handleBatchImportCharacter = async (files: File[]): Promise<ImportResult[]> => {
@@ -186,29 +226,87 @@ export default function CharactersPage() {
           <p>加载中...</p>
         </div>
       ) : characters.length > 0 ? (
-        viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {characters.map((character) => (
-              <CharacterCard 
-                key={character.id} 
-                character={character} 
-                onEdit={() => handleEditCharacter(character)}
-                onDelete={loadCharacters}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {characters.map((character) => (
-              <CharacterListItem
-                key={character.id}
-                character={character}
-                onEdit={() => handleEditCharacter(character)}
-                onDelete={loadCharacters}
-              />
-            ))}
-          </div>
-        )
+        <BatchManagementContainer
+          items={characters}
+          actions={batchActions}
+          itemName="角色"
+          className="space-y-4"
+          showKeyboardHints={true}
+          batchMode={batchMode}
+        >
+          {({ selectedIds, isSelected, toggleSelection, clearSelection }) => (
+            <>
+              {/* 批量模式切换按钮 */}
+              <div className="flex justify-between items-center mb-4">
+                <Button
+                  variant={batchMode ? "default" : "outline"}
+                  onClick={() => {
+                    if (batchMode) {
+                      // 退出批量模式时清空选择
+                      clearSelection();
+                    }
+                    setBatchMode(!batchMode);
+                  }}
+                  className="gap-2"
+                >
+                  <Users className="h-4 w-4" />
+                  {batchMode ? "退出批量模式" : "批量管理"}
+                </Button>
+              </div>
+
+              {/* 角色列表 */}
+              {viewMode === 'grid' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {characters.map((character) => 
+                    batchMode ? (
+                      <CharacterCardWithBatch
+                        key={character.id}
+                        character={character}
+                        onEdit={() => handleEditCharacter(character)}
+                        onDelete={loadCharacters}
+                        isSelected={isSelected(character.id)}
+                        onToggleSelection={() => toggleSelection(character.id)}
+                        showCheckbox={batchMode}
+                        batchMode={batchMode}
+                      />
+                    ) : (
+                      <CharacterCard 
+                        key={character.id} 
+                        character={character} 
+                        onEdit={() => handleEditCharacter(character)}
+                        onDelete={loadCharacters}
+                      />
+                    )
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {characters.map((character) => 
+                    batchMode ? (
+                      <CharacterListItemWithBatch
+                        key={character.id}
+                        character={character}
+                        onEdit={() => handleEditCharacter(character)}
+                        onDelete={loadCharacters}
+                        isSelected={isSelected(character.id)}
+                        onToggleSelection={() => toggleSelection(character.id)}
+                        showCheckbox={batchMode}
+                        batchMode={batchMode}
+                      />
+                    ) : (
+                      <CharacterListItem
+                        key={character.id}
+                        character={character}
+                        onEdit={() => handleEditCharacter(character)}
+                        onDelete={loadCharacters}
+                      />
+                    )
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </BatchManagementContainer>
       ) : (
         <div className="flex flex-col items-center justify-center h-60">
           <p className="text-muted-foreground mb-4">还没有创建角色</p>
