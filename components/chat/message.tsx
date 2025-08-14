@@ -741,41 +741,85 @@ export function Message({ message, character, onEdit, onRegenerate, isGenerating
               "whitespace-pre-line" // 添加这个类来保留换行符
             )}>
               {isEditing ? (
-                <div className="flex flex-col gap-2">
-                  <textarea
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    className={cn(
-                      "w-full min-h-[100px] p-2 border rounded-md",
-                      isUser
-                        ? "bg-background text-foreground" // 用户消息编辑时使用亮色背景和深色文本
-                        : "bg-background text-foreground"
-                    )}
-                    autoFocus
-                  />
-                  <div className="flex gap-2 justify-end">
-                    <button
-                      onClick={() => setIsEditing(false)}
+                <div className="flex flex-col gap-3 w-full">
+                  <div className="relative w-full">
+                    <textarea
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      onKeyDown={(e) => {
+                        // Ctrl+Enter 保存
+                        if (e.ctrlKey && e.key === 'Enter') {
+                          e.preventDefault();
+                          if (editContent.trim()) {
+                            handleSubmitEdit();
+                          }
+                        }
+                        // Escape 取消
+                        if (e.key === 'Escape') {
+                          e.preventDefault();
+                          setIsEditing(false);
+                        }
+                      }}
                       className={cn(
-                        "px-2 py-1 rounded-md text-xs",
-                        isUser 
-                          ? "bg-background text-foreground hover:bg-background/90" // 用户消息中使用亮色按钮
-                          : "bg-muted hover:bg-muted/80 text-foreground" // AI消息中使用默认按钮
+                        "w-full min-h-[250px] max-h-[700px] p-4 border-2 rounded-lg",
+                        "resize overflow-auto", // 允许自由调整大小，移除transition以提升性能
+                        "focus:ring-2 focus:ring-primary/50 focus:border-primary",
+                        "font-sans text-sm leading-relaxed",
+                        "will-change-auto", // 优化渲染性能
+                        // 响应式最小宽度：大屏幕时较宽，小屏幕时适应容器
+                        "min-w-0 sm:min-w-[400px] md:min-w-[500px] lg:min-w-[600px]",
+                        isUser
+                          ? "bg-background text-foreground border-primary/30" 
+                          : "bg-background text-foreground border-muted-foreground/30"
                       )}
-                    >
-                      取消
-                    </button>
-                    <button
-                      onClick={handleSubmitEdit}
-                      className={cn(
-                        "px-2 py-1 rounded-md text-xs",
-                        isUser 
-                          ? "bg-primary text-primary-foreground hover:bg-primary/90" // 用户消息中使用主色按钮
-                          : "bg-primary text-primary-foreground hover:bg-primary/90" // AI消息中使用主色按钮
-                      )}
-                    >
-                      保存
-                    </button>
+                      style={{
+                        width: '100%',
+                        maxWidth: '100%', // 确保不超出容器
+                        resize: 'both', // 允许双向调整大小
+                        transform: 'translateZ(0)', // 启用硬件加速
+                        backfaceVisibility: 'hidden', // 优化重绘性能
+                      }}
+                      placeholder="编辑消息内容..."
+                      autoFocus
+                      rows={10} // 增加初始行数
+                    />
+                    {/* 字符计数器 */}
+                    <div className="absolute bottom-3 right-3 text-xs text-muted-foreground bg-background/90 backdrop-blur-sm px-2 py-1 rounded shadow-sm">
+                      {editContent.length} 字符
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-2 justify-between items-start sm:items-center flex-wrap">
+                    <div className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap">
+                      <span>💡</span>
+                      <span className="hidden sm:inline">拖拽右下角调整大小 | 支持快捷键 Ctrl+Enter 保存</span>
+                      <span className="sm:hidden">Ctrl+Enter保存 | Esc取消</span>
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => setIsEditing(false)}
+                        className={cn(
+                          "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+                          "border border-muted-foreground/30 hover:border-muted-foreground/50",
+                          "bg-background text-foreground hover:bg-muted/50"
+                        )}
+                      >
+                        取消
+                      </button>
+                      <button
+                        onClick={handleSubmitEdit}
+                        disabled={!editContent.trim()}
+                        className={cn(
+                          "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+                          "bg-primary text-primary-foreground hover:bg-primary/90",
+                          "disabled:opacity-50 disabled:cursor-not-allowed",
+                          "focus:ring-2 focus:ring-primary/50",
+                          "min-w-[60px]" // 确保按钮最小宽度
+                        )}
+                      >
+                        保存
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : showRaw ? (
