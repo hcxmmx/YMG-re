@@ -17,7 +17,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ViewToggle } from "@/components/ui/view-toggle";
 import { useResponsiveView } from "@/lib/useResponsiveView";
 import { PresetListItem } from "@/components/ui/preset-list-item";
+import { PresetListItemWithBatch } from "@/components/ui/preset-list-item-with-batch";
+import { PresetCardWithBatch } from "@/components/ui/preset-card-with-batch";
 import { BatchImport, ImportResult } from "@/components/ui/batch-import";
+import { BatchManagementContainer, BatchAction } from "@/components/ui/batch-management-container";
 
 type ViewMode = 'grid' | 'list';
 
@@ -35,6 +38,22 @@ export default function PresetsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [viewMode, setViewMode] = useResponsiveView('presets-view-mode');
+  const [batchMode, setBatchMode] = useState(false);
+  
+  const batchActions: BatchAction[] = [
+    {
+      id: "delete",
+      label: "删除",
+      icon: Trash2,
+      variant: "destructive",
+      handler: async (selectedIds: string[]) => {
+        selectedIds.forEach(id => {
+          deletePreset(id);
+        });
+      },
+      confirmMessage: "确定要删除选中的预设吗？这个操作无法撤销。"
+    }
+  ];
   
   // 文件导入相关
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -146,6 +165,15 @@ export default function PresetsPage() {
             </Button>
           )}
           
+          {/* 批量管理模式切换 */}
+          <Button
+            variant={batchMode ? "default" : "outline"}
+            size="sm"
+            onClick={() => setBatchMode(!batchMode)}
+          >
+            {batchMode ? "退出批量" : "批量管理"}
+          </Button>
+          
           <BatchImport
             onImport={handleBatchImport}
             accept=".json"
@@ -188,103 +216,139 @@ export default function PresetsPage() {
       )}
       
       {/* 预设列表 */}
-      {!isLoading && filteredPresets.length === 0 && (
-        <div className="text-center py-12 text-muted-foreground">
-          {searchTerm.trim() !== "" 
-            ? "没有找到匹配的预设"
-            : "还没有预设，点击\"新建预设\"按钮创建一个，或导入已有预设文件"
-          }
-        </div>
-      )}
-      
-      {!isLoading && filteredPresets.length > 0 && (
-        viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredPresets.map((preset) => (
-              <Card key={preset.id} className="flex flex-col overflow-hidden hover:shadow-md transition-shadow">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-lg font-medium">{preset.name}</CardTitle>
-                  <CardDescription className="line-clamp-2 min-h-[2.5rem]">
-                    {preset.description || "无描述"}
-                  </CardDescription>
-                </CardHeader>
-                
-                <CardContent className="pb-3 flex-grow">
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    <Badge variant="outline" className="bg-primary/10">
-                      <Sliders className="h-3 w-3 mr-1" />
-                      温度: {preset.temperature?.toFixed(1) || "0.7"}
-                    </Badge>
-                    <Badge variant="outline" className="bg-primary/10">
-                      <Check className="h-3 w-3 mr-1" />
-                      已启用: {preset.prompts.filter(p => p.enabled).length}/{preset.prompts.length}
-                    </Badge>
-                  </div>
-                </CardContent>
-                
-                <CardFooter className="pt-2 flex justify-between border-t bg-muted/20">
-                  <div className="flex gap-1">
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0"
-                            onClick={() => exportPresetToFile(preset.id)}>
-                            <Download className="h-3.5 w-3.5" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>导出预设</TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                    
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" asChild>
-                            <Link href={`/presets/${preset.id}`}>
-                              <Edit className="h-3.5 w-3.5" />
+      <BatchManagementContainer
+        items={filteredPresets}
+        actions={batchActions}
+        itemName="预设"
+        batchMode={batchMode}
+      >
+        {({ selectedIds, isSelected, toggleSelection }) => (
+          <>
+            {!isLoading && filteredPresets.length === 0 && (
+              <div className="text-center py-12 text-muted-foreground">
+                {searchTerm.trim() !== "" 
+                  ? "没有找到匹配的预设"
+                  : "还没有预设，点击\"新建预设\"按钮创建一个，或导入已有预设文件"
+                }
+              </div>
+            )}
+            
+            {!isLoading && filteredPresets.length > 0 && (
+              viewMode === 'grid' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredPresets.map((preset) => (
+                    batchMode ? (
+                      <PresetCardWithBatch
+                        key={preset.id}
+                        preset={preset}
+                        onExport={exportPresetToFile}
+                        onDelete={handleDelete}
+                        isSelected={isSelected(preset.id)}
+                        onToggleSelection={() => toggleSelection(preset.id)}
+                        batchMode={true}
+                      />
+                    ) : (
+                      <Card key={preset.id} className="flex flex-col overflow-hidden hover:shadow-md transition-shadow">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-lg font-medium">{preset.name}</CardTitle>
+                          <CardDescription className="line-clamp-2 min-h-[2.5rem]">
+                            {preset.description || "无描述"}
+                          </CardDescription>
+                        </CardHeader>
+                        
+                        <CardContent className="pb-3 flex-grow">
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            <Badge variant="outline" className="bg-primary/10">
+                              <Sliders className="h-3 w-3 mr-1" />
+                              温度: {preset.temperature?.toFixed(1) || "0.7"}
+                            </Badge>
+                            <Badge variant="outline" className="bg-primary/10">
+                              <Check className="h-3 w-3 mr-1" />
+                              已启用: {preset.prompts.filter(p => p.enabled).length}/{preset.prompts.length}
+                            </Badge>
+                          </div>
+                        </CardContent>
+                        
+                        <CardFooter className="pt-2 flex justify-between border-t bg-muted/20">
+                          <div className="flex gap-1">
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0"
+                                    onClick={() => exportPresetToFile(preset.id)}>
+                                    <Download className="h-3.5 w-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>导出预设</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" asChild>
+                                    <Link href={`/presets/${preset.id}`}>
+                                      <Edit className="h-3.5 w-3.5" />
+                                    </Link>
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>编辑预设</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0"
+                                    onClick={() => handleDelete(preset.id, preset.name)}>
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>删除预设</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </div>
+                          
+                          <Button size="sm" asChild className="h-8">
+                            <Link href={`/presets/${preset.id}/detail`}>
+                              查看
+                              <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
                             </Link>
                           </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>编辑预设</TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                    
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0"
-                            onClick={() => handleDelete(preset.id, preset.name)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>删除预设</TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
-                  
-                  <Button size="sm" asChild className="h-8">
-                    <Link href={`/presets/${preset.id}/detail`}>
-                      查看
-                      <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
-                    </Link>
-                  </Button>
-                </CardFooter>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredPresets.map((preset) => (
-              <PresetListItem 
-                key={preset.id}
-                preset={preset}
-                onExport={exportPresetToFile}
-                onDelete={handleDelete}
-              />
-            ))}
-          </div>
-        )
-      )}
+                        </CardFooter>
+                      </Card>
+                    )
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {filteredPresets.map((preset) => (
+                    batchMode ? (
+                      <PresetListItemWithBatch 
+                        key={preset.id}
+                        preset={preset}
+                        onExport={exportPresetToFile}
+                        onDelete={handleDelete}
+                        isSelected={isSelected(preset.id)}
+                        onToggleSelection={() => toggleSelection(preset.id)}
+                        showCheckbox={true}
+                        batchMode={true}
+                      />
+                    ) : (
+                      <PresetListItem 
+                        key={preset.id}
+                        preset={preset}
+                        onExport={exportPresetToFile}
+                        onDelete={handleDelete}
+                      />
+                    )
+                  ))}
+                </div>
+              )
+            )}
+          </>
+        )}
+      </BatchManagementContainer>
     </div>
   );
 } 

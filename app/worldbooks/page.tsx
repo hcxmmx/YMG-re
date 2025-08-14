@@ -13,7 +13,10 @@ import { Plus, FileUp, Download, Trash, Edit, Link2, Users, MoreHorizontal, Eye,
 import { ViewToggle } from "@/components/ui/view-toggle";
 import { useResponsiveView } from "@/lib/useResponsiveView";
 import { WorldBookListItem } from "@/components/ui/worldbook-list-item";
+import { WorldBookListItemWithBatch } from "@/components/ui/worldbook-list-item-with-batch";
+import { WorldBookCardWithBatch } from "@/components/ui/worldbook-card-with-batch";
 import { BatchImport, ImportResult } from "@/components/ui/batch-import";
+import { BatchManagementContainer, BatchAction } from "@/components/ui/batch-management-container";
 
 type ViewMode = 'grid' | 'list';
 
@@ -22,6 +25,22 @@ export default function WorldBooksPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [linkedCharacters, setLinkedCharacters] = useState<Record<string, number>>({});
   const [viewMode, setViewMode] = useResponsiveView('worldbooks-view-mode');
+  const [batchMode, setBatchMode] = useState(false);
+
+  const batchActions: BatchAction[] = [
+    {
+      id: "delete",
+      label: "删除",
+      icon: Trash,
+      variant: "destructive",
+      handler: async (selectedIds: string[]) => {
+        selectedIds.forEach(id => {
+          deleteWorldBook(id);
+        });
+      },
+      confirmMessage: "确定要删除选中的世界书吗？这个操作无法撤销。"
+    }
+  ];
 
   // 加载世界书列表
   useEffect(() => {
@@ -167,6 +186,15 @@ export default function WorldBooksPage() {
             <ViewToggle viewMode={viewMode} onChange={handleViewModeChange} />
           </div>
           
+          {/* 批量管理模式切换 */}
+          <Button
+            variant={batchMode ? "default" : "outline"}
+            size="sm"
+            onClick={() => setBatchMode(!batchMode)}
+          >
+            {batchMode ? "退出批量" : "批量管理"}
+          </Button>
+          
           <Button asChild>
             <Link href="/worldbooks/new">
               <Plus className="mr-2 h-4 w-4" /> 新建
@@ -189,53 +217,93 @@ export default function WorldBooksPage() {
         <ViewToggle viewMode={viewMode} onChange={handleViewModeChange} />
       </div>
 
-      {isLoading ? (
-        <div className="flex justify-center py-10">
-          <p className="text-muted-foreground">加载中...</p>
-        </div>
-      ) : worldBooks.length === 0 ? (
-        <div className="text-center py-10">
-          <p className="text-muted-foreground mb-6">还没有世界书</p>
-          <div className="flex justify-center gap-4">
-            <Button asChild>
-              <Link href="/worldbooks/new">新建世界书</Link>
-            </Button>
-            {/* 替换成批量导入组件 */}
-            <BatchImport
-              onImport={handleBatchImport}
-              accept=".json"
-              buttonText="导入世界书"
-              variant="outline"
-            />
-          </div>
-        </div>
-      ) : viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {worldBooks.map((worldBook) => (
-            <WorldBookCard
-              key={worldBook.id}
-              worldBook={worldBook}
-              characterCount={linkedCharacters[worldBook.id] || 0}
-              onExport={() => handleExport(worldBook.id)}
-              onDelete={() => handleDelete(worldBook.id)}
-              onToggleEnabled={() => handleToggleEnabled(worldBook.id)}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {worldBooks.map((worldBook) => (
-            <WorldBookListItem
-              key={worldBook.id}
-              worldBook={worldBook}
-              characterCount={linkedCharacters[worldBook.id] || 0}
-              onExport={() => handleExport(worldBook.id)}
-              onDelete={() => handleDelete(worldBook.id)}
-              onToggleEnabled={() => handleToggleEnabled(worldBook.id)}
-            />
-          ))}
-        </div>
-      )}
+      <BatchManagementContainer
+        items={worldBooks}
+        actions={batchActions}
+        itemName="世界书"
+        batchMode={batchMode}
+      >
+        {({ selectedIds, isSelected, toggleSelection }) => (
+          <>
+            {isLoading ? (
+              <div className="flex justify-center py-10">
+                <p className="text-muted-foreground">加载中...</p>
+              </div>
+            ) : worldBooks.length === 0 ? (
+              <div className="text-center py-10">
+                <p className="text-muted-foreground mb-6">还没有世界书</p>
+                <div className="flex justify-center gap-4">
+                  <Button asChild>
+                    <Link href="/worldbooks/new">新建世界书</Link>
+                  </Button>
+                  {/* 替换成批量导入组件 */}
+                  <BatchImport
+                    onImport={handleBatchImport}
+                    accept=".json"
+                    buttonText="导入世界书"
+                    variant="outline"
+                  />
+                </div>
+              </div>
+            ) : viewMode === 'grid' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {worldBooks.map((worldBook) => (
+                  batchMode ? (
+                    <WorldBookCardWithBatch
+                      key={worldBook.id}
+                      worldBook={worldBook}
+                      characterCount={linkedCharacters[worldBook.id] || 0}
+                      onExport={() => handleExport(worldBook.id)}
+                      onDelete={() => handleDelete(worldBook.id)}
+                      onToggleEnabled={() => handleToggleEnabled(worldBook.id)}
+                      isSelected={isSelected(worldBook.id)}
+                      onToggleSelection={() => toggleSelection(worldBook.id)}
+                      batchMode={true}
+                    />
+                  ) : (
+                    <WorldBookCard
+                      key={worldBook.id}
+                      worldBook={worldBook}
+                      characterCount={linkedCharacters[worldBook.id] || 0}
+                      onExport={() => handleExport(worldBook.id)}
+                      onDelete={() => handleDelete(worldBook.id)}
+                      onToggleEnabled={() => handleToggleEnabled(worldBook.id)}
+                    />
+                  )
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {worldBooks.map((worldBook) => (
+                  batchMode ? (
+                    <WorldBookListItemWithBatch
+                      key={worldBook.id}
+                      worldBook={worldBook}
+                      characterCount={linkedCharacters[worldBook.id] || 0}
+                      onExport={() => handleExport(worldBook.id)}
+                      onDelete={() => handleDelete(worldBook.id)}
+                      onToggleEnabled={() => handleToggleEnabled(worldBook.id)}
+                      isSelected={isSelected(worldBook.id)}
+                      onToggleSelection={() => toggleSelection(worldBook.id)}
+                      showCheckbox={true}
+                      batchMode={true}
+                    />
+                  ) : (
+                    <WorldBookListItem
+                      key={worldBook.id}
+                      worldBook={worldBook}
+                      characterCount={linkedCharacters[worldBook.id] || 0}
+                      onExport={() => handleExport(worldBook.id)}
+                      onDelete={() => handleDelete(worldBook.id)}
+                      onToggleEnabled={() => handleToggleEnabled(worldBook.id)}
+                    />
+                  )
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </BatchManagementContainer>
     </div>
   );
 }
