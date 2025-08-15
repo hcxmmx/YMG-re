@@ -194,7 +194,7 @@ export function ChatBackgroundSettings({ settings, onChange }: ChatBackgroundSet
   // 处理拖拽开始
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (settings.type !== 'image' || !settings.imageUrl) return;
-    
+
     setIsDragging(true);
     setDragStart({ x: e.clientX, y: e.clientY });
     e.preventDefault();
@@ -218,12 +218,17 @@ export function ChatBackgroundSettings({ settings, onChange }: ChatBackgroundSet
       const newTranslateX = Math.max(-200, Math.min(200, settings.imageTransform.translateX + percentX));
       const newTranslateY = Math.max(-200, Math.min(200, settings.imageTransform.translateY + percentY));
 
+      // 如果位置发生变化且不是自定义模式，自动切换到自定义模式
+      const shouldSwitchToCustom = settings.imageTransform.sizeMode !== 'custom' &&
+        (newTranslateX !== settings.imageTransform.translateX || newTranslateY !== settings.imageTransform.translateY);
+
       onChange({
         ...settings,
         imageTransform: {
           ...settings.imageTransform,
           translateX: newTranslateX,
           translateY: newTranslateY,
+          sizeMode: shouldSwitchToCustom ? 'custom' : settings.imageTransform.sizeMode,
         },
       });
     }
@@ -258,28 +263,43 @@ export function ChatBackgroundSettings({ settings, onChange }: ChatBackgroundSet
           const { translateX, translateY, scale, rotate, sizeMode } = imageTransform;
 
           let backgroundSize = '';
+          let backgroundPosition = 'center';
+
           switch (sizeMode) {
             case 'cover':
               backgroundSize = 'cover';
+              if (translateX !== 0 || translateY !== 0) {
+                backgroundPosition = `${50 + translateX}% ${50 + translateY}%`;
+              }
               break;
             case 'contain':
               backgroundSize = 'contain';
+              if (translateX !== 0 || translateY !== 0) {
+                backgroundPosition = `${50 + translateX}% ${50 + translateY}%`;
+              }
               break;
             case 'auto':
               backgroundSize = 'auto';
+              if (translateX !== 0 || translateY !== 0) {
+                backgroundPosition = `${50 + translateX}% ${50 + translateY}%`;
+              }
               break;
             case 'stretch':
               backgroundSize = '100% 100%';
+              if (translateX !== 0 || translateY !== 0) {
+                backgroundPosition = `${50 + translateX}% ${50 + translateY}%`;
+              }
               break;
             case 'custom':
               backgroundSize = `${scale * 100}%`;
+              backgroundPosition = `${50 + translateX}% ${50 + translateY}%`;
               break;
           }
 
           return {
             backgroundImage: `url(${imageUrl})`,
             backgroundSize,
-            backgroundPosition: sizeMode === 'custom' ? `${50 + translateX}% ${50 + translateY}%` : 'center',
+            backgroundPosition,
             backgroundRepeat: 'no-repeat',
             transform: `rotate(${rotate}deg)`,
             opacity: opacity / 100,
@@ -376,11 +396,8 @@ export function ChatBackgroundSettings({ settings, onChange }: ChatBackgroundSet
                     <div className="relative">
                       <div
                         ref={previewRef}
-                        className={cn(
-                          "relative w-full h-64 md:h-80 lg:h-96 border-2 border-gray-300 rounded-lg overflow-hidden bg-gray-50",
-                          settings.imageTransform.sizeMode === 'custom' ? "cursor-move" : "cursor-default"
-                        )}
-                        onMouseDown={settings.imageTransform.sizeMode === 'custom' ? handleMouseDown : undefined}
+                        className="relative w-full h-64 md:h-80 lg:h-96 border-2 border-gray-300 rounded-lg overflow-hidden bg-gray-50 cursor-move"
+                        onMouseDown={handleMouseDown}
                         style={getBackgroundStyle()}
                       >
                         {/* 网格背景 */}
@@ -403,16 +420,19 @@ export function ChatBackgroundSettings({ settings, onChange }: ChatBackgroundSet
                         </div>
 
                         {/* 操作提示 */}
-                        {settings.imageTransform.sizeMode === 'custom' && (
-                          <div className="absolute bottom-4 left-4 right-4 text-center">
-                            <div className="inline-block bg-black/80 text-white text-sm px-4 py-2 rounded-lg shadow-lg">
-                              <div className="flex items-center justify-center gap-2">
-                                <Move className="w-4 h-4" />
-                                <span>拖拽调整位置</span>
-                              </div>
+                        <div className="absolute bottom-4 left-4 right-4 text-center">
+                          <div className="inline-block bg-black/80 text-white text-sm px-4 py-2 rounded-lg shadow-lg">
+                            <div className="flex items-center justify-center gap-2">
+                              <Move className="w-4 h-4" />
+                              <span>
+                                {settings.imageTransform.sizeMode === 'custom'
+                                  ? '拖拽调整位置'
+                                  : '拖拽微调位置（将切换到自定义模式）'
+                                }
+                              </span>
                             </div>
                           </div>
-                        )}
+                        </div>
                       </div>
 
                       {/* 重置按钮 */}
@@ -442,13 +462,52 @@ export function ChatBackgroundSettings({ settings, onChange }: ChatBackgroundSet
                   {/* 尺寸模式选择 */}
                   <div className="space-y-4">
                     <div>
-                      <Label>背景尺寸模式</Label>
+                      <div className="flex items-center justify-between">
+                        <Label>背景尺寸模式</Label>
+                        {settings.imageTransform.sizeMode === 'custom' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => onChange({
+                              ...settings,
+                              imageTransform: {
+                                ...settings.imageTransform,
+                                translateX: 0,
+                                translateY: 0,
+                                scale: 1,
+                                rotate: 0,
+                                sizeMode: 'cover', // 重置到覆盖模式
+                              }
+                            })}
+                            className="text-xs h-7"
+                          >
+                            重置为覆盖模式
+                          </Button>
+                        )}
+                      </div>
                       <Select
                         value={settings.imageTransform.sizeMode}
-                        onValueChange={(value: BackgroundSizeMode) => onChange({
-                          ...settings,
-                          imageTransform: { ...settings.imageTransform, sizeMode: value }
-                        })}
+                        onValueChange={(value: BackgroundSizeMode) => {
+                          // 切换模式时重置变换参数（除了自定义模式）
+                          if (value !== 'custom') {
+                            onChange({
+                              ...settings,
+                              imageTransform: {
+                                ...settings.imageTransform,
+                                sizeMode: value,
+                                translateX: 0,
+                                translateY: 0,
+                                scale: 1,
+                                rotate: 0,
+                              }
+                            });
+                          } else {
+                            onChange({
+                              ...settings,
+                              imageTransform: { ...settings.imageTransform, sizeMode: value }
+                            });
+                          }
+                        }}
                       >
                         <SelectTrigger className="mt-2">
                           <SelectValue />
@@ -466,113 +525,157 @@ export function ChatBackgroundSettings({ settings, onChange }: ChatBackgroundSet
                       </Select>
                     </div>
 
-                    {/* 自定义模式的控制 */}
-                    {settings.imageTransform.sizeMode === 'custom' && (
-                      <div className="space-y-4 p-4 border rounded-lg bg-gray-50">
-                        <div className="text-sm font-medium text-gray-700">自定义调整</div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <Label>缩放: {settings.imageTransform.scale.toFixed(1)}x</Label>
-                            <div className="flex items-center gap-2 mt-2">
-                              <Slider
-                                value={[settings.imageTransform.scale]}
-                                onValueChange={([value]) => onChange({
-                                  ...settings,
-                                  imageTransform: { ...settings.imageTransform, scale: value }
-                                })}
-                                min={0.1}
-                                max={3}
-                                step={0.1}
-                                className="flex-1"
-                              />
-                              <Input
-                                type="number"
-                                value={settings.imageTransform.scale.toFixed(1)}
-                                onChange={(e) => {
-                                  const value = parseFloat(e.target.value);
-                                  if (!isNaN(value) && value >= 0.1 && value <= 3) {
-                                    onChange({
-                                      ...settings,
-                                      imageTransform: { ...settings.imageTransform, scale: value }
-                                    });
-                                  }
-                                }}
-                                min={0.1}
-                                max={3}
-                                step={0.1}
-                                className="w-20"
-                              />
-                            </div>
+                    {/* 图片调整控制 - 始终显示 */}
+                    <div className="space-y-4 p-4 border rounded-lg bg-gray-50">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-medium text-gray-700">图片调整</div>
+                        {settings.imageTransform.sizeMode !== 'custom' && (
+                          <div className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                            调整参数将自动切换到自定义模式
                           </div>
-                          <div>
-                            <Label>旋转: {settings.imageTransform.rotate}°</Label>
-                            <div className="flex items-center gap-2 mt-2">
-                              <Slider
-                                value={[settings.imageTransform.rotate]}
-                                onValueChange={([value]) => onChange({
-                                  ...settings,
-                                  imageTransform: { ...settings.imageTransform, rotate: value }
-                                })}
-                                min={0}
-                                max={360}
-                                step={1}
-                                className="flex-1"
-                              />
-                              <Input
-                                type="number"
-                                value={settings.imageTransform.rotate}
-                                onChange={(e) => {
-                                  const value = parseInt(e.target.value);
-                                  if (!isNaN(value) && value >= 0 && value <= 360) {
-                                    onChange({
-                                      ...settings,
-                                      imageTransform: { ...settings.imageTransform, rotate: value }
-                                    });
-                                  }
-                                }}
-                                min={0}
-                                max={360}
-                                step={1}
-                                className="w-20"
-                              />
-                            </div>
-                          </div>
-                        </div>
+                        )}
+                      </div>
 
-                        {/* 位置微调 */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <Label>水平位置: {settings.imageTransform.translateX.toFixed(0)}</Label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label>缩放: {settings.imageTransform.scale.toFixed(1)}x</Label>
+                          <div className="flex items-center gap-2 mt-2">
                             <Slider
-                              value={[settings.imageTransform.translateX]}
-                              onValueChange={([value]) => onChange({
-                                ...settings,
-                                imageTransform: { ...settings.imageTransform, translateX: value }
-                              })}
-                              min={-200}
-                              max={200}
-                              step={1}
-                              className="mt-2"
+                              value={[settings.imageTransform.scale]}
+                              onValueChange={([value]) => {
+                                // 如果不是自定义模式且值发生变化，自动切换到自定义模式
+                                const shouldSwitchToCustom = settings.imageTransform.sizeMode !== 'custom' && value !== settings.imageTransform.scale;
+                                onChange({
+                                  ...settings,
+                                  imageTransform: {
+                                    ...settings.imageTransform,
+                                    scale: value,
+                                    sizeMode: shouldSwitchToCustom ? 'custom' : settings.imageTransform.sizeMode
+                                  }
+                                });
+                              }}
+                              min={0.1}
+                              max={3}
+                              step={0.1}
+                              className="flex-1"
+                            />
+                            <Input
+                              type="number"
+                              value={settings.imageTransform.scale.toFixed(1)}
+                              onChange={(e) => {
+                                const value = parseFloat(e.target.value);
+                                if (!isNaN(value) && value >= 0.1 && value <= 3) {
+                                  const shouldSwitchToCustom = settings.imageTransform.sizeMode !== 'custom' && value !== settings.imageTransform.scale;
+                                  onChange({
+                                    ...settings,
+                                    imageTransform: {
+                                      ...settings.imageTransform,
+                                      scale: value,
+                                      sizeMode: shouldSwitchToCustom ? 'custom' : settings.imageTransform.sizeMode
+                                    }
+                                  });
+                                }
+                              }}
+                              min={0.1}
+                              max={3}
+                              step={0.1}
+                              className="w-20"
                             />
                           </div>
-                          <div>
-                            <Label>垂直位置: {settings.imageTransform.translateY.toFixed(0)}</Label>
+                        </div>
+                        <div>
+                          <Label>旋转: {settings.imageTransform.rotate}°</Label>
+                          <div className="flex items-center gap-2 mt-2">
                             <Slider
-                              value={[settings.imageTransform.translateY]}
-                              onValueChange={([value]) => onChange({
-                                ...settings,
-                                imageTransform: { ...settings.imageTransform, translateY: value }
-                              })}
-                              min={-200}
-                              max={200}
+                              value={[settings.imageTransform.rotate]}
+                              onValueChange={([value]) => {
+                                const shouldSwitchToCustom = settings.imageTransform.sizeMode !== 'custom' && value !== settings.imageTransform.rotate;
+                                onChange({
+                                  ...settings,
+                                  imageTransform: {
+                                    ...settings.imageTransform,
+                                    rotate: value,
+                                    sizeMode: shouldSwitchToCustom ? 'custom' : settings.imageTransform.sizeMode
+                                  }
+                                });
+                              }}
+                              min={0}
+                              max={360}
                               step={1}
-                              className="mt-2"
+                              className="flex-1"
+                            />
+                            <Input
+                              type="number"
+                              value={settings.imageTransform.rotate}
+                              onChange={(e) => {
+                                const value = parseInt(e.target.value);
+                                if (!isNaN(value) && value >= 0 && value <= 360) {
+                                  const shouldSwitchToCustom = settings.imageTransform.sizeMode !== 'custom' && value !== settings.imageTransform.rotate;
+                                  onChange({
+                                    ...settings,
+                                    imageTransform: {
+                                      ...settings.imageTransform,
+                                      rotate: value,
+                                      sizeMode: shouldSwitchToCustom ? 'custom' : settings.imageTransform.sizeMode
+                                    }
+                                  });
+                                }
+                              }}
+                              min={0}
+                              max={360}
+                              step={1}
+                              className="w-20"
                             />
                           </div>
                         </div>
                       </div>
-                    )}
+
+                      {/* 位置微调 */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label>水平位置: {settings.imageTransform.translateX.toFixed(0)}</Label>
+                          <Slider
+                            value={[settings.imageTransform.translateX]}
+                            onValueChange={([value]) => {
+                              const shouldSwitchToCustom = settings.imageTransform.sizeMode !== 'custom' && value !== settings.imageTransform.translateX;
+                              onChange({
+                                ...settings,
+                                imageTransform: {
+                                  ...settings.imageTransform,
+                                  translateX: value,
+                                  sizeMode: shouldSwitchToCustom ? 'custom' : settings.imageTransform.sizeMode
+                                }
+                              });
+                            }}
+                            min={-200}
+                            max={200}
+                            step={1}
+                            className="mt-2"
+                          />
+                        </div>
+                        <div>
+                          <Label>垂直位置: {settings.imageTransform.translateY.toFixed(0)}</Label>
+                          <Slider
+                            value={[settings.imageTransform.translateY]}
+                            onValueChange={([value]) => {
+                              const shouldSwitchToCustom = settings.imageTransform.sizeMode !== 'custom' && value !== settings.imageTransform.translateY;
+                              onChange({
+                                ...settings,
+                                imageTransform: {
+                                  ...settings.imageTransform,
+                                  translateY: value,
+                                  sizeMode: shouldSwitchToCustom ? 'custom' : settings.imageTransform.sizeMode
+                                }
+                              });
+                            }}
+                            min={-200}
+                            max={200}
+                            step={1}
+                            className="mt-2"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}

@@ -34,15 +34,31 @@ export function applyChatBackground(settings: ChatBackgroundSettings, isPreview 
         switch (sizeMode) {
           case 'cover':
             backgroundSize = 'cover';
+            // 在覆盖模式下也允许位置调整
+            if (translateX !== 0 || translateY !== 0) {
+              backgroundPosition = `${50 + translateX}% ${50 + translateY}%`;
+            }
             break;
           case 'contain':
             backgroundSize = 'contain';
+            // 在包含模式下也允许位置调整
+            if (translateX !== 0 || translateY !== 0) {
+              backgroundPosition = `${50 + translateX}% ${50 + translateY}%`;
+            }
             break;
           case 'auto':
             backgroundSize = 'auto';
+            // 在自动模式下也允许位置调整
+            if (translateX !== 0 || translateY !== 0) {
+              backgroundPosition = `${50 + translateX}% ${50 + translateY}%`;
+            }
             break;
           case 'stretch':
             backgroundSize = '100% 100%';
+            // 拉伸模式下位置调整意义不大，但仍然支持
+            if (translateX !== 0 || translateY !== 0) {
+              backgroundPosition = `${50 + translateX}% ${50 + translateY}%`;
+            }
             break;
           case 'custom':
             backgroundSize = `${scale * 100}%`;
