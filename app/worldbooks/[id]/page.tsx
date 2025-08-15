@@ -89,8 +89,8 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
           
           // 加载所有可用角色（未关联的）
           const allCharacters = await characterStorage.listCharacters();
-          const linkedIds = characters.map(c => c.id);
-          setAvailableCharacters(allCharacters.filter(c => !linkedIds.includes(c.id)));
+          const linkedIds = characters.map((c: any) => c.id);
+          setAvailableCharacters(allCharacters.filter((c: any) => !linkedIds.includes(c.id)));
         } catch (error) {
           console.error("获取角色数据失败", error);
         }
@@ -264,8 +264,8 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
       
       // 更新可用角色列表
       const allCharacters = await characterStorage.listCharacters();
-      const linkedIds = characters.map(c => c.id);
-      setAvailableCharacters(allCharacters.filter(c => !linkedIds.includes(c.id)));
+      const linkedIds = characters.map((c: any) => c.id);
+      setAvailableCharacters(allCharacters.filter((c: any) => !linkedIds.includes(c.id)));
       
       setIsLinkingCharacter(false);
     } catch (error) {
@@ -295,8 +295,8 @@ export default function WorldBookPage({ params }: WorldBookPageProps) {
       
       // 更新可用角色列表
       const allCharacters = await characterStorage.listCharacters();
-      const linkedIds = characters.map(c => c.id);
-      setAvailableCharacters(allCharacters.filter(c => !linkedIds.includes(c.id)));
+      const linkedIds = characters.map((c: any) => c.id);
+      setAvailableCharacters(allCharacters.filter((c: any) => !linkedIds.includes(c.id)));
       
       setIsLinkingCharacter(false);
     } catch (error) {
