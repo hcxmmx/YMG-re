@@ -127,10 +127,16 @@ interface AppDB extends DBSchema {
 
 
 // 初始化数据库
-export const initDB = async () => {
+export const initDB = async (): Promise<any> => {
   try {
     const db = await openDB<AppDB>('ai-roleplay-db', 10, {
-      upgrade(db, oldVersion) {
+      upgrade(db, oldVersion, newVersion, transaction) {
+        console.log(`数据库升级: ${oldVersion} -> ${newVersion}`);
+
+        // 备份现有数据（如果需要）
+        if (oldVersion > 0) {
+          console.log('检测到数据库升级，准备迁移数据...');
+        }
         // 版本1: 创建conversations和presets表
         if (oldVersion < 1) {
           // 存储对话历史
@@ -245,72 +251,23 @@ export const initDB = async () => {
     return db;
   } catch (error) {
     console.error("数据库初始化错误:", error);
-    // 如果是版本变更错误，尝试删除数据库并重新创建
-    if (error instanceof DOMException && error.name === 'VersionError') {
-      console.warn("检测到版本错误，尝试删除并重建数据库");
-      try {
-        await deleteDB('ai-roleplay-db');
-        return openDB<AppDB>('ai-roleplay-db', 10, {
-          upgrade(db) {
-            // 重新创建所有表
-            const conversationStore = db.createObjectStore('conversations', { keyPath: 'id' });
-            conversationStore.createIndex('by-lastUpdated', 'lastUpdated');
-            
-            const presetStore = db.createObjectStore('presets', { keyPath: 'id' });
-            presetStore.createIndex('by-name', 'name');
-            
-            const characterStore = db.createObjectStore('characters', { keyPath: 'id' });
-            characterStore.createIndex('by-name', 'name');
-            
-            const promptPresetStore = db.createObjectStore('promptPresets', { keyPath: 'id' });
-            promptPresetStore.createIndex('by-name', 'name');
-            promptPresetStore.createIndex('by-updatedAt', 'updatedAt');
-            
-            const playerStore = db.createObjectStore('players', { keyPath: 'id' });
-            playerStore.createIndex('by-name', 'name');
-            playerStore.createIndex('by-updatedAt', 'updatedAt');
-            
-            const worldBookStore = db.createObjectStore('worldBooks', { keyPath: 'id' });
-            worldBookStore.createIndex('by-name', 'name');
-            
-            const regexStore = db.createObjectStore('regex', { keyPath: 'id' });
-            regexStore.createIndex('by-name', 'scriptName');
-            
-            const apiKeyStore = db.createObjectStore('apiKeys', { keyPath: 'id' });
-            apiKeyStore.createIndex('by-priority', 'priority');
-            apiKeyStore.createIndex('by-name', 'name');
-            
-            db.createObjectStore('apiKeySettings', { keyPath: 'id' });
-            
-            const regexFolderStore = db.createObjectStore('regexFolders', { keyPath: 'id' });
-            regexFolderStore.createIndex('by-name', 'name');
 
-            // 创建默认的"未分类"文件夹
-            const defaultFolder: RegexFolder = {
-              id: 'default',
-              name: '未分类',
-              description: '默认文件夹，存放未分类的正则脚本',
-              disabled: false,
-              type: 'preset' as const, // 明确指定为预设类型
-              scope: 'global' as const, // 默认文件夹为全局作用域
-              createdAt: Date.now(),
-              updatedAt: Date.now()
-            };
-            regexFolderStore.add(defaultFolder);
-
-            // 创建背景图片存储
-            const backgroundImageStore = db.createObjectStore('backgroundImages', { keyPath: 'id' });
-            backgroundImageStore.createIndex('by-name', 'name');
-            backgroundImageStore.createIndex('by-createdAt', 'createdAt');
-          }
-        });
-      } catch (recreateError) {
-        console.error("重建数据库失败:", recreateError);
-        throw recreateError;
+    // 更智能的错误处理
+    if (error instanceof DOMException) {
+      if (error.name === 'VersionError') {
+        console.warn("检测到版本错误，尝试智能迁移数据库");
+        return await handleDatabaseVersionError();
+      } else if (error.name === 'InvalidStateError' || error.name === 'AbortError') {
+        console.warn("数据库状态错误，尝试重新初始化");
+        // 等待一段时间后重试
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return await initDB();
       }
-    } else {
-      throw error;
     }
+
+    // 如果是其他错误，尝试一次性重建（作为最后手段）
+    console.error("数据库初始化失败，尝试重建数据库");
+    return await handleDatabaseRecreation();
   }
 };
 
@@ -3233,3 +3190,170 @@ export const backgroundImageStorage = {
     console.log(`当前存储了 ${allImages.length} 张背景图片`);
   }
 };
+
+// 智能处理数据库版本错误
+async function handleDatabaseVersionError() {
+  try {
+    console.log("尝试智能迁移数据库...");
+
+    // 首先尝试备份现有数据
+    const backupData = await backupDatabaseData();
+
+    // 删除旧数据库
+    await deleteDB('ai-roleplay-db');
+
+    // 创建新数据库
+    const newDb = await createFreshDatabase();
+
+    // 恢复数据
+    if (backupData && Object.keys(backupData).length > 0) {
+      console.log("恢复备份数据...");
+      await restoreBackupData(newDb, backupData);
+    }
+
+    return newDb;
+  } catch (error) {
+    console.error("智能迁移失败:", error);
+    // 如果智能迁移失败，回退到重建数据库
+    return await handleDatabaseRecreation();
+  }
+}
+
+// 处理数据库重建
+async function handleDatabaseRecreation() {
+  try {
+    console.log("重建数据库...");
+    await deleteDB('ai-roleplay-db');
+    return await createFreshDatabase();
+  } catch (error) {
+    console.error("数据库重建失败:", error);
+    throw new Error("数据库初始化完全失败，请刷新页面重试");
+  }
+}
+
+// 备份数据库数据
+async function backupDatabaseData() {
+  try {
+    // 尝试打开现有数据库进行备份
+    const oldDb = await openDB('ai-roleplay-db');
+    const backup: any = {};
+
+    // 备份所有可能的表
+    const storeNames = ['conversations', 'presets', 'characters', 'promptPresets', 'players', 'worldBooks', 'regex', 'apiKeys', 'apiKeySettings', 'regexFolders'];
+
+    for (const storeName of storeNames) {
+      try {
+        if (oldDb.objectStoreNames.contains(storeName)) {
+          const data = await oldDb.getAll(storeName);
+          if (data && data.length > 0) {
+            backup[storeName] = data;
+            console.log(`备份 ${storeName}: ${data.length} 条记录`);
+          }
+        }
+      } catch (error) {
+        console.warn(`备份 ${storeName} 失败:`, error);
+      }
+    }
+
+    oldDb.close();
+    return backup;
+  } catch (error) {
+    console.warn("数据备份失败:", error);
+    return null;
+  }
+}
+
+// 创建全新的数据库
+async function createFreshDatabase() {
+  return await openDB<AppDB>('ai-roleplay-db', 10, {
+    upgrade(db) {
+      console.log("创建全新数据库结构...");
+
+      // 创建所有表
+      const conversationStore = db.createObjectStore('conversations', { keyPath: 'id' });
+      conversationStore.createIndex('by-lastUpdated', 'lastUpdated');
+
+      const presetStore = db.createObjectStore('presets', { keyPath: 'id' });
+      presetStore.createIndex('by-name', 'name');
+
+      const characterStore = db.createObjectStore('characters', { keyPath: 'id' });
+      characterStore.createIndex('by-name', 'name');
+
+      const promptPresetStore = db.createObjectStore('promptPresets', { keyPath: 'id' });
+      promptPresetStore.createIndex('by-name', 'name');
+      promptPresetStore.createIndex('by-updatedAt', 'updatedAt');
+
+      const playerStore = db.createObjectStore('players', { keyPath: 'id' });
+      playerStore.createIndex('by-name', 'name');
+      playerStore.createIndex('by-updatedAt', 'updatedAt');
+
+      const worldBookStore = db.createObjectStore('worldBooks', { keyPath: 'id' });
+      worldBookStore.createIndex('by-name', 'name');
+
+      const regexStore = db.createObjectStore('regex', { keyPath: 'id' });
+      regexStore.createIndex('by-name', 'scriptName');
+
+      const apiKeyStore = db.createObjectStore('apiKeys', { keyPath: 'id' });
+      apiKeyStore.createIndex('by-priority', 'priority');
+      apiKeyStore.createIndex('by-name', 'name');
+
+      db.createObjectStore('apiKeySettings', { keyPath: 'id' });
+
+      const regexFolderStore = db.createObjectStore('regexFolders', { keyPath: 'id' });
+      regexFolderStore.createIndex('by-name', 'name');
+
+      // 创建默认的"未分类"文件夹
+      const defaultFolder: RegexFolder = {
+        id: 'default',
+        name: '未分类',
+        description: '默认文件夹，存放未分类的正则脚本',
+        disabled: false,
+        type: 'preset' as const,
+        scope: 'global' as const,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      regexFolderStore.add(defaultFolder);
+
+      // 创建背景图片存储
+      const backgroundImageStore = db.createObjectStore('backgroundImages', { keyPath: 'id' });
+      backgroundImageStore.createIndex('by-name', 'name');
+      backgroundImageStore.createIndex('by-createdAt', 'createdAt');
+    }
+  });
+}
+
+// 恢复备份数据
+async function restoreBackupData(db: any, backupData: any) {
+  try {
+    for (const [storeName, data] of Object.entries(backupData)) {
+      if (Array.isArray(data) && data.length > 0) {
+        try {
+          const tx = db.transaction(storeName, 'readwrite');
+          const store = tx.objectStore(storeName);
+
+          for (const item of data) {
+            try {
+              await store.add(item);
+            } catch (error) {
+              // 如果添加失败（可能是重复键），尝试更新
+              try {
+                await store.put(item);
+              } catch (putError) {
+                console.warn(`恢复数据项失败 (${storeName}):`, putError);
+              }
+            }
+          }
+
+          await tx.done;
+          console.log(`恢复 ${storeName}: ${data.length} 条记录`);
+        } catch (error) {
+          console.warn(`恢复 ${storeName} 失败:`, error);
+        }
+      }
+    }
+    console.log("数据恢复完成");
+  } catch (error) {
+    console.error("数据恢复失败:", error);
+  }
+}

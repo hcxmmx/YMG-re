@@ -9,8 +9,6 @@ import { FontFamily, ChatBackgroundSettings } from "@/lib/types";
 import Link from "next/link";
 import { ChatBackgroundSettings as ChatBackgroundSettingsComponent } from "@/components/settings/chat-background-settings";
 import { applyChatBackground } from "@/lib/background-utils";
-import { resetDatabase, checkDatabaseHealth } from "@/lib/db-reset";
-import { BackgroundTest } from "@/components/test/background-test";
 import { DataExportImport, ExportOptions } from "@/components/ui/data-export-import";
 import { exportData, importData, downloadFile } from "@/lib/dataUtils";
 import { useToast } from "@/components/ui/use-toast";
@@ -106,9 +104,6 @@ export default function SettingsPage() {
   // PWA自动更新设置
   const [pwaAutoUpdate, setPwaAutoUpdate] = useState(false);
 
-  // 数据库状态
-  const [dbHealthy, setDbHealthy] = useState(true);
-
   const [isSaved, setIsSaved] = useState(false);
   const [activeTab, setActiveTab] = useState("appearance");
   const [isMobile, setIsMobile] = useState(false);
@@ -188,14 +183,6 @@ export default function SettingsPage() {
     if (settings.chatBackground) {
       setChatBackground(settings.chatBackground);
     }
-
-    // 检查数据库健康状态
-    checkDatabaseHealth().then(healthy => {
-      setDbHealthy(healthy);
-      if (!healthy) {
-        console.warn('数据库状态异常，建议重置数据库');
-      }
-    });
     
     // 加载PWA设置
     try {
@@ -357,28 +344,7 @@ export default function SettingsPage() {
     applyChatBackground(backgroundSettings);
   }, []);
 
-  // 重置数据库
-  const handleResetDatabase = useCallback(async () => {
-    if (confirm('确定要重置数据库吗？这将删除所有本地数据（对话、角色、设置等），操作不可撤销！')) {
-      const success = await resetDatabase();
-      if (success) {
-        toast({
-          title: "数据库重置成功",
-          description: "请刷新页面以重新初始化数据库",
-        });
-        // 3秒后自动刷新页面
-        setTimeout(() => {
-          window.location.reload();
-        }, 3000);
-      } else {
-        toast({
-          title: "数据库重置失败",
-          description: "请手动刷新页面或联系技术支持",
-          variant: "destructive",
-        });
-      }
-    }
-  }, [toast]);
+
 
   // ===== 连接测试功能 =====
   const handleTestConnection = async () => {
@@ -754,11 +720,6 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* 背景功能测试 */}
-      <div className="mt-8">
-        <BackgroundTest />
       </div>
 
       {/* 聊天背景设置 */}
@@ -1435,41 +1396,6 @@ export default function SettingsPage() {
       </div>
 
       <ApiLogger />
-
-      {/* 数据库管理 */}
-      <div className="space-y-4 pt-6 border-t">
-        <div className="space-y-2">
-          <h3 className="text-lg font-semibold">数据库管理</h3>
-          <p className="text-sm text-muted-foreground">
-            管理本地数据库，解决数据存储问题
-          </p>
-        </div>
-
-        <div className="flex items-center justify-between p-4 border rounded-lg">
-          <div>
-            <div className="font-medium">数据库状态</div>
-            <div className={`text-sm ${dbHealthy ? 'text-green-600' : 'text-red-600'}`}>
-              {dbHealthy ? '✅ 正常' : '❌ 异常'}
-            </div>
-            {!dbHealthy && (
-              <div className="text-xs text-muted-foreground mt-1">
-                数据库可能缺少必要的表，建议重置
-              </div>
-            )}
-          </div>
-          <Button
-            onClick={handleResetDatabase}
-            variant="destructive"
-            size="sm"
-          >
-            重置数据库
-          </Button>
-        </div>
-
-        <div className="text-xs text-muted-foreground">
-          ⚠️ 重置数据库将删除所有本地数据，包括对话历史、角色设置等，请谨慎操作
-        </div>
-      </div>
     </div>
   );
 
