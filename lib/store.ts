@@ -67,7 +67,22 @@ export const useSettingsStore = create<SettingsState>()(
         fontFamily: 'system', // 默认使用系统字体
         fontSize: typeof window !== 'undefined' && window.innerWidth < 768 ? 80 : 100, // 移动设备默认80%，桌面100%
         chatFontSize: 100, // 默认100%的聊天消息字体大小
-        
+        // 聊天背景设置
+        chatBackground: {
+          type: 'none',
+          imageTransform: {
+            translateX: 0,
+            translateY: 0,
+            scale: 1,
+            rotate: 0,
+            sizeMode: 'cover',
+          },
+          opacity: 100,
+          blur: 0,
+          overlay: false,
+          overlayOpacity: 50,
+        },
+
         // ===== 新增API配置默认值 =====
         apiType: 'gemini' as 'gemini' | 'openai', // 默认使用Gemini
         

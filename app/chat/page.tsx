@@ -12,6 +12,7 @@ import { useChatPerformanceMonitor } from "@/lib/performance-monitor";
 import { useNavbar } from "@/lib/contexts";
 import { useSearchParams } from "next/navigation";
 import { TypingIndicator } from "@/components/chat/message";
+import { applyChatBackground, loadChatBackgroundSettings } from "@/lib/background-utils";
 import { trimMessageHistory } from "@/lib/tokenUtils";
 import { replaceMacros } from "@/lib/macroUtils";
 import { apiKeyStorage } from "@/lib/storage";
@@ -1065,12 +1066,32 @@ export default function ChatPage() {
     };
   }, [cancelRequest]);
 
+  // 初始化和监听背景设置变化
+  useEffect(() => {
+    // 初始化背景设置
+    const backgroundSettings = loadChatBackgroundSettings();
+    if (backgroundSettings) {
+      applyChatBackground(backgroundSettings);
+    }
+
+    const handleBackgroundSettingsChanged = (event: CustomEvent) => {
+      console.log('聊天页面收到背景设置变化事件:', event.detail);
+      applyChatBackground(event.detail);
+    };
+
+    window.addEventListener('backgroundsettingschanged', handleBackgroundSettingsChanged as EventListener);
+
+    return () => {
+      window.removeEventListener('backgroundsettingschanged', handleBackgroundSettingsChanged as EventListener);
+    };
+  }, []);
+
   return (
-    <div className={`flex flex-col ${isNavbarVisible ? 'dvh-fix h-[calc(100dvh-65px)]' : 'dvh-fix h-screen'}`}>
+    <div className={`flex flex-col chat-background ${isNavbarVisible ? 'dvh-fix h-[calc(100dvh-65px)]' : 'dvh-fix h-screen'}`}>
       {/* 添加SearchParamsHandler组件来处理URL参数 */}
       <SearchParamsHandler />
       <ChatHeader character={currentCharacter} />
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 chat-content">
         {enableVirtualScroll ? (
           /* 🚀 虚拟滚动模式（100+条消息时启用） */
           <VirtualMessageList

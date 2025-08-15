@@ -54,6 +54,61 @@ export type FontFamily =
   | 'pingfang'  // 苹方字体
   | 'sourcehans'; // 思源黑体
 
+// 聊天背景相关类型
+export type ChatBackgroundType = 'none' | 'image' | 'gradient' | 'color';
+
+// 背景尺寸模式
+export type BackgroundSizeMode = 'cover' | 'contain' | 'auto' | 'stretch' | 'custom';
+
+// 图片变换设置 - 支持自由拖拽、缩放、旋转
+export interface ImageTransform {
+  // 位置偏移 (相对于容器的百分比)
+  translateX: number; // -200 到 200
+  translateY: number; // -200 到 200
+  // 缩放比例
+  scale: number; // 0.1 到 5.0
+  // 旋转角度
+  rotate: number; // 0 到 360
+  // 背景尺寸模式
+  sizeMode: BackgroundSizeMode;
+}
+
+// 预设背景选项
+export interface PresetBackground {
+  id: string;
+  name: string;
+  type: 'gradient' | 'color';
+  // 渐变设置
+  gradientType?: 'linear' | 'radial';
+  gradientDirection?: string;
+  gradientColors?: string[];
+  // 纯色设置
+  backgroundColor?: string;
+  // 预览图
+  preview?: string;
+}
+
+export interface ChatBackgroundSettings {
+  type: ChatBackgroundType;
+  // 图片背景设置
+  imageUrl?: string;
+  imageTransform: ImageTransform;
+  // 渐变背景设置
+  gradientType?: 'linear' | 'radial';
+  gradientDirection?: string; // 如 'to right', '45deg' 等
+  gradientColors?: string[]; // 渐变颜色数组
+  // 纯色背景设置
+  backgroundColor?: string;
+  // 预设背景ID
+  presetId?: string;
+  // 通用设置
+  opacity: number; // 透明度 0-100
+  blur: number; // 模糊程度 0-20
+  overlay: boolean; // 是否添加遮罩层
+  overlayColor?: string; // 遮罩层颜色
+  overlayOpacity: number; // 遮罩层透明度 0-100
+}
+
 // 用户设置类型
 export interface UserSettings {
   apiKey?: string;
@@ -72,7 +127,9 @@ export interface UserSettings {
   fontFamily: FontFamily; // 字体系列
   fontSize: number; // 全局字体大小（百分比，100 = 100%）
   chatFontSize: number; // 聊天消息字体大小（百分比，100 = 100%）
-  
+  // 聊天背景设置
+  chatBackground: ChatBackgroundSettings;
+
   // ===== 新增API配置选项 =====
   // API类型选择
   apiType: 'gemini' | 'openai';

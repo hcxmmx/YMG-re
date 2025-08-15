@@ -37,7 +37,18 @@
     /* 字体相关变量 */
     --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     --chat-font-size: 100%;
-    
+
+    /* 聊天背景相关变量 */
+    --chat-background-type: none;
+    --chat-background-image: none;
+    --chat-background-size: cover;
+    --chat-background-position: center;
+    --chat-background-repeat: no-repeat;
+    --chat-background-opacity: 1;
+    --chat-background-blur: 0px;
+    --chat-background-overlay: transparent;
+    --chat-background-transform: none;
+
     /* 动态视口高度变量 */
     --vh: 1vh;
   }
@@ -313,6 +324,81 @@
   --letter-spacing: 0;
   font-weight: 400 !important;
   font-variant-numeric: tabular-nums !important;
+}
+
+/* 聊天背景样式 */
+.chat-background {
+  position: relative;
+  overflow: hidden;
+}
+
+.chat-background::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -2;
+  background-image: var(--chat-background-image);
+  background-size: var(--chat-background-size);
+  background-position: var(--chat-background-position);
+  background-repeat: var(--chat-background-repeat);
+  opacity: var(--chat-background-opacity);
+  filter: blur(var(--chat-background-blur));
+  transform: var(--chat-background-transform);
+  transition: all 0.3s ease;
+}
+
+.chat-background::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  background: var(--chat-background-overlay);
+  transition: all 0.3s ease;
+}
+
+/* 确保聊天内容在背景之上 */
+.chat-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* 预览通知动画 */
+@keyframes slide-in-from-right-5 {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-out-to-right-5 {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+.animate-in {
+  animation-duration: 0.3s;
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+}
+
+.slide-in-from-right-5 {
+  animation-name: slide-in-from-right-5;
 }
 
 /* 移动设备上的字体增强 */

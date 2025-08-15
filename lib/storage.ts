@@ -111,13 +111,25 @@ interface AppDB extends DBSchema {
       rotationEnabled: boolean;
     };
   };
+  backgroundImages: {
+    key: string;
+    value: {
+      id: string;
+      name: string;
+      data: string; // base64 encoded image
+      size: number;
+      type: string;
+      createdAt: number;
+    };
+    indexes: { 'by-name': string, 'by-createdAt': number };
+  };
 }
 
 
 // 初始化数据库
 export const initDB = async () => {
   try {
-    const db = await openDB<AppDB>('ai-roleplay-db', 9, {
+    const db = await openDB<AppDB>('ai-roleplay-db', 10, {
       upgrade(db, oldVersion) {
         // 版本1: 创建conversations和presets表
         if (oldVersion < 1) {
@@ -200,7 +212,7 @@ export const initDB = async () => {
           if (!db.objectStoreNames.contains('regexFolders')) {
             const regexFolderStore = db.createObjectStore('regexFolders', { keyPath: 'id' });
             regexFolderStore.createIndex('by-name', 'name');
-            
+
             // 创建默认的"未分类"文件夹
             const defaultFolder: RegexFolder = {
               id: 'default',
@@ -213,6 +225,15 @@ export const initDB = async () => {
               updatedAt: Date.now()
             };
             regexFolderStore.add(defaultFolder);
+          }
+        }
+
+        // 版本10: 创建backgroundImages表
+        if (oldVersion < 10) {
+          if (!db.objectStoreNames.contains('backgroundImages')) {
+            const backgroundImageStore = db.createObjectStore('backgroundImages', { keyPath: 'id' });
+            backgroundImageStore.createIndex('by-name', 'name');
+            backgroundImageStore.createIndex('by-createdAt', 'createdAt');
           }
         }
       }
@@ -229,7 +250,7 @@ export const initDB = async () => {
       console.warn("检测到版本错误，尝试删除并重建数据库");
       try {
         await deleteDB('ai-roleplay-db');
-        return openDB<AppDB>('ai-roleplay-db', 9, {
+        return openDB<AppDB>('ai-roleplay-db', 10, {
           upgrade(db) {
             // 重新创建所有表
             const conversationStore = db.createObjectStore('conversations', { keyPath: 'id' });
@@ -263,7 +284,7 @@ export const initDB = async () => {
             
             const regexFolderStore = db.createObjectStore('regexFolders', { keyPath: 'id' });
             regexFolderStore.createIndex('by-name', 'name');
-            
+
             // 创建默认的"未分类"文件夹
             const defaultFolder: RegexFolder = {
               id: 'default',
@@ -276,6 +297,11 @@ export const initDB = async () => {
               updatedAt: Date.now()
             };
             regexFolderStore.add(defaultFolder);
+
+            // 创建背景图片存储
+            const backgroundImageStore = db.createObjectStore('backgroundImages', { keyPath: 'id' });
+            backgroundImageStore.createIndex('by-name', 'name');
+            backgroundImageStore.createIndex('by-createdAt', 'createdAt');
           }
         });
       } catch (recreateError) {
@@ -3110,5 +3136,100 @@ export const regexFolderStorage = {
       folder.presetIds && 
       folder.presetIds.includes(presetId)
     );
+  }
+};
+
+// 背景图片存储接口
+export const backgroundImageStorage = {
+  // 保存背景图片
+  async saveBackgroundImage(file: File): Promise<string> {
+    try {
+      const db = await initDB();
+
+      // 检查数据库是否有backgroundImages表
+      if (!db.objectStoreNames.contains('backgroundImages')) {
+        console.error('backgroundImages表不存在，需要重新创建数据库');
+        throw new Error('数据库表不存在，请刷新页面重试');
+      }
+
+      // 压缩图片
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+
+      return new Promise((resolve, reject) => {
+        img.onload = async () => {
+          try {
+            // 计算压缩后的尺寸（最大1920x1080）
+            const maxWidth = 1920;
+            const maxHeight = 1080;
+            let { width, height } = img;
+
+            if (width > maxWidth || height > maxHeight) {
+              const ratio = Math.min(maxWidth / width, maxHeight / height);
+              width *= ratio;
+              height *= ratio;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            ctx?.drawImage(img, 0, 0, width, height);
+
+            // 转换为base64
+            const imageData = canvas.toDataURL('image/jpeg', 0.8);
+
+            const imageRecord = {
+              id: generateId(),
+              name: file.name,
+              data: imageData,
+              size: imageData.length,
+              type: 'image/jpeg',
+              createdAt: Date.now(),
+            };
+
+            await db.put('backgroundImages', imageRecord);
+            resolve(imageRecord.id);
+          } catch (error) {
+            console.error('保存图片到数据库失败:', error);
+            reject(error);
+          }
+        };
+
+        img.onerror = () => reject(new Error('图片加载失败'));
+        img.src = URL.createObjectURL(file);
+      });
+    } catch (error) {
+      console.error('初始化数据库失败:', error);
+      throw error;
+    }
+  },
+
+  // 获取背景图片
+  async getBackgroundImage(id: string): Promise<string | null> {
+    const db = await initDB();
+    const record = await db.get('backgroundImages', id);
+    return record?.data || null;
+  },
+
+  // 列出所有背景图片
+  async listBackgroundImages() {
+    const db = await initDB();
+    return db.getAllFromIndex('backgroundImages', 'by-createdAt');
+  },
+
+  // 删除背景图片
+  async deleteBackgroundImage(id: string) {
+    const db = await initDB();
+    await db.delete('backgroundImages', id);
+  },
+
+  // 清理未使用的背景图片
+  async cleanupUnusedImages() {
+    const db = await initDB();
+    const allImages = await this.listBackgroundImages();
+
+    // 这里可以添加逻辑来检查哪些图片正在被使用
+    // 暂时保留所有图片
+    console.log(`当前存储了 ${allImages.length} 张背景图片`);
   }
 };
