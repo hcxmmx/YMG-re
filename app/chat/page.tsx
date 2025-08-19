@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { Message } from "@/components/chat/message";
-import { VirtualMessageList } from "@/components/chat/virtual-message-list";
+
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatHeader } from "@/components/chat/chat-header";
 import { useSettingsStore, useChatStore, usePlayerStore, useRegexStore, useApiKeyStore } from "@/lib/store";
 import { Message as MessageType } from "@/lib/types";
 import { generateId } from "@/lib/utils";
-import { useChatPerformanceMonitor } from "@/lib/performance-monitor";
+
 import { useNavbar } from "@/lib/contexts";
 import { useSearchParams } from "next/navigation";
 import { TypingIndicator } from "@/components/chat/message";
@@ -108,12 +108,7 @@ export default function ChatPage() {
   const lastScrollTimeRef = useRef<number>(0);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 🆕 性能优化配置
-  const VIRTUAL_SCROLL_THRESHOLD = 100; // 超过100条消息启用虚拟滚动
-  const enableVirtualScroll = currentMessages.length > VIRTUAL_SCROLL_THRESHOLD;
 
-  // 🆕 性能监控
-  const { recordRender, recordScroll, logReport } = useChatPerformanceMonitor();
   
   // 加载正则表达式脚本
   const { loadScripts } = useRegexStore();
@@ -394,13 +389,10 @@ export default function ChatPage() {
 
   // 当消息更新时智能滚动到底部（初始加载时强制滚动，后续智能滚动）
   useEffect(() => {
-    // 🆕 记录渲染性能
-    const endRenderRecord = recordRender(currentMessages.length);
-    
     // 使用 setTimeout 让滚动在 DOM 更新后执行
     const timer = setTimeout(() => {
       if (isInitialLoad && currentMessages.length > 0) {
-        // 🆕 初始加载完成且有消息时，强制滚动到底部
+        // 初始加载完成且有消息时，强制滚动到底部
         console.log('初始加载完成，强制滚动到底部');
         forceScrollToBottomImmediate();
         setIsInitialLoad(false); // 标记初始加载完成
@@ -408,26 +400,10 @@ export default function ChatPage() {
         // 后续消息更新时使用智能滚动
         smartScrollToBottom();
       }
-      
-      // 🆕 记录性能指标
-      endRenderRecord();
-      
-      // 记录滚动性能指标
-      recordScroll({
-        isVirtualScrollEnabled: enableVirtualScroll,
-        visibleMessages: enableVirtualScroll ? Math.min(20, currentMessages.length) : currentMessages.length,
-        totalMessages: currentMessages.length
-      });
-      
-      // 🆕 当消息数量较多时，输出性能报告
-      if (currentMessages.length > 50 && currentMessages.length % 50 === 0) {
-        console.log(`📊 消息达到 ${currentMessages.length} 条，性能分析:`);
-        logReport();
-      }
     }, 50); // 增加延迟确保DOM完全渲染
-    
+
     return () => clearTimeout(timer);
-  }, [currentMessages, smartScrollToBottom, forceScrollToBottomImmediate, isInitialLoad, recordRender, recordScroll, enableVirtualScroll, logReport]);
+  }, [currentMessages, smartScrollToBottom, forceScrollToBottomImmediate, isInitialLoad]);
 
   // 监听导航栏状态变化，重新检测用户位置
   useEffect(() => {
@@ -1092,64 +1068,47 @@ export default function ChatPage() {
       <SearchParamsHandler />
       <ChatHeader character={currentCharacter} />
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 chat-content">
-        {enableVirtualScroll ? (
-          /* 🚀 虚拟滚动模式（100+条消息时启用） */
-          <VirtualMessageList
-            messages={currentMessages}
-            character={currentCharacter}
-            onRegenerate={handleMessageAction}
-            isLoading={isLoading}
-            loadingType={loadingType}
-            loadingMessageId={loadingMessageId}
-            containerRef={messagesContainerRef}
-            messagesEndRef={messagesEndRef}
-          />
-        ) : (
-          /* 🎯 传统渲染模式（100条以下消息时使用） */
-          <>
-            {currentMessages.map((message, index) => {
-              // 检查当前消息是否正在加载中（重新生成或变体生成）
-              const isMessageLoading = isLoading && loadingMessageId === message.id;
-              const currentLoadingType = isMessageLoading ? loadingType : undefined;
-              
-              return (
-                <div key={`${message.id}-${index}`}>
-                  <Message
-                    message={message}
-                    onRegenerate={handleMessageAction}
-                    character={message.role === 'assistant' ? currentCharacter : undefined}
-                    isGeneratingVariant={isLoading && loadingType === 'variant' && loadingMessageId === message.id}
-                    isRegenerating={isLoading && loadingType === 'regenerate' && loadingMessageId === message.id}
-                  />
-                  {/* 显示消息特定的加载指示器 */}
-                  {isMessageLoading && (
-                    <div className="pl-11 -mt-4 mb-2">
-                      <div className="text-xs text-muted-foreground flex items-center gap-1">
-                        <div className="flex space-x-1">
-                          <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "0ms" }}></div>
-                          <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "200ms" }}></div>
-                          <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "400ms" }}></div>
-                        </div>
-                        <span className="ml-1">
-                          {currentLoadingType === 'regenerate' 
-                            ? "正在重新生成回复..."
-                            : "正在生成回复变体..."}
-                        </span>
-                      </div>
+        {currentMessages.map((message, index) => {
+          // 检查当前消息是否正在加载中（重新生成或变体生成）
+          const isMessageLoading = isLoading && loadingMessageId === message.id;
+          const currentLoadingType = isMessageLoading ? loadingType : undefined;
+
+          return (
+            <div key={`${message.id}-${index}`}>
+              <Message
+                message={message}
+                onRegenerate={handleMessageAction}
+                character={message.role === 'assistant' ? currentCharacter : undefined}
+                isGeneratingVariant={isLoading && loadingType === 'variant' && loadingMessageId === message.id}
+                isRegenerating={isLoading && loadingType === 'regenerate' && loadingMessageId === message.id}
+              />
+              {/* 显示消息特定的加载指示器 */}
+              {isMessageLoading && (
+                <div className="pl-11 -mt-4 mb-2">
+                  <div className="text-xs text-muted-foreground flex items-center gap-1">
+                    <div className="flex space-x-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "0ms" }}></div>
+                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "200ms" }}></div>
+                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70 animate-bounce" style={{ animationDelay: "400ms" }}></div>
                     </div>
-                  )}
+                    <span className="ml-1">
+                      {currentLoadingType === 'regenerate'
+                        ? "正在重新生成回复..."
+                        : "正在生成回复变体..."}
+                    </span>
+                  </div>
                 </div>
-              );
-            })}
-            
-            {/* 仅在创建新消息或回复时在底部显示加载指示器 */}
-            {isLoading && loadingType === 'new' && (
-              <TypingIndicator character={currentCharacter} loadingType="new" />
-            )}
-            
-            <div ref={messagesEndRef} />
-          </>
+              )}
+            </div>
+          );
+        })}
+
+        {/* 仅在创建新消息或回复时在底部显示加载指示器 */}
+        {isLoading && loadingType === 'new' && (
+          <TypingIndicator character={currentCharacter} loadingType="new" />
         )}
+
+        <div ref={messagesEndRef} />
       </div>
       
       {/* 提示词调试面板 */}
