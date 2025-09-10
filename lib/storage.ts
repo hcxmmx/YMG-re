@@ -1502,7 +1502,7 @@ export const worldBookStorage = {
                    entry.vectorized ? 'vectorized' : 'selective',
           enabled: entry.disable === undefined ? true : !entry.disable,
           order: entry.order || 100,
-          position: entry.position === 0 ? 'before' : 'after',
+          position: entry.position === 0 || entry.position === 'before' ? 'before' : 'after',
           primaryKeys: Array.isArray(entry.key) ? entry.key : 
                       (entry.key ? [entry.key] : []),
           secondaryKeys: Array.isArray(entry.keysecondary) ? entry.keysecondary : 

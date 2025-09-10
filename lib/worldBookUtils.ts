@@ -550,19 +550,43 @@ function keywordMatches(text: string, keyword: string, options: { caseSensitive:
       // 对于中文，我们检查关键字是否作为完整词出现，其前后可以是空格、标点符号或文本开始/结束
       const escapedKeyword = escapeRegExp(compareKeyword);
       
-      // 构建适用于多语言的全词匹配模式
-      // 词边界可以是：文本开始/结束、空格、标点符号、冒号等
-      const boundaries = '\\s:：.,!?;\'"/\\\\(){}\\[\\]<>-';
+      // 🐛 修复：扩展词边界字符集，包含更多中文标点符号
+      // 词边界可以是：文本开始/结束、空格、各种标点符号、冒号等
+      const basicBoundaries = '\\s:：.,!?;\'"/\\\\(){}\\[\\]<>\\-';
+      const chinesePunctuation = '，。！？；（）【】《》〈〉…——';
+      const boundaries = basicBoundaries + chinesePunctuation;
       const pattern = `(^|[${boundaries}])${escapedKeyword}([${boundaries}]|$)`;
       const regex = new RegExp(pattern, 'g');
       isMatch = regex.test(compareText);
       
-      // 同时也检查完全匹配的情况
-      if (!isMatch && compareText === compareKeyword) {
-        isMatch = true;
+      // 🐛 修复：如果直接模式匹配失败，对中文采用更实用的词匹配策略
+      if (!isMatch) {
+        // 🔍 对于中文文本，采用更宽松的词边界策略
+        // 只要关键字前后不是字母数字，就认为是有效的词边界
+        const keywordIndex = compareText.indexOf(compareKeyword);
+        if (keywordIndex !== -1) {
+          const beforeChar = keywordIndex > 0 ? compareText[keywordIndex - 1] : null;
+          const afterChar = keywordIndex + compareKeyword.length < compareText.length 
+            ? compareText[keywordIndex + compareKeyword.length] 
+            : null;
+          
+          // 对于中文，主要避免与字母数字连接，其他情况都视为有效词边界
+          const beforeOk = !beforeChar || !/[a-zA-Z0-9]/.test(beforeChar);
+          const afterOk = !afterChar || !/[a-zA-Z0-9]/.test(afterChar);
+          
+          isMatch = beforeOk && afterOk;
+          
+          // 🔍 添加调试信息
+          console.log(`简化中文词边界匹配:
+            - 关键字位置: ${keywordIndex}
+            - 前置字符: "${beforeChar || 'null'}" (非字母数字: ${beforeOk})
+            - 后置字符: "${afterChar || 'null'}" (非字母数字: ${afterOk})
+            - 最终匹配: ${isMatch}
+          `);
+        }
       }
       
-      // 如果文本本身就等于关键字，也视为匹配
+      // 同时也检查完全匹配的情况
       if (!isMatch && compareText === compareKeyword) {
         isMatch = true;
       }
@@ -684,8 +708,12 @@ export async function generateWorldInfoBefore(params: {
 }): Promise<string> {
   const { worldBook, chatMessages } = params;
   
+  console.log(`🔍 [generateWorldInfoBefore] 开始处理世界书: ${worldBook.name}`);
+  console.log(`🔍 [generateWorldInfoBefore] 世界书启用状态: ${worldBook.enabled}`);
+  
   // 如果世界书被禁用，返回空字符串
   if (!worldBook.enabled) {
+    console.log(`⚠️ [generateWorldInfoBefore] 世界书已禁用，跳过`);
     return '';
   }
   
@@ -695,15 +723,29 @@ export async function generateWorldInfoBefore(params: {
     chatMessages: chatMessages as ExtendedMessage[]
   });
   
+  console.log(`🔍 [generateWorldInfoBefore] 总激活条目数: ${activatedEntries.length}`);
+  
   // 过滤出前置条目并按顺序排序
   const beforeEntries = activatedEntries
     .filter(entry => entry.position === 'before')
     .sort((a, b) => a.order - b.order);
   
+  console.log(`🔍 [generateWorldInfoBefore] before位置条目数: ${beforeEntries.length}`);
+  beforeEntries.forEach((entry, index) => {
+    console.log(`🔍 [generateWorldInfoBefore] before条目${index}: ${entry.title}, 内容长度: ${entry.content.length}, 位置: ${entry.position}`);
+  });
+  
   // 将条目内容合并为字符串
-  return beforeEntries
+  const result = beforeEntries
     .map(entry => entry.content)
     .join('\n\n');
+    
+  console.log(`🔍 [generateWorldInfoBefore] 最终生成内容长度: ${result.length}`);
+  if (result.length > 0) {
+    console.log(`🔍 [generateWorldInfoBefore] 内容预览: "${result.substring(0, 100)}${result.length > 100 ? '...' : ''}"`);
+  }
+  
+  return result;
 }
 
 /**
@@ -716,8 +758,12 @@ export async function generateWorldInfoAfter(params: {
 }): Promise<string> {
   const { worldBook, chatMessages } = params;
   
+  console.log(`🔍 [generateWorldInfoAfter] 开始处理世界书: ${worldBook.name}`);
+  console.log(`🔍 [generateWorldInfoAfter] 世界书启用状态: ${worldBook.enabled}`);
+  
   // 如果世界书被禁用，返回空字符串
   if (!worldBook.enabled) {
+    console.log(`⚠️ [generateWorldInfoAfter] 世界书已禁用，跳过`);
     return '';
   }
   
@@ -727,13 +773,27 @@ export async function generateWorldInfoAfter(params: {
     chatMessages: chatMessages as ExtendedMessage[]
   });
   
+  console.log(`🔍 [generateWorldInfoAfter] 总激活条目数: ${activatedEntries.length}`);
+  
   // 过滤出后置条目并按顺序排序
   const afterEntries = activatedEntries
     .filter(entry => entry.position === 'after')
     .sort((a, b) => a.order - b.order);
   
+  console.log(`🔍 [generateWorldInfoAfter] after位置条目数: ${afterEntries.length}`);
+  afterEntries.forEach((entry, index) => {
+    console.log(`🔍 [generateWorldInfoAfter] after条目${index}: ${entry.title}, 内容长度: ${entry.content.length}, 位置: ${entry.position}`);
+  });
+  
   // 将条目内容合并为字符串
-  return afterEntries
+  const result = afterEntries
     .map(entry => entry.content)
     .join('\n\n');
+    
+  console.log(`🔍 [generateWorldInfoAfter] 最终生成内容长度: ${result.length}`);
+  if (result.length > 0) {
+    console.log(`🔍 [generateWorldInfoAfter] 内容预览: "${result.substring(0, 100)}${result.length > 100 ? '...' : ''}"`);
+  }
+  
+  return result;
 }

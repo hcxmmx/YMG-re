@@ -2290,7 +2290,12 @@ async function getDynamicContent(placeholderType: string): Promise<string | null
     case 'worldInfo': {
       // 根据位置获取世界书内容
       const currentCharacter = chatStore.currentCharacter;
-      if (!currentCharacter) return null;
+      if (!currentCharacter) {
+        console.log(`🔍 [getDynamicContent-worldInfo] 没有当前角色`);
+        return null;
+      }
+      
+      console.log(`🔍 [getDynamicContent-worldInfo] 处理角色: ${currentCharacter.name}`);
       
       // 导入世界书工具函数
       const { generateWorldInfoBefore, generateWorldInfoAfter } = await import('./worldBookUtils');
@@ -2303,27 +2308,55 @@ async function getDynamicContent(placeholderType: string): Promise<string | null
           : currentCharacter.name
       }));
       
-      // 获取世界书
+      // 获取所有关联的世界书
       const worldBooks = await worldBookStorage.getWorldBooksForCharacter(currentCharacter.id);
+      console.log(`🔍 [getDynamicContent-worldInfo] 找到关联世界书数量: ${worldBooks.length}`);
+      worldBooks.forEach((wb, index) => {
+        console.log(`🔍 [getDynamicContent-worldInfo] 世界书${index}: ${wb.name}, 启用: ${wb.enabled}, 条目数: ${wb.entries.length}`);
+      });
+      
       if (worldBooks.length === 0) return null;
       
-      // 使用第一个关联的世界书
-      const worldBook = worldBooks[0];
+      // 🐛 修复：处理所有关联的世界书，而不是只处理第一个
+      const allBeforeContent: string[] = [];
+      const allAfterContent: string[] = [];
       
-      // 获取worldInfoBefore内容
-      const beforeContent = await generateWorldInfoBefore({
-        worldBook,
-        chatMessages: extendedMessages
-      });
+      for (const worldBook of worldBooks) {
+        console.log(`🔍 [getDynamicContent-worldInfo] 处理世界书: ${worldBook.name}`);
+        
+        // 获取worldInfoBefore内容
+        const beforeContent = await generateWorldInfoBefore({
+          worldBook,
+          chatMessages: extendedMessages
+        });
+        if (beforeContent) {
+          console.log(`🔍 [getDynamicContent-worldInfo] ${worldBook.name} before内容长度: ${beforeContent.length}`);
+          allBeforeContent.push(beforeContent);
+        }
+        
+        // 获取worldInfoAfter内容
+        const afterContent = await generateWorldInfoAfter({
+          worldBook,
+          chatMessages: extendedMessages
+        });
+        if (afterContent) {
+          console.log(`🔍 [getDynamicContent-worldInfo] ${worldBook.name} after内容长度: ${afterContent.length}`);
+          allAfterContent.push(afterContent);
+        }
+      }
       
-      // 获取worldInfoAfter内容
-      const afterContent = await generateWorldInfoAfter({
-        worldBook,
-        chatMessages: extendedMessages
-      });
+      // 合并所有世界书的内容
+      const combinedContent = [
+        ...allBeforeContent,
+        ...allAfterContent
+      ].filter(Boolean).join('\n\n');
       
-      // 合并内容（如果调用方未指定位置，则返回所有内容）
-      return [beforeContent, afterContent].filter(Boolean).join('\n\n') || null;
+      console.log(`🔍 [getDynamicContent-worldInfo] 最终合并内容长度: ${combinedContent.length}`);
+      if (combinedContent.length > 0) {
+        console.log(`🔍 [getDynamicContent-worldInfo] 内容预览: "${combinedContent.substring(0, 200)}${combinedContent.length > 200 ? '...' : ''}"`);
+      }
+      
+      return combinedContent || null;
     }
     
     // 特定位置的世界书内容
@@ -2340,17 +2373,24 @@ async function getDynamicContent(placeholderType: string): Promise<string | null
           : currentCharacter.name
       }));
       
-      // 获取世界书
+      // 获取所有关联的世界书
       const worldBooks = await worldBookStorage.getWorldBooksForCharacter(currentCharacter.id);
       if (worldBooks.length === 0) return null;
       
-      // 使用第一个关联的世界书
-      const worldBook = worldBooks[0];
+      // 🐛 修复：处理所有关联的世界书的before内容
+      const allBeforeContent: string[] = [];
       
-      return await generateWorldInfoBefore({
-        worldBook,
-        chatMessages: extendedMessages
-      });
+      for (const worldBook of worldBooks) {
+        const beforeContent = await generateWorldInfoBefore({
+          worldBook,
+          chatMessages: extendedMessages
+        });
+        if (beforeContent) {
+          allBeforeContent.push(beforeContent);
+        }
+      }
+      
+      return allBeforeContent.join('\n\n') || null;
     }
     
     case 'worldInfoAfter': {
@@ -2366,17 +2406,24 @@ async function getDynamicContent(placeholderType: string): Promise<string | null
           : currentCharacter.name
       }));
       
-      // 获取世界书
+      // 获取所有关联的世界书
       const worldBooks = await worldBookStorage.getWorldBooksForCharacter(currentCharacter.id);
       if (worldBooks.length === 0) return null;
       
-      // 使用第一个关联的世界书
-      const worldBook = worldBooks[0];
+      // 🐛 修复：处理所有关联的世界书的after内容
+      const allAfterContent: string[] = [];
       
-      return await generateWorldInfoAfter({
-        worldBook,
-        chatMessages: extendedMessages
-      });
+      for (const worldBook of worldBooks) {
+        const afterContent = await generateWorldInfoAfter({
+          worldBook,
+          chatMessages: extendedMessages
+        });
+        if (afterContent) {
+          allAfterContent.push(afterContent);
+        }
+      }
+      
+      return allAfterContent.join('\n\n') || null;
     }
       
     case 'jailbreak':
