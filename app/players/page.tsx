@@ -34,7 +34,7 @@ export default function PlayersPage() {
   const [batchMode, setBatchMode] = useState(false);
 
   useEffect(() => {
-    document.title = "玩家管理 - AI角色扮演平台";
+    document.title = "玩家管理";
     loadPlayers().then(() => setLoading(false));
   }, [loadPlayers]);
 

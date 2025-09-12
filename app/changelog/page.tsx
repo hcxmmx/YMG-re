@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CHANGELOG, getCurrentVersion } from "@/lib/version";
@@ -9,6 +10,11 @@ import Link from "next/link";
 
 export default function ChangelogPage() {
   const currentVersion = getCurrentVersion();
+
+  // 设置页面标题
+  useEffect(() => {
+    document.title = "更新日志";
+  }, []);
 
   return (
     <div className="container mx-auto p-4 max-w-4xl">

@@ -37,7 +37,7 @@ export default function CharactersPage() {
   const [batchMode, setBatchMode] = useState(false);
   
   useEffect(() => {
-    document.title = "角色管理 - AI角色扮演平台";
+    document.title = "角色管理";
     loadCharacters();
   }, []);
 

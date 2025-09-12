@@ -8,7 +8,7 @@ import { Code, Key } from "lucide-react";
 
 export default function ExtensionsPage() {
   useEffect(() => {
-    document.title = "拓展功能 - AI角色扮演平台";
+    document.title = "拓展功能";
   }, []);
 
   // 扩展列表

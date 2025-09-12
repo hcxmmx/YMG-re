@@ -100,6 +100,15 @@ export default function ChatPage() {
   const urlParamsProcessedRef = useRef(false);
   // 当前请求ID引用，用于取消请求
   const currentRequestIdRef = useRef<string | null>(null);
+
+  // 动态设置页面标题
+  useEffect(() => {
+    if (currentCharacter) {
+      document.title = `与${currentCharacter.name}聊天`;
+    } else {
+      document.title = "聊天";
+    }
+  }, [currentCharacter]);
   
   // 滚动控制相关状态
   const [isUserNearBottom, setIsUserNearBottom] = useState(true);

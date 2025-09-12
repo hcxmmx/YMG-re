@@ -40,6 +40,11 @@ export default function PresetsPage() {
   const [viewMode, setViewMode] = useResponsiveView('presets-view-mode');
   const [batchMode, setBatchMode] = useState(false);
   
+  // 设置页面标题
+  useEffect(() => {
+    document.title = "提示词预设";
+  }, []);
+  
   const batchActions: BatchAction[] = [
     {
       id: "delete",

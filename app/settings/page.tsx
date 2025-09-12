@@ -80,6 +80,11 @@ export default function SettingsPage() {
   const [openaiCustomHeaders, setOpenaiCustomHeaders] = useState('{}');
   const [openaiCustomParams, setOpenaiCustomParams] = useState('{}');
   
+  // 设置页面标题
+  useEffect(() => {
+    document.title = "系统设置";
+  }, []);
+  
   // 新增字体设置状态
   const [fontFamily, setFontFamily] = useState<FontFamily>('system');
   const [fontSize, setFontSize] = useState(100);
